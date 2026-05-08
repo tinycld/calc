@@ -1,0 +1,34 @@
+{
+    "name": "@tinycld/sheets",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "Sheets for your organization",
+    "exports": {
+        "./package.json": "./package.json",
+        "./manifest": "./manifest.ts",
+        "./types": "./tinycld/sheets/types.ts",
+        "./collections": "./tinycld/sheets/collections.ts",
+        "./screens/*": "./tinycld/sheets/screens/*.tsx",
+        "./seed": "./tinycld/sheets/seed.ts",
+        "./sidebar": "./tinycld/sheets/sidebar.tsx",
+        "./provider": "./tinycld/sheets/provider.tsx",
+        "./hooks/*": "./tinycld/sheets/hooks/*.ts",
+        "./components/*": "./tinycld/sheets/components/*.tsx"
+    },
+    "scripts": {
+        "lint": "biome check .",
+        "lint:fix": "biome check --write .",
+        "typecheck": "tsc --noEmit --skipLibCheck",
+        "checks": "bun run lint && bun run typecheck"
+    },
+    "peerDependencies": {
+        "react": ">=19",
+        "react-native": ">=0.83",
+        "expo-router": ">=55.0.0",
+        "pbtsdb": ">=0.5",
+        "@tanstack/react-db": ">=0.1",
+        "@tanstack/db": ">=0.6",
+        "exceljs": ">=4.4.0"
+    }
+}

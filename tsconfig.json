@@ -1,0 +1,17 @@
+{
+    "extends": "../tinycld/tsconfig.json",
+    "compilerOptions": {
+        "baseUrl": ".",
+        "rootDir": "..",
+        "paths": {
+            "~/tinycld/sheets/*": ["./tinycld/sheets/*"],
+            "@tinycld/app-generated/*": ["../tinycld/lib/generated/*"],
+            "@tinycld/core/*": ["../tinycld/packages/@tinycld/core/*"],
+            "~/*": ["../tinycld/packages/@tinycld/core/*"]
+        },
+        "noEmit": true,
+        "preserveSymlinks": false
+    },
+    "include": ["**/*.ts", "**/*.tsx", "../tinycld/uniwind-types.d.ts", "../tinycld/expo-env.d.ts"],
+    "exclude": ["node_modules", "server", "pb-migrations", "tests/**/*.spec.ts"]
+}
