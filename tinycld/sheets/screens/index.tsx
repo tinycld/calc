@@ -40,7 +40,13 @@ export default function SheetsIndex() {
         <ScrollView className="flex-1 bg-background">
             <View className="p-6 gap-4">
                 <View className="flex-row items-center justify-between">
-                    <Text className="text-2xl font-semibold text-foreground">Sheets</Text>
+                    <Text
+                        accessibilityRole="header"
+                        aria-level={2}
+                        className="text-2xl font-semibold text-foreground"
+                    >
+                        Sheets
+                    </Text>
                     <Pressable
                         onPress={handleNew}
                         disabled={create.isPending}

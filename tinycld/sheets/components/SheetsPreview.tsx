@@ -1,12 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import type { PreviewProps } from '@tinycld/core/file-viewer/types'
 import { useAuthedFileURL } from '@tinycld/core/file-viewer/use-authed-file-url'
+import { useEffect } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import { parseWorkbook, type WorkbookModel } from '../lib/xlsx-adapter'
+import { useWorkbookStore } from '../stores/workbook-store'
 import { Grid } from './Grid'
 
 export function SheetsPreview({ source }: PreviewProps) {
     const { url, isLoading: isTokenLoading } = useAuthedFileURL(source)
+    const previewId = `preview:${source.recordId}`
 
     const {
         data: workbook,
@@ -23,7 +26,17 @@ export function SheetsPreview({ source }: PreviewProps) {
         enabled: !!url,
     })
 
-    if (isTokenLoading || isParseLoading) {
+    const setWorkbook = useWorkbookStore((s) => s.setWorkbook)
+    const discardWorkbook = useWorkbookStore((s) => s.discardWorkbook)
+    const hasWorkbook = useWorkbookStore((s) => s.workbooks[previewId] != null)
+
+    useEffect(() => {
+        if (workbook) setWorkbook(previewId, workbook)
+    }, [workbook, previewId, setWorkbook])
+
+    useEffect(() => () => discardWorkbook(previewId), [previewId, discardWorkbook])
+
+    if (isTokenLoading || isParseLoading || !hasWorkbook) {
         return (
             <View className="flex-1 items-center justify-center">
                 <ActivityIndicator />
@@ -49,7 +62,7 @@ export function SheetsPreview({ source }: PreviewProps) {
 
     return (
         <View className="flex-1 bg-background">
-            <Grid sheet={workbook.sheets[0]} />
+            <Grid workbookId={previewId} sheetIndex={0} readOnly />
         </View>
     )
 }

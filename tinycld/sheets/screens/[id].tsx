@@ -4,9 +4,11 @@ import { useAuthedFileURL } from '@tinycld/core/file-viewer/use-authed-file-url'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { useLocalSearchParams } from 'expo-router'
+import { useEffect } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import { Grid } from '../components/Grid'
 import { parseWorkbook, type WorkbookModel } from '../lib/xlsx-adapter'
+import { useWorkbookStore } from '../stores/workbook-store'
 
 export default function SheetsDetail() {
     const { id } = useLocalSearchParams<{ id: string }>()
@@ -37,7 +39,7 @@ export default function SheetsDetail() {
     const { url, isLoading: isTokenLoading } = useAuthedFileURL(source)
 
     const {
-        data: workbook,
+        data: parsedWorkbook,
         isLoading: isParseLoading,
         error: parseError,
     } = useQuery<WorkbookModel>({
@@ -51,11 +53,32 @@ export default function SheetsDetail() {
         enabled: !!url,
     })
 
+    // Seed the editable workbook store the first time the parsed model
+    // arrives. Re-seeding on subsequent fetches would clobber unsaved
+    // edits — only seed if we haven't already.
+    const setWorkbook = useWorkbookStore((s) => s.setWorkbook)
+    const discardWorkbook = useWorkbookStore((s) => s.discardWorkbook)
+    const hasWorkbook = useWorkbookStore((s) => (item?.id ? s.workbooks[item.id] != null : false))
+
+    useEffect(() => {
+        if (parsedWorkbook && item?.id && !hasWorkbook) {
+            setWorkbook(item.id, parsedWorkbook)
+        }
+    }, [parsedWorkbook, item?.id, hasWorkbook, setWorkbook])
+
+    useEffect(() => {
+        const sheetId = item?.id
+        if (!sheetId) return
+        return () => discardWorkbook(sheetId)
+    }, [item?.id, discardWorkbook])
+
+    const firstSheetName = useWorkbookStore((s) => (item?.id ? (s.workbooks[item.id]?.sheets[0]?.name ?? null) : null))
+
     if (isItemLoading || !item) {
         return <CenteredMessage label="Loading spreadsheet…" spinner />
     }
 
-    if (isTokenLoading || isParseLoading) {
+    if (isTokenLoading || isParseLoading || !hasWorkbook) {
         return <CenteredMessage label="Opening…" spinner />
     }
 
@@ -63,11 +86,9 @@ export default function SheetsDetail() {
         return <CenteredMessage label={`Could not open spreadsheet: ${parseError.message}`} />
     }
 
-    if (!workbook || workbook.sheets.length === 0) {
+    if (firstSheetName == null) {
         return <CenteredMessage label="Spreadsheet is empty." />
     }
-
-    const firstSheet = workbook.sheets[0]
 
     return (
         <View className="flex-1 bg-background">
@@ -75,9 +96,9 @@ export default function SheetsDetail() {
                 <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
                     {item.name}
                 </Text>
-                <Text className="text-xs text-muted-foreground">{firstSheet.name}</Text>
+                <Text className="text-xs text-muted-foreground">{firstSheetName}</Text>
             </View>
-            <Grid sheet={firstSheet} />
+            <Grid workbookId={item.id} sheetIndex={0} />
         </View>
     )
 }

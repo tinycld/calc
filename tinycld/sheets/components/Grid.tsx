@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
     type LayoutChangeEvent,
     type NativeScrollEvent,
@@ -6,9 +6,11 @@ import {
     Pressable,
     ScrollView,
     Text,
+    TextInput,
     View,
 } from 'react-native'
-import { cellKey, columnLabel, type WorksheetModel } from '../lib/xlsx-adapter'
+import { cellKey, columnLabel } from '../lib/workbook-types'
+import { useWorkbookStore } from '../stores/workbook-store'
 
 const CELL_WIDTH = 96
 const CELL_HEIGHT = 28
@@ -23,9 +25,11 @@ export interface GridHandle {
 }
 
 interface GridProps {
-    sheet: WorksheetModel
+    workbookId: string
+    sheetIndex: number
     minRows?: number
     minCols?: number
+    readOnly?: boolean
 }
 
 interface SelectedCell {
@@ -34,11 +38,19 @@ interface SelectedCell {
 }
 
 export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
-    { sheet, minRows = MIN_ROWS, minCols = MIN_COLS },
+    { workbookId, sheetIndex, minRows = MIN_ROWS, minCols = MIN_COLS, readOnly = false },
     ref
 ) {
-    const rows = Math.max(sheet.rowCount, minRows)
-    const cols = Math.max(sheet.colCount, minCols)
+    // Each selector returns a primitive so Zustand's default Object.is
+    // equality short-circuits on identical reads. Building one combined
+    // object literal here would return a fresh reference every render and
+    // drive an infinite update loop.
+    const rowCount = useWorkbookStore((s) => s.workbooks[workbookId]?.sheets[sheetIndex]?.rowCount ?? 0)
+    const colCount = useWorkbookStore((s) => s.workbooks[workbookId]?.sheets[sheetIndex]?.colCount ?? 0)
+    const setCell = useWorkbookStore((s) => s.setCell)
+
+    const rows = Math.max(rowCount, minRows)
+    const cols = Math.max(colCount, minCols)
 
     const contentWidth = cols * CELL_WIDTH
     const contentHeight = rows * CELL_HEIGHT
@@ -55,6 +67,33 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     const [viewportHeight, setViewportHeight] = useState(0)
 
     const [selected, setSelected] = useState<SelectedCell | null>(null)
+    const [editingCell, setEditingCell] = useState<SelectedCell | null>(null)
+
+    const onSelectCell = useCallback((cell: SelectedCell) => {
+        setSelected(cell)
+        setEditingCell(null)
+    }, [])
+
+    const onEditCell = useCallback(
+        (cell: SelectedCell) => {
+            if (readOnly) return
+            setSelected(cell)
+            setEditingCell(cell)
+        },
+        [readOnly]
+    )
+
+    const onCommitEdit = useCallback(
+        (row: number, col: number, value: string) => {
+            setCell(workbookId, sheetIndex, row, col, value)
+            setEditingCell(null)
+        },
+        [setCell, workbookId, sheetIndex]
+    )
+
+    const onCancelEdit = useCallback(() => {
+        setEditingCell(null)
+    }, [])
 
     const horizontalRef = useRef<ScrollView>(null)
     const verticalRef = useRef<ScrollView>(null)
@@ -130,9 +169,14 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                     contentWidth={contentWidth}
                     contentHeight={contentHeight}
                     visible={visible}
-                    sheet={sheet}
+                    workbookId={workbookId}
+                    sheetIndex={sheetIndex}
                     selected={selected}
-                    onSelect={setSelected}
+                    editingCell={editingCell}
+                    onSelect={onSelectCell}
+                    onEdit={onEditCell}
+                    onCommitEdit={onCommitEdit}
+                    onCancelEdit={onCancelEdit}
                     onLayout={onBodyLayout}
                     onHorizontalScroll={onHorizontalScroll}
                     onVerticalScroll={onVerticalScroll}
@@ -243,9 +287,14 @@ interface BodyProps {
     contentWidth: number
     contentHeight: number
     visible: { firstRow: number; lastRow: number; firstCol: number; lastCol: number }
-    sheet: WorksheetModel
+    workbookId: string
+    sheetIndex: number
     selected: SelectedCell | null
+    editingCell: SelectedCell | null
     onSelect: (cell: SelectedCell) => void
+    onEdit: (cell: SelectedCell) => void
+    onCommitEdit: (row: number, col: number, value: string) => void
+    onCancelEdit: () => void
     onLayout: (e: LayoutChangeEvent) => void
     onHorizontalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
     onVerticalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
@@ -257,9 +306,14 @@ function Body({
     contentWidth,
     contentHeight,
     visible,
-    sheet,
+    workbookId,
+    sheetIndex,
     selected,
+    editingCell,
     onSelect,
+    onEdit,
+    onCommitEdit,
+    onCancelEdit,
     onLayout,
     onHorizontalScroll,
     onVerticalScroll,
@@ -267,30 +321,28 @@ function Body({
     const cells: React.ReactNode[] = []
     for (let row = visible.firstRow; row <= visible.lastRow; row++) {
         for (let col = visible.firstCol; col <= visible.lastCol; col++) {
-            const cell = sheet.cells.get(cellKey(row, col))
+            const isEditing = editingCell?.row === row && editingCell?.col === col
+            const isSelected = selected?.row === row && selected?.col === col
             cells.push(
-                <Pressable
+                <Cell
                     key={`${row}:${col}`}
-                    onPress={() => onSelect({ row, col })}
-                    style={{
-                        position: 'absolute',
-                        left: (col - 1) * CELL_WIDTH,
-                        top: (row - 1) * CELL_HEIGHT,
-                        width: CELL_WIDTH,
-                        height: CELL_HEIGHT,
-                    }}
-                    className="border-r border-b border-border bg-background justify-center px-1"
-                >
-                    <Text className="text-xs text-foreground" numberOfLines={1}>
-                        {cell?.display ?? ''}
-                    </Text>
-                </Pressable>
+                    workbookId={workbookId}
+                    sheetIndex={sheetIndex}
+                    row={row}
+                    col={col}
+                    isSelected={isSelected}
+                    isEditing={isEditing}
+                    onSelect={onSelect}
+                    onEdit={onEdit}
+                    onCommitEdit={onCommitEdit}
+                    onCancelEdit={onCancelEdit}
+                />
             )
         }
     }
 
     const selectionOverlay =
-        selected != null ? (
+        selected != null && editingCell == null ? (
             <View
                 pointerEvents="none"
                 style={{
@@ -328,5 +380,119 @@ function Body({
                 </ScrollView>
             </ScrollView>
         </View>
+    )
+}
+
+interface CellProps {
+    workbookId: string
+    sheetIndex: number
+    row: number
+    col: number
+    isSelected: boolean
+    isEditing: boolean
+    onSelect: (cell: SelectedCell) => void
+    onEdit: (cell: SelectedCell) => void
+    onCommitEdit: (row: number, col: number, value: string) => void
+    onCancelEdit: () => void
+}
+
+const Cell = memo(function Cell({
+    workbookId,
+    sheetIndex,
+    row,
+    col,
+    isSelected,
+    isEditing,
+    onSelect,
+    onEdit,
+    onCommitEdit,
+    onCancelEdit,
+}: CellProps) {
+    const display = useWorkbookStore(
+        (s) => s.workbooks[workbookId]?.sheets[sheetIndex]?.cells[cellKey(row, col)]?.display ?? ''
+    )
+
+    const left = (col - 1) * CELL_WIDTH
+    const top = (row - 1) * CELL_HEIGHT
+
+    if (isEditing) {
+        return (
+            <CellEditor
+                left={left}
+                top={top}
+                initial={display}
+                onCommit={(value) => onCommitEdit(row, col, value)}
+                onCancel={onCancelEdit}
+            />
+        )
+    }
+
+    const onPress = () => {
+        if (isSelected) {
+            onEdit({ row, col })
+        } else {
+            onSelect({ row, col })
+        }
+    }
+
+    return (
+        <Pressable
+            onPress={onPress}
+            style={{
+                position: 'absolute',
+                left,
+                top,
+                width: CELL_WIDTH,
+                height: CELL_HEIGHT,
+            }}
+            className="border-r border-b border-border bg-background justify-center px-1"
+        >
+            <Text className="text-xs text-foreground" numberOfLines={1}>
+                {display}
+            </Text>
+        </Pressable>
+    )
+})
+
+interface CellEditorProps {
+    left: number
+    top: number
+    initial: string
+    onCommit: (value: string) => void
+    onCancel: () => void
+}
+
+function CellEditor({ left, top, initial, onCommit, onCancel }: CellEditorProps) {
+    const [value, setValue] = useState(initial)
+
+    return (
+        <TextInput
+            autoFocus
+            value={value}
+            onChangeText={setValue}
+            onSubmitEditing={() => onCommit(value)}
+            onBlur={() => onCommit(value)}
+            onKeyPress={(e) => {
+                // RN-Web surfaces Escape via onKeyPress; on native this
+                // handler is a no-op for Escape (no hardware key), which
+                // is fine — blur/Enter still commit.
+                const key = (e.nativeEvent as { key?: string }).key
+                if (key === 'Escape') {
+                    onCancel()
+                }
+            }}
+            style={{
+                position: 'absolute',
+                left,
+                top,
+                width: CELL_WIDTH,
+                height: CELL_HEIGHT,
+                paddingHorizontal: 4,
+                fontSize: 12,
+                borderWidth: 2,
+                borderColor: '#22a06b',
+            }}
+            className="bg-background text-foreground"
+        />
     )
 }

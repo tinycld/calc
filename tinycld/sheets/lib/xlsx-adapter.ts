@@ -1,32 +1,14 @@
 import ExcelJS from 'exceljs'
+import { type CellValue, cellKey, type WorkbookModel, type WorksheetModel } from './workbook-types'
 
-export interface CellValue {
-    raw: string | number | boolean | Date | null
-    display: string
-    formula?: string
-}
-
-export interface WorksheetModel {
-    name: string
-    rowCount: number
-    colCount: number
-    cells: Map<string, CellValue>
-}
-
-export interface WorkbookModel {
-    sheets: WorksheetModel[]
-}
-
-export function cellKey(row: number, col: number): string {
-    return `${row}:${col}`
-}
+export { type CellValue, cellKey, columnLabel, type WorkbookModel, type WorksheetModel } from './workbook-types'
 
 export async function parseWorkbook(buffer: ArrayBuffer): Promise<WorkbookModel> {
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buffer)
 
     const sheets: WorksheetModel[] = wb.worksheets.map((ws) => {
-        const cells = new Map<string, CellValue>()
+        const cells: Record<string, CellValue> = {}
         let maxRow = 0
         let maxCol = 0
 
@@ -71,7 +53,7 @@ export async function parseWorkbook(buffer: ArrayBuffer): Promise<WorkbookModel>
                     display = formatDisplay(value)
                 }
 
-                cells.set(cellKey(rowNumber, colNumber), { raw, display, formula })
+                cells[cellKey(rowNumber, colNumber)] = { raw, display, formula }
                 if (rowNumber > maxRow) maxRow = rowNumber
                 if (colNumber > maxCol) maxCol = colNumber
             })
@@ -101,15 +83,4 @@ function formatDisplay(value: unknown): string {
     if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE'
     if (value instanceof Date) return value.toISOString().slice(0, 10)
     return String(value)
-}
-
-export function columnLabel(col: number): string {
-    let n = col
-    let label = ''
-    while (n > 0) {
-        const rem = (n - 1) % 26
-        label = String.fromCharCode(65 + rem) + label
-        n = Math.floor((n - 1) / 26)
-    }
-    return label || 'A'
 }
