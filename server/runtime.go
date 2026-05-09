@@ -3,6 +3,7 @@ package calc
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +22,13 @@ import (
 // own internal state machine; the per-room mutex below only guards the
 // docs map itself.
 type Runtime struct {
+	// bootstrap, when non-nil, runs synchronously inside NewDoc with
+	// the freshly-minted Y.Doc. Production wires this to load the
+	// drive_items xlsx and stamp it into the doc, so the broker's
+	// first SyncReply already carries populated sheets/cells. Tests
+	// leave it nil — they construct doc state via ApplyUpdate.
+	bootstrap func(roomID string, doc *ycrdt.Doc) error
+
 	mu   sync.Mutex
 	docs map[string]*ycrdt.Doc
 }
@@ -31,17 +39,45 @@ func NewRuntime() *Runtime {
 	return &Runtime{docs: map[string]*ycrdt.Doc{}}
 }
 
+// SetBootstrap registers a per-room bootstrap hook. NewDoc invokes the
+// hook (if set) inside the same critical section that creates the doc,
+// so MsgSyncRequest replies are guaranteed to see the populated state.
+//
+// A nil hook disables bootstrap (for tests). Passing nil after a hook
+// has been registered clears it.
+func (r *Runtime) SetBootstrap(hook func(roomID string, doc *ycrdt.Doc) error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.bootstrap = hook
+}
+
 // NewDoc satisfies realtime.DocRuntime: mints a fresh server-side
 // Y.Doc identified by the broker's roomID and returns an opaque
 // handle the broker calls into for the room's lifetime.
+//
+// If a bootstrap hook is registered, it runs synchronously after the
+// doc is created. Bootstrap failures are logged but do not abort the
+// room creation — a partially-bootstrapped (or empty) doc is preferable
+// to refusing the connection, since a peer-driven SyncRequest path
+// can still recover (the client treats an empty SyncReply as "you're
+// alone" and previously fell back to its own xlsx parse).
 func (r *Runtime) NewDoc(roomID string) (realtime.DocHandle, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if _, exists := r.docs[roomID]; exists {
+		r.mu.Unlock()
 		return nil, fmt.Errorf("calc: room %s already has a Y.Doc", roomID)
 	}
 	doc := ycrdt.NewDoc(roomID, false, nil, nil, false)
 	r.docs[roomID] = doc
+	hook := r.bootstrap
+	r.mu.Unlock()
+
+	if hook != nil {
+		if err := hook(roomID, doc); err != nil {
+			slog.Warn("calc: bootstrap hook failed; room continues with empty doc",
+				"roomID", roomID, "err", err)
+		}
+	}
 	return &sheetsDocHandle{runtime: r, id: roomID, doc: doc}, nil
 }
 
@@ -121,7 +157,7 @@ func (h *sheetsDocHandle) Close() error {
 
 // Snapshot returns a Go-native, point-in-time view of the room's
 // Y.Doc. The serializer in persist.go consumes this; nothing in this
-// path touches ExcelJS.
+// path crosses the realtime wire.
 func (h *sheetsDocHandle) Snapshot() (YDocSnapshot, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

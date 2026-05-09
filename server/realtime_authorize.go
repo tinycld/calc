@@ -33,8 +33,12 @@ var errNoShare = errors.New("calc: no drive_shares row for this user/item")
 //   - OnRoomCreate / OnDocUpdate / OnEmpty: the save coordinator
 //     consumes broker events to drive debounce/ceiling/teardown
 //     persistence.
+//   - Runtime.SetBootstrap: server reads the drive_items xlsx and
+//     populates the doc before the broker's first SyncReply, so
+//     clients never see xlsx bytes.
 func registerRealtime(app *pocketbase.PocketBase) {
 	runtime := NewRuntime()
+	runtime.SetBootstrap(makeXLSXBootstrap(app))
 	coordinator := NewSaveCoordinator(MakeProductionFlush(app))
 
 	realtime.RegisterRoomKindWith(roomKindCalc, realtime.RoomKindOptions{

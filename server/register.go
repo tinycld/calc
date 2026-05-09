@@ -17,4 +17,5 @@ import (
 // examples.
 func Register(app *pocketbase.PocketBase) {
 	registerRealtime(app)
+	registerAPI(app)
 }
