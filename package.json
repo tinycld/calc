@@ -11,7 +11,6 @@
         "./collections": "./tinycld/calc/collections.ts",
         "./screens/*": "./tinycld/calc/screens/*.tsx",
         "./seed": "./tinycld/calc/seed.ts",
-        "./sidebar": "./tinycld/calc/sidebar.tsx",
         "./provider": "./tinycld/calc/provider.tsx",
         "./hooks/*": "./tinycld/calc/hooks/*.ts",
         "./components/*": "./tinycld/calc/components/*.tsx"
