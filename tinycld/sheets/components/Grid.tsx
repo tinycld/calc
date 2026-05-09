@@ -9,8 +9,11 @@ import {
     TextInput,
     View,
 } from 'react-native'
-import { cellKey, columnLabel } from '../lib/workbook-types'
-import { useWorkbookStore } from '../stores/workbook-store'
+import { type RemotePresence, usePresence } from '../hooks/use-presence'
+import { useWorkbook } from '../hooks/use-workbook-context'
+import { setYCell, useYCell } from '../hooks/use-y-cell'
+import { type SheetWithId, useYSheets } from '../hooks/use-y-sheets'
+import { columnLabel } from '../lib/workbook-types'
 
 const CELL_WIDTH = 96
 const CELL_HEIGHT = 28
@@ -25,8 +28,7 @@ export interface GridHandle {
 }
 
 interface GridProps {
-    workbookId: string
-    sheetIndex: number
+    sheetId: string
     minRows?: number
     minCols?: number
     readOnly?: boolean
@@ -37,63 +39,102 @@ interface SelectedCell {
     col: number
 }
 
+interface Viewport {
+    scrollX: number
+    scrollY: number
+    width: number
+    height: number
+}
+
 export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
-    { workbookId, sheetIndex, minRows = MIN_ROWS, minCols = MIN_COLS, readOnly = false },
+    { sheetId, minRows = MIN_ROWS, minCols = MIN_COLS, readOnly = false },
     ref
 ) {
-    // Each selector returns a primitive so Zustand's default Object.is
-    // equality short-circuits on identical reads. Building one combined
-    // object literal here would return a fresh reference every render and
-    // drive an infinite update loop.
-    const rowCount = useWorkbookStore((s) => s.workbooks[workbookId]?.sheets[sheetIndex]?.rowCount ?? 0)
-    const colCount = useWorkbookStore((s) => s.workbooks[workbookId]?.sheets[sheetIndex]?.colCount ?? 0)
-    const setCell = useWorkbookStore((s) => s.setCell)
+    const { doc, awareness } = useWorkbook()
+    const sheets = useYSheets(doc)
+    const sheet = sheets.find((s) => s.id === sheetId) ?? null
 
-    const rows = Math.max(rowCount, minRows)
-    const cols = Math.max(colCount, minCols)
+    const rows = Math.max(sheet?.rowCount ?? 0, minRows)
+    const cols = Math.max(sheet?.colCount ?? 0, minCols)
 
     const contentWidth = cols * CELL_WIDTH
     const contentHeight = rows * CELL_HEIGHT
 
-    // Scroll position tracked in state for windowing math. Re-renders only
-    // when the visible-cell range actually changes (see onScroll below), so
-    // the cost is bounded by viewport size, not total cell count.
-    const [scrollX, setScrollX] = useState(0)
-    const [scrollY, setScrollY] = useState(0)
-
-    // Viewport size measured from the body container's onLayout. Until
-    // we've measured we render zero rows/cols — that's one frame, harmless.
-    const [viewportWidth, setViewportWidth] = useState(0)
-    const [viewportHeight, setViewportHeight] = useState(0)
+    // Viewport metrics: scroll position and measured size collapsed
+    // into a single state so changes don't fan out into 4 separate
+    // setState round-trips per scroll/layout event.
+    const [viewport, setViewport] = useState<Viewport>({ scrollX: 0, scrollY: 0, width: 0, height: 0 })
 
     const [selected, setSelected] = useState<SelectedCell | null>(null)
     const [editingCell, setEditingCell] = useState<SelectedCell | null>(null)
 
-    const onSelectCell = useCallback((cell: SelectedCell) => {
-        setSelected(cell)
-        setEditingCell(null)
-    }, [])
+    // publishLocal writes the consumer-shaped awareness slot. Called
+    // by every handler that changes selection/editing rather than via
+    // a sync-via-effect: pairing useState with useEffect to mirror
+    // state into Awareness is the exact anti-pattern CLAUDE.md flags
+    // ("if you find yourself pairing useState with useEffect to sync
+    // or transform data…").
+    const publishLocal = useCallback(
+        (next: { selection: SelectedCell | null; editing: { row: number; col: number; draft: string } | null }) => {
+            const local = awareness.getLocalState() ?? {}
+            awareness.setLocalState({
+                ...local,
+                sheetId,
+                selection: next.selection,
+                editing: next.editing,
+            })
+        },
+        [awareness, sheetId]
+    )
+
+    const onSelectCell = useCallback(
+        (cell: SelectedCell) => {
+            setSelected(cell)
+            setEditingCell(null)
+            publishLocal({ selection: cell, editing: null })
+        },
+        [publishLocal]
+    )
 
     const onEditCell = useCallback(
         (cell: SelectedCell) => {
             if (readOnly) return
             setSelected(cell)
             setEditingCell(cell)
+            publishLocal({
+                selection: cell,
+                editing: { row: cell.row, col: cell.col, draft: '' },
+            })
         },
-        [readOnly]
+        [readOnly, publishLocal]
+    )
+
+    const onEditDraftChange = useCallback(
+        (row: number, col: number, draft: string) => {
+            publishLocal({ selection: { row, col }, editing: { row, col, draft } })
+        },
+        [publishLocal]
     )
 
     const onCommitEdit = useCallback(
         (row: number, col: number, value: string) => {
-            setCell(workbookId, sheetIndex, row, col, value)
+            if (readOnly) {
+                setEditingCell(null)
+                publishLocal({ selection: { row, col }, editing: null })
+                return
+            }
+            setYCell(doc, sheetId, row, col, value)
             setEditingCell(null)
+            publishLocal({ selection: { row, col }, editing: null })
         },
-        [setCell, workbookId, sheetIndex]
+        [doc, sheetId, readOnly, publishLocal]
     )
 
     const onCancelEdit = useCallback(() => {
+        const cell = selected
         setEditingCell(null)
-    }, [])
+        publishLocal({ selection: cell, editing: null })
+    }, [selected, publishLocal])
 
     const horizontalRef = useRef<ScrollView>(null)
     const verticalRef = useRef<ScrollView>(null)
@@ -114,19 +155,19 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     )
 
     const visible = useMemo(() => {
-        if (viewportWidth === 0 || viewportHeight === 0) {
+        if (viewport.width === 0 || viewport.height === 0) {
             return { firstRow: 1, lastRow: 0, firstCol: 1, lastCol: 0 }
         }
-        const firstRow = Math.max(1, Math.floor(scrollY / CELL_HEIGHT) + 1 - OVERSCAN)
-        const lastRow = Math.min(rows, Math.ceil((scrollY + viewportHeight) / CELL_HEIGHT) + OVERSCAN)
-        const firstCol = Math.max(1, Math.floor(scrollX / CELL_WIDTH) + 1 - OVERSCAN)
-        const lastCol = Math.min(cols, Math.ceil((scrollX + viewportWidth) / CELL_WIDTH) + OVERSCAN)
+        const firstRow = Math.max(1, Math.floor(viewport.scrollY / CELL_HEIGHT) + 1 - OVERSCAN)
+        const lastRow = Math.min(rows, Math.ceil((viewport.scrollY + viewport.height) / CELL_HEIGHT) + OVERSCAN)
+        const firstCol = Math.max(1, Math.floor(viewport.scrollX / CELL_WIDTH) + 1 - OVERSCAN)
+        const lastCol = Math.min(cols, Math.ceil((viewport.scrollX + viewport.width) / CELL_WIDTH) + OVERSCAN)
         return { firstRow, lastRow, firstCol, lastCol }
-    }, [scrollX, scrollY, viewportWidth, viewportHeight, rows, cols])
+    }, [viewport, rows, cols])
 
     const onHorizontalScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const x = e.nativeEvent.contentOffset.x
-        setScrollX(x)
+        setViewport((v) => (v.scrollX === x ? v : { ...v, scrollX: x }))
         // Mirror to the column header so it stays aligned with the body.
         // Using a ref + scrollTo (rather than absolute-positioning the
         // header inside the body's content) keeps the header in its own
@@ -136,14 +177,17 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
 
     const onVerticalScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const y = e.nativeEvent.contentOffset.y
-        setScrollY(y)
+        setViewport((v) => (v.scrollY === y ? v : { ...v, scrollY: y }))
         leftColumnScrollRef.current?.scrollTo({ y, animated: false })
     }, [])
 
     const onBodyLayout = useCallback((e: LayoutChangeEvent) => {
-        setViewportWidth(e.nativeEvent.layout.width)
-        setViewportHeight(e.nativeEvent.layout.height)
+        const { width, height } = e.nativeEvent.layout
+        setViewport((v) => (v.width === width && v.height === height ? v : { ...v, width, height }))
     }, [])
+
+    const presence = usePresence(awareness)
+    const presenceOnSheet = useMemo(() => presence.filter((p) => p.sheetId === sheetId), [presence, sheetId])
 
     return (
         <View className="flex-1 bg-background">
@@ -169,12 +213,13 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                     contentWidth={contentWidth}
                     contentHeight={contentHeight}
                     visible={visible}
-                    workbookId={workbookId}
-                    sheetIndex={sheetIndex}
+                    sheet={sheet}
                     selected={selected}
                     editingCell={editingCell}
+                    presenceOnSheet={presenceOnSheet}
                     onSelect={onSelectCell}
                     onEdit={onEditCell}
+                    onEditDraftChange={onEditDraftChange}
                     onCommitEdit={onCommitEdit}
                     onCancelEdit={onCancelEdit}
                     onLayout={onBodyLayout}
@@ -287,12 +332,13 @@ interface BodyProps {
     contentWidth: number
     contentHeight: number
     visible: { firstRow: number; lastRow: number; firstCol: number; lastCol: number }
-    workbookId: string
-    sheetIndex: number
+    sheet: SheetWithId | null
     selected: SelectedCell | null
     editingCell: SelectedCell | null
+    presenceOnSheet: RemotePresence[]
     onSelect: (cell: SelectedCell) => void
     onEdit: (cell: SelectedCell) => void
+    onEditDraftChange: (row: number, col: number, draft: string) => void
     onCommitEdit: (row: number, col: number, value: string) => void
     onCancelEdit: () => void
     onLayout: (e: LayoutChangeEvent) => void
@@ -306,42 +352,62 @@ function Body({
     contentWidth,
     contentHeight,
     visible,
-    workbookId,
-    sheetIndex,
+    sheet,
     selected,
     editingCell,
+    presenceOnSheet,
     onSelect,
     onEdit,
+    onEditDraftChange,
     onCommitEdit,
     onCancelEdit,
     onLayout,
     onHorizontalScroll,
     onVerticalScroll,
 }: BodyProps) {
+    const sheetId = sheet?.id ?? ''
+
+    // Map "row:col" → first remote editor occupying that cell. Lifted
+    // out of <Cell> so cells don't subscribe to presence individually
+    // (one subscription per visible cell would re-render the whole
+    // viewport on every keystroke from any peer).
+    const remoteEditingByCell = useMemo(() => {
+        const m = new Map<string, RemotePresence>()
+        for (const p of presenceOnSheet) {
+            if (p.editing == null) continue
+            m.set(`${p.editing.row}:${p.editing.col}`, p)
+        }
+        return m
+    }, [presenceOnSheet])
+
     const cells: React.ReactNode[] = []
-    for (let row = visible.firstRow; row <= visible.lastRow; row++) {
-        for (let col = visible.firstCol; col <= visible.lastCol; col++) {
-            const isEditing = editingCell?.row === row && editingCell?.col === col
-            const isSelected = selected?.row === row && selected?.col === col
-            cells.push(
-                <Cell
-                    key={`${row}:${col}`}
-                    workbookId={workbookId}
-                    sheetIndex={sheetIndex}
-                    row={row}
-                    col={col}
-                    isSelected={isSelected}
-                    isEditing={isEditing}
-                    onSelect={onSelect}
-                    onEdit={onEdit}
-                    onCommitEdit={onCommitEdit}
-                    onCancelEdit={onCancelEdit}
-                />
-            )
+    if (sheet != null) {
+        for (let row = visible.firstRow; row <= visible.lastRow; row++) {
+            for (let col = visible.firstCol; col <= visible.lastCol; col++) {
+                const isEditing = editingCell?.row === row && editingCell?.col === col
+                const isSelected = selected?.row === row && selected?.col === col
+                const remoteEditor = remoteEditingByCell.get(`${row}:${col}`) ?? null
+                cells.push(
+                    <Cell
+                        key={`${row}:${col}`}
+                        sheetId={sheetId}
+                        row={row}
+                        col={col}
+                        isSelected={isSelected}
+                        isEditing={isEditing}
+                        remoteEditor={remoteEditor}
+                        onSelect={onSelect}
+                        onEdit={onEdit}
+                        onEditDraftChange={onEditDraftChange}
+                        onCommitEdit={onCommitEdit}
+                        onCancelEdit={onCancelEdit}
+                    />
+                )
+            }
         }
     }
 
-    const selectionOverlay =
+    const localSelectionOverlay =
         selected != null && editingCell == null ? (
             <View
                 pointerEvents="none"
@@ -356,6 +422,33 @@ function Body({
                 }}
             />
         ) : null
+
+    const remoteOverlays = presenceOnSheet.flatMap((p) => {
+        const out: React.ReactNode[] = []
+        if (p.selection != null && p.editing == null) {
+            out.push(
+                <RemoteSelectionOverlay
+                    key={`sel-${p.clientID}`}
+                    row={p.selection.row}
+                    col={p.selection.col}
+                    color={p.user.color}
+                    name={p.user.name}
+                />
+            )
+        }
+        if (p.editing != null) {
+            out.push(
+                <RemoteSelectionOverlay
+                    key={`edit-${p.clientID}`}
+                    row={p.editing.row}
+                    col={p.editing.col}
+                    color={p.user.color}
+                    name={p.user.name}
+                />
+            )
+        }
+        return out
+    })
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }} onLayout={onLayout}>
@@ -376,7 +469,8 @@ function Body({
                     contentContainerStyle={{ width: contentWidth, height: contentHeight }}
                 >
                     {cells}
-                    {selectionOverlay}
+                    {remoteOverlays}
+                    {localSelectionOverlay}
                 </ScrollView>
             </ScrollView>
         </View>
@@ -384,33 +478,37 @@ function Body({
 }
 
 interface CellProps {
-    workbookId: string
-    sheetIndex: number
+    sheetId: string
     row: number
     col: number
     isSelected: boolean
     isEditing: boolean
+    remoteEditor: RemotePresence | null
     onSelect: (cell: SelectedCell) => void
     onEdit: (cell: SelectedCell) => void
+    onEditDraftChange: (row: number, col: number, draft: string) => void
     onCommitEdit: (row: number, col: number, value: string) => void
     onCancelEdit: () => void
 }
 
 const Cell = memo(function Cell({
-    workbookId,
-    sheetIndex,
+    sheetId,
     row,
     col,
     isSelected,
     isEditing,
+    remoteEditor,
     onSelect,
     onEdit,
+    onEditDraftChange,
     onCommitEdit,
     onCancelEdit,
 }: CellProps) {
-    const display = useWorkbookStore(
-        (s) => s.workbooks[workbookId]?.sheets[sheetIndex]?.cells[cellKey(row, col)]?.display ?? ''
-    )
+    const { doc } = useWorkbook()
+    const cellValue = useYCell(doc, sheetId, row, col)
+    const display = cellValue?.display ?? ''
+
+    const remoteDraft = remoteEditor?.editing?.draft
 
     const left = (col - 1) * CELL_WIDTH
     const top = (row - 1) * CELL_HEIGHT
@@ -421,6 +519,7 @@ const Cell = memo(function Cell({
                 left={left}
                 top={top}
                 initial={display}
+                onDraftChange={(draft) => onEditDraftChange(row, col, draft)}
                 onCommit={(value) => onCommitEdit(row, col, value)}
                 onCancel={onCancelEdit}
             />
@@ -435,6 +534,9 @@ const Cell = memo(function Cell({
         }
     }
 
+    const showRemoteDraft = remoteDraft != null
+    const textColor = showRemoteDraft ? remoteEditor?.user.color : undefined
+
     return (
         <Pressable
             onPress={onPress}
@@ -447,8 +549,12 @@ const Cell = memo(function Cell({
             }}
             className="border-r border-b border-border bg-background justify-center px-1"
         >
-            <Text className="text-xs text-foreground" numberOfLines={1}>
-                {display}
+            <Text
+                className="text-xs"
+                numberOfLines={1}
+                style={showRemoteDraft ? { color: textColor, fontStyle: 'italic' } : undefined}
+            >
+                {showRemoteDraft ? remoteDraft : display}
             </Text>
         </Pressable>
     )
@@ -458,18 +564,31 @@ interface CellEditorProps {
     left: number
     top: number
     initial: string
+    onDraftChange: (draft: string) => void
     onCommit: (value: string) => void
     onCancel: () => void
 }
 
-function CellEditor({ left, top, initial, onCommit, onCancel }: CellEditorProps) {
+function CellEditor({ left, top, initial, onDraftChange, onCommit, onCancel }: CellEditorProps) {
     const [value, setValue] = useState(initial)
+
+    // Publish keystrokes directly into local awareness via the
+    // onDraftChange callback — no useEffect mirroring step. Awareness
+    // encoding/transport is debounced upstream by y-protocols's
+    // natural batching, so we don't add our own debounce here.
+    const onChangeText = useCallback(
+        (next: string) => {
+            setValue(next)
+            onDraftChange(next)
+        },
+        [onDraftChange]
+    )
 
     return (
         <TextInput
             autoFocus
             value={value}
-            onChangeText={setValue}
+            onChangeText={onChangeText}
             onSubmitEditing={() => onCommit(value)}
             onBlur={() => onCommit(value)}
             onKeyPress={(e) => {
@@ -494,5 +613,44 @@ function CellEditor({ left, top, initial, onCommit, onCancel }: CellEditorProps)
             }}
             className="bg-background text-foreground"
         />
+    )
+}
+
+interface RemoteSelectionOverlayProps {
+    row: number
+    col: number
+    color: string
+    name: string
+}
+
+function RemoteSelectionOverlay({ row, col, color, name }: RemoteSelectionOverlayProps) {
+    return (
+        <View
+            pointerEvents="none"
+            style={{
+                position: 'absolute',
+                left: (col - 1) * CELL_WIDTH,
+                top: (row - 1) * CELL_HEIGHT,
+                width: CELL_WIDTH,
+                height: CELL_HEIGHT,
+                borderWidth: 2,
+                borderColor: color,
+            }}
+        >
+            <View
+                style={{
+                    position: 'absolute',
+                    bottom: -16,
+                    left: 0,
+                    paddingHorizontal: 4,
+                    paddingVertical: 1,
+                    backgroundColor: color,
+                }}
+            >
+                <Text style={{ color: 'white', fontSize: 9 }} numberOfLines={1}>
+                    {name}
+                </Text>
+            </View>
+        </View>
     )
 }

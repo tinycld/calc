@@ -1,17 +1,19 @@
 import { eq } from '@tanstack/db'
-import { useQuery } from '@tanstack/react-query'
-import { useAuthedFileURL } from '@tinycld/core/file-viewer/use-authed-file-url'
+import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
-import { useLocalSearchParams } from 'expo-router'
-import { useEffect } from 'react'
+import { router, useLocalSearchParams } from 'expo-router'
+import { useCallback, useMemo } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import { Grid } from '../components/Grid'
-import { parseWorkbook, type WorkbookModel } from '../lib/xlsx-adapter'
-import { useWorkbookStore } from '../stores/workbook-store'
+import { SheetTabs } from '../components/SheetTabs'
+import { useRealtime } from '../hooks/use-realtime'
+import { useUndoManager } from '../hooks/use-undo-manager'
+import { useWorkbook, WorkbookProvider } from '../hooks/use-workbook-context'
+import { useYSheets } from '../hooks/use-y-sheets'
 
 export default function SheetsDetail() {
-    const { id } = useLocalSearchParams<{ id: string }>()
+    const { id, sheet: sheetParam } = useLocalSearchParams<{ id: string; sheet?: string }>()
     const [driveItems] = useStore('drive_items')
 
     const { data: items = [], isLoading: isItemLoading } = useOrgLiveQuery(
@@ -25,68 +27,72 @@ export default function SheetsDetail() {
 
     const item = items[0]
 
-    const source = item
-        ? {
-              collectionId: 'drive_items',
-              recordId: item.id,
-              fileName: item.file,
-              displayName: item.name,
-              mimeType: item.mime_type,
-              size: item.size,
-          }
-        : undefined
-
-    const { url, isLoading: isTokenLoading } = useAuthedFileURL(source)
-
-    const {
-        data: parsedWorkbook,
-        isLoading: isParseLoading,
-        error: parseError,
-    } = useQuery<WorkbookModel>({
-        queryKey: ['sheets', 'workbook', item?.id, item?.file],
-        queryFn: async () => {
-            const resp = await fetch(url)
-            if (!resp.ok) throw new Error(`Could not download spreadsheet (${resp.status})`)
-            const buffer = await resp.arrayBuffer()
-            return parseWorkbook(buffer)
-        },
-        enabled: !!url,
-    })
-
-    // Seed the editable workbook store the first time the parsed model
-    // arrives. Re-seeding on subsequent fetches would clobber unsaved
-    // edits — only seed if we haven't already.
-    const setWorkbook = useWorkbookStore((s) => s.setWorkbook)
-    const discardWorkbook = useWorkbookStore((s) => s.discardWorkbook)
-    const hasWorkbook = useWorkbookStore((s) => (item?.id ? s.workbooks[item.id] != null : false))
-
-    useEffect(() => {
-        if (parsedWorkbook && item?.id && !hasWorkbook) {
-            setWorkbook(item.id, parsedWorkbook)
+    // Memoize so the bootstrap closure inside useRealtime sees a
+    // stable reference; useRealtime re-reads via ref on demand.
+    const source = useMemo(() => {
+        if (!item) return null
+        return {
+            collectionId: 'drive_items',
+            recordId: item.id,
+            fileName: item.file,
+            displayName: item.name,
+            mimeType: item.mime_type,
+            size: item.size,
         }
-    }, [parsedWorkbook, item?.id, hasWorkbook, setWorkbook])
+    }, [item])
 
-    useEffect(() => {
-        const sheetId = item?.id
-        if (!sheetId) return
-        return () => discardWorkbook(sheetId)
-    }, [item?.id, discardWorkbook])
-
-    const firstSheetName = useWorkbookStore((s) => (item?.id ? (s.workbooks[item.id]?.sheets[0]?.name ?? null) : null))
+    // Open the realtime room as soon as we have a workbook id. The
+    // file source is used only on first-joiner bootstrap; subsequent
+    // joiners get the doc from existing peers and ignore it.
+    const room = useRealtime({ workbookId: item?.id ?? '', source })
 
     if (isItemLoading || !item) {
         return <CenteredMessage label="Loading spreadsheet…" spinner />
     }
 
-    if (isTokenLoading || isParseLoading || !hasWorkbook) {
+    if (room == null || !room.isReady) {
         return <CenteredMessage label="Opening…" spinner />
     }
 
-    if (parseError) {
-        return <CenteredMessage label={`Could not open spreadsheet: ${parseError.message}`} />
-    }
+    return (
+        <WorkbookProvider
+            doc={room.doc}
+            awareness={room.awareness}
+            isReady={room.isReady}
+            isConnected={room.isConnected}
+        >
+            <DetailContent itemName={item.name} workbookId={item.id} sheetParam={sheetParam} />
+        </WorkbookProvider>
+    )
+}
 
-    if (firstSheetName == null) {
+interface DetailContentProps {
+    itemName: string
+    workbookId: string
+    sheetParam: string | undefined
+}
+
+function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps) {
+    const { doc, isConnected } = useWorkbook()
+    useUndoManager(doc)
+    const sheets = useYSheets(doc)
+    const orgHref = useOrgHref()
+
+    // Resolve the active sheet from the URL query, falling back to the
+    // first sheet when the param is missing or stale (peer-renamed,
+    // future delete). Don't write the fallback to the URL — only
+    // explicit clicks update it (otherwise every workbook URL would
+    // get dirtied on first load).
+    const activeSheet = sheets.find((s) => s.id === sheetParam) ?? sheets[0] ?? null
+
+    const onSelect = useCallback(
+        (nextSheetId: string) => {
+            router.replace(orgHref('sheets/[id]', { id: workbookId, sheet: nextSheetId }))
+        },
+        [orgHref, workbookId]
+    )
+
+    if (activeSheet == null) {
         return <CenteredMessage label="Spreadsheet is empty." />
     }
 
@@ -94,11 +100,12 @@ export default function SheetsDetail() {
         <View className="flex-1 bg-background">
             <View className="px-4 py-2 border-b border-border flex-row items-center gap-3">
                 <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
-                    {item.name}
+                    {itemName}
                 </Text>
-                <Text className="text-xs text-muted-foreground">{firstSheetName}</Text>
+                <ConnectionStatus isConnected={isConnected} />
             </View>
-            <Grid workbookId={item.id} sheetIndex={0} />
+            <Grid sheetId={activeSheet.id} />
+            <SheetTabs sheets={sheets} activeSheetId={activeSheet.id} onSelect={onSelect} />
         </View>
     )
 }
@@ -113,6 +120,16 @@ function CenteredMessage({ label, spinner }: CenteredMessageProps) {
         <View className="flex-1 items-center justify-center gap-3 bg-background">
             {spinner ? <ActivityIndicator /> : null}
             <Text className="text-sm text-muted-foreground">{label}</Text>
+        </View>
+    )
+}
+
+function ConnectionStatus({ isConnected }: { isConnected: boolean }) {
+    if (isConnected) return null
+    return (
+        <View className="flex-row items-center gap-1">
+            <ActivityIndicator size="small" />
+            <Text className="text-xs text-muted-foreground">Reconnecting…</Text>
         </View>
     )
 }
