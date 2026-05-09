@@ -6,7 +6,7 @@ import { useCreateDriveItem } from '@tinycld/drive/lib/upload-to-drive'
 import { router } from 'expo-router'
 import { FilePlus2, FileSpreadsheet } from 'lucide-react-native'
 import { Pressable, ScrollView, Text, View } from 'react-native'
-import { emptyWorkbookBuffer } from '../lib/xlsx-adapter'
+import { blankWorkbookBlob } from '../lib/blank-workbook'
 import { XLSX_MIME_TYPE } from '../types'
 
 export default function CalcIndex() {
@@ -24,10 +24,8 @@ export default function CalcIndex() {
     )
 
     const handleNew = async () => {
-        const buffer = await emptyWorkbookBuffer()
-        const blob = new Blob([buffer], { type: XLSX_MIME_TYPE })
         const result = await create.mutateAsync({
-            body: blob,
+            body: blankWorkbookBlob(),
             name: 'Untitled.xlsx',
             mimeType: XLSX_MIME_TYPE,
         })

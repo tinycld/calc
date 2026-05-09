@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import type { PreviewProps } from '@tinycld/core/file-viewer/types'
-import { useAuthedFileURL } from '@tinycld/core/file-viewer/use-authed-file-url'
+import { pb } from '@tinycld/core/lib/pocketbase'
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
-import { cellKey, columnLabel, parseWorkbook, type WorkbookModel } from '../lib/xlsx-adapter'
+import { cellKey, columnLabel, type WorkbookModel } from '../lib/workbook-types'
 
 const CELL_WIDTH = 96
 const CELL_HEIGHT = 28
@@ -10,31 +10,23 @@ const ROW_HEADER_WIDTH = 48
 const PREVIEW_MAX_ROWS = 50
 const PREVIEW_MAX_COLS = 26
 
-// CalcPreview renders a non-collaborative, read-only view of an
-// .xlsx file. It does NOT open a realtime WebSocket — the preview pane is
-// fire-and-forget and must not participate in editing. Sharing Y.Doc
-// state with the detail screen would couple the preview to the live
-// session (and would surface any in-progress edits to viewers who
-// haven't opened the editor proper).
+// CalcPreview renders a non-collaborative, read-only view of an .xlsx
+// file. It pulls the parsed grid from /api/calc/preview/:id — the
+// server is the only component that ever touches xlsx bytes. Rendering
+// the response payload directly keeps the preview decoupled from the
+// live realtime session (no surprise edits leaking from in-progress
+// editing into viewers who haven't opened the editor).
 export function CalcPreview({ source }: PreviewProps) {
-    const { url, isLoading: isTokenLoading } = useAuthedFileURL(source)
-
     const {
         data: workbook,
-        isLoading: isParseLoading,
+        isLoading,
         error,
     } = useQuery<WorkbookModel>({
-        queryKey: ['calc', 'preview', source.recordId, source.fileName],
-        queryFn: async () => {
-            const resp = await fetch(url)
-            if (!resp.ok) throw new Error(`Could not download spreadsheet (${resp.status})`)
-            const buffer = await resp.arrayBuffer()
-            return parseWorkbook(buffer)
-        },
-        enabled: !!url,
+        queryKey: ['calc', 'preview', source.recordId],
+        queryFn: () => pb.send<WorkbookModel>(`/api/calc/preview/${source.recordId}`, { method: 'GET' }),
     })
 
-    if (isTokenLoading || isParseLoading) {
+    if (isLoading) {
         return (
             <View className="flex-1 items-center justify-center">
                 <ActivityIndicator />

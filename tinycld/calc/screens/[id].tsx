@@ -3,10 +3,11 @@ import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import { Grid } from '../components/Grid'
 import { SheetTabs } from '../components/SheetTabs'
+import { useFormulaBridge } from '../hooks/use-formula-bridge'
 import { useRealtime } from '../hooks/use-realtime'
 import { useUndoManager } from '../hooks/use-undo-manager'
 import { useWorkbook, WorkbookProvider } from '../hooks/use-workbook-context'
@@ -27,24 +28,10 @@ export default function CalcDetail() {
 
     const item = items[0]
 
-    // Memoize so the bootstrap closure inside useRealtime sees a
-    // stable reference; useRealtime re-reads via ref on demand.
-    const source = useMemo(() => {
-        if (!item) return null
-        return {
-            collectionId: 'drive_items',
-            recordId: item.id,
-            fileName: item.file,
-            displayName: item.name,
-            mimeType: item.mime_type,
-            size: item.size,
-        }
-    }, [item])
-
     // Open the realtime room as soon as we have a workbook id. The
-    // file source is used only on first-joiner bootstrap; subsequent
-    // joiners get the doc from existing peers and ignore it.
-    const room = useRealtime({ workbookId: item?.id ?? '', source })
+    // server populates the doc from the source .xlsx before the first
+    // SyncReply arrives, so the client never needs the file source.
+    const room = useRealtime({ workbookId: item?.id ?? '' })
 
     if (isItemLoading || !item) {
         return <CenteredMessage label="Loading spreadsheet…" spinner />
@@ -75,6 +62,7 @@ interface DetailContentProps {
 function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps) {
     const { doc, isConnected } = useWorkbook()
     useUndoManager(doc)
+    useFormulaBridge(doc)
     const sheets = useYSheets(doc)
     const orgHref = useOrgHref()
 

@@ -28,7 +28,7 @@
         "pbtsdb": ">=0.5",
         "@tanstack/react-db": ">=0.1",
         "@tanstack/db": ">=0.6",
-        "exceljs": ">=4.4.0",
+        "hyperformula": ">=3.0.0",
         "yjs": ">=13.6",
         "y-protocols": ">=1.0"
     }

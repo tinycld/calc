@@ -1,6 +1,8 @@
 // CellStyle mirrors the OOXML / SpreadsheetML cell-style shape that
-// both ExcelJS (client read) and excelize (server write) use natively,
-// so each layer can copy attributes through with minimal translation.
+// excelize uses natively on the server side, so attributes copy
+// through with minimal translation when the server reads the source
+// .xlsx into a WorkbookModel and again when SaveRoom writes the doc
+// back out.
 //
 // Every field is optional, and every nested group is optional. Absence
 // is significant: a missing field means "this attribute is not tracked
@@ -11,7 +13,7 @@
 //
 // Today only `font.bold` is wired all the way through. New attributes
 // land additively: add a field here, mirror it in CellStyle (Go),
-// teach the parser to extract it, and teach the serializer's
+// teach the server reader to extract it, and teach the serializer's
 // per-group merger to apply it. Nothing in between needs to know.
 export interface CellFont {
     bold?: boolean

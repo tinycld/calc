@@ -1,4 +1,5 @@
-import ExcelJS from 'exceljs'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import type PocketBase from 'pocketbase'
 
 const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -13,16 +14,14 @@ function log(...args: unknown[]) {
     process.stdout.write(`[seed:calc] ${args.join(' ')}\n`)
 }
 
-async function buildSampleWorkbook(): Promise<{ blob: Blob; size: number }> {
-    const wb = new ExcelJS.Workbook()
-    const ws = wb.addWorksheet('Sheet1')
-    // A small known grid so e2e tests can assert specific cells render in
-    // the right columns. Every value here is asserted in tests/calc.spec.ts.
-    ws.addRow(['Name', 'Role', 'Score'])
-    ws.addRow(['Alice', 'Engineer', 95])
-    ws.addRow(['Bob', 'Designer', 88])
-    ws.addRow(['Carol', 'Manager', 92])
-    const buffer = (await wb.xlsx.writeBuffer()) as ArrayBuffer
+// Resolved relative to this file's location so the seeder works whether
+// invoked via the linked symlink or the source repo path. Use
+// `import.meta.dirname` (Node ≥20 / tsx) rather than Bun's `import.meta.dir`
+// — the seed runner spawns tsx, not bun, so `import.meta.dir` is undefined.
+const FIXTURE_PATH = path.resolve(import.meta.dirname, 'assets', 'team-scorecard.xlsx')
+
+async function loadSampleWorkbook(): Promise<{ blob: Blob; size: number }> {
+    const buffer = await readFile(FIXTURE_PATH)
     return { blob: new Blob([buffer], { type: XLSX_MIME_TYPE }), size: buffer.byteLength }
 }
 
@@ -43,7 +42,7 @@ export default async function seed(pb: PocketBase, ctx: SeedContext): Promise<vo
         return
     }
 
-    const { blob, size } = await buildSampleWorkbook()
+    const { blob, size } = await loadSampleWorkbook()
     log(`Uploading sample sheet: ${fileName} (${size} bytes)`)
 
     const formData = new FormData()
