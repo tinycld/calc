@@ -10,13 +10,13 @@ const ROW_HEADER_WIDTH = 48
 const PREVIEW_MAX_ROWS = 50
 const PREVIEW_MAX_COLS = 26
 
-// SheetsPreview renders a non-collaborative, read-only view of an
+// CalcPreview renders a non-collaborative, read-only view of an
 // .xlsx file. It does NOT open a realtime WebSocket — the preview pane is
 // fire-and-forget and must not participate in editing. Sharing Y.Doc
 // state with the detail screen would couple the preview to the live
 // session (and would surface any in-progress edits to viewers who
 // haven't opened the editor proper).
-export function SheetsPreview({ source }: PreviewProps) {
+export function CalcPreview({ source }: PreviewProps) {
     const { url, isLoading: isTokenLoading } = useAuthedFileURL(source)
 
     const {
@@ -24,7 +24,7 @@ export function SheetsPreview({ source }: PreviewProps) {
         isLoading: isParseLoading,
         error,
     } = useQuery<WorkbookModel>({
-        queryKey: ['sheets', 'preview', source.recordId, source.fileName],
+        queryKey: ['calc', 'preview', source.recordId, source.fileName],
         queryFn: async () => {
             const resp = await fetch(url)
             if (!resp.ok) throw new Error(`Could not download spreadsheet (${resp.status})`)

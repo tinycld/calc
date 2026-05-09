@@ -10,14 +10,14 @@ interface SeedContext {
 }
 
 function log(...args: unknown[]) {
-    process.stdout.write(`[seed:sheets] ${args.join(' ')}\n`)
+    process.stdout.write(`[seed:calc] ${args.join(' ')}\n`)
 }
 
 async function buildSampleWorkbook(): Promise<{ blob: Blob; size: number }> {
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet('Sheet1')
     // A small known grid so e2e tests can assert specific cells render in
-    // the right columns. Every value here is asserted in tests/sheets.spec.ts.
+    // the right columns. Every value here is asserted in tests/calc.spec.ts.
     ws.addRow(['Name', 'Role', 'Score'])
     ws.addRow(['Alice', 'Engineer', 95])
     ws.addRow(['Bob', 'Designer', 88])
@@ -32,7 +32,7 @@ export default async function seed(pb: PocketBase, ctx: SeedContext): Promise<vo
     // is a financial-data fixture from the Drive package's `sample.xlsx`. Both
     // seeds run for every dev/test reset, and the existing-name check below
     // would otherwise skip seeding if drive already created a file by the same
-    // name — leaving Sheets tests pointed at the wrong workbook.
+    // name — leaving Calc tests pointed at the wrong workbook.
     const fileName = 'Team Scorecard.xlsx'
 
     const existing = await pb.collection('drive_items').getList(1, 1, {

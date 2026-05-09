@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { setYCell } from '../tinycld/sheets/hooks/use-y-cell'
-import { yCellKey } from '../tinycld/sheets/lib/y-cell-key'
-import { CELLS_MAP } from '../tinycld/sheets/lib/y-doc-bootstrap'
+import { setYCell } from '../tinycld/calc/hooks/use-y-cell'
+import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
+import { CELLS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
 
 // useYCell ties a React component to one Y.Map cell entry via
 // useSyncExternalStore. Mounting the hook here would require a React
@@ -43,7 +43,7 @@ describe('setYCell + cellsMap observe', () => {
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
         const watchedKey = yCellKey('sheet1', 1, 1)
         let firedForWatched = 0
-        cellsMap.observe(event => {
+        cellsMap.observe((event) => {
             if (event.keysChanged.has(watchedKey)) firedForWatched++
         })
 
@@ -59,7 +59,7 @@ describe('setYCell + cellsMap observe', () => {
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
         const watchedKey = yCellKey('sheet1', 1, 1)
         let firedForWatched = 0
-        cellsMap.observe(event => {
+        cellsMap.observe((event) => {
             if (event.keysChanged.has(watchedKey)) firedForWatched++
         })
 

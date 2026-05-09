@@ -5,13 +5,13 @@ import { ExternalLink } from 'lucide-react-native'
 import { XLSX_MIME_TYPE } from '../types'
 
 /**
- * Side-effect module: importing this file registers an "Open in Sheets"
- * entry with drive's per-row context menu registry. The sheets
+ * Side-effect module: importing this file registers an "Open in Calc"
+ * entry with drive's per-row context menu registry. The calc
  * provider imports it once at app boot. Right-clicking an .xlsx file
  * row in drive shows the option; clicking it navigates to the full
- * sheets editor.
+ * calc editor.
  *
- * Sibling to `open-in-sheets-action.tsx`, which registers the same
+ * Sibling to `open-in-calc-action.tsx`, which registers the same
  * affordance against the preview-modal toolbar. Two registries
  * because the surfaces operate on different shapes (DriveItemView for
  * row actions; FilePreviewSource for previews) — see
@@ -20,15 +20,15 @@ import { XLSX_MIME_TYPE } from '../types'
  * The action ID matches across both registries so QA can grep for a
  * single string and see all the places it appears.
  */
-registerDriveItemAction('sheets.open', () => {
+registerDriveItemAction('calc.open', () => {
     const orgHref = useOrgHref()
     return {
-        id: 'sheets.open',
+        id: 'calc.open',
         icon: ExternalLink,
-        label: 'Open in Sheets',
+        label: 'Open in Calc',
         isApplicable: (item) => item.mimeType === XLSX_MIME_TYPE,
         onPress: (item) => {
-            router.push(orgHref('sheets/[id]', { id: item.id }))
+            router.push(orgHref('calc/[id]', { id: item.id }))
         },
     }
 })

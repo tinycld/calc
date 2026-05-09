@@ -12,7 +12,7 @@ import { useUndoManager } from '../hooks/use-undo-manager'
 import { useWorkbook, WorkbookProvider } from '../hooks/use-workbook-context'
 import { useYSheets } from '../hooks/use-y-sheets'
 
-export default function SheetsDetail() {
+export default function CalcDetail() {
     const { id, sheet: sheetParam } = useLocalSearchParams<{ id: string; sheet?: string }>()
     const [driveItems] = useStore('drive_items')
 
@@ -87,7 +87,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
 
     const onSelect = useCallback(
         (nextSheetId: string) => {
-            router.replace(orgHref('sheets/[id]', { id: workbookId, sheet: nextSheetId }))
+            router.replace(orgHref('calc/[id]', { id: workbookId, sheet: nextSheetId }))
         },
         [orgHref, workbookId]
     )

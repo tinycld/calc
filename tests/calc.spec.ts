@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test'
 import { login, navigateToPackage } from '../../../../tests/e2e/helpers'
 
-test.describe('Sheets', () => {
+test.describe('Calc', () => {
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
 
     test('opening a sheet renders cells in the correct columns', async ({ page }) => {
-        await navigateToPackage(page, 'sheets')
-        await expect(page.getByRole('heading', { level: 2, name: 'Sheets' }).first()).toBeVisible()
+        await navigateToPackage(page, 'calc')
+        await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible()
         await page.getByText('Team Scorecard.xlsx').click()
 
         await expect(page.getByText('Name', { exact: true })).toBeVisible()
@@ -54,10 +54,10 @@ test.describe('Sheets', () => {
         // the test env even when this test runs in isolation. Pre-existing
         // bug, not parallel-flake-related; skipping until the create path
         // is investigated separately.
-        await navigateToPackage(page, 'sheets')
+        await navigateToPackage(page, 'calc')
         await page.getByText('New spreadsheet').click()
 
-        await page.waitForURL(/\/sheets\/[^/]+$/, { timeout: 15_000 })
+        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
         await expect(page.getByText(/Untitled.*\.xlsx/)).toBeVisible({ timeout: 10_000 })
         await expect(page.getByText('A', { exact: true })).toBeVisible()
         await expect(page.getByText('Z', { exact: true })).toBeVisible()

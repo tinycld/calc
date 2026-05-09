@@ -24,7 +24,7 @@ export interface PresenceState {
     editing: PresenceEditing | null
 }
 
-// RemotePresence keeps the same shape sheets components have always
+// RemotePresence keeps the same shape calc components have always
 // expected: a flat object combining the remote clientID with the
 // parsed PresenceState.
 export interface RemotePresence extends PresenceState {
@@ -32,8 +32,8 @@ export interface RemotePresence extends PresenceState {
 }
 
 // usePresence returns the list of *other* clients' awareness states
-// parsed into the sheets-specific PresenceState shape. Wraps core's
-// generic useRemoteAwareness with the sheets parser + equality check.
+// parsed into the calc-specific PresenceState shape. Wraps core's
+// generic useRemoteAwareness with the calc parser + equality check.
 export function usePresence(awareness: Awareness | null): RemotePresence[] {
     // parse and equals are stable across renders so useRemoteAwareness'
     // useCallback inside its useSyncExternalStore stays stable too.

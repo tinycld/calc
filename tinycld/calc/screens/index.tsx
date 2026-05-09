@@ -9,7 +9,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import { emptyWorkbookBuffer } from '../lib/xlsx-adapter'
 import { XLSX_MIME_TYPE } from '../types'
 
-export default function SheetsIndex() {
+export default function CalcIndex() {
     const orgHref = useOrgHref()
     const [driveItems] = useStore('drive_items')
     const create = useCreateDriveItem()
@@ -31,7 +31,7 @@ export default function SheetsIndex() {
             name: 'Untitled.xlsx',
             mimeType: XLSX_MIME_TYPE,
         })
-        router.push(orgHref('sheets/[id]', { id: result.itemId }))
+        router.push(orgHref('calc/[id]', { id: result.itemId }))
     }
 
     const isEmpty = items.length === 0
@@ -41,7 +41,7 @@ export default function SheetsIndex() {
             <View className="p-6 gap-4">
                 <View className="flex-row items-center justify-between">
                     <Text accessibilityRole="header" aria-level={2} className="text-2xl font-semibold text-foreground">
-                        Sheets
+                        Calc
                     </Text>
                     <Pressable
                         accessibilityRole="button"
@@ -61,7 +61,7 @@ export default function SheetsIndex() {
 
                 <View className="gap-1">
                     {items.map((item) => (
-                        <SheetRow key={item.id} item={item} />
+                        <WorkbookRow key={item.id} item={item} />
                     ))}
                 </View>
             </View>
@@ -84,15 +84,15 @@ function EmptyState({ isVisible }: EmptyStateProps) {
     )
 }
 
-interface SheetRowProps {
+interface WorkbookRowProps {
     item: { id: string; name: string; updated: string; size: number }
 }
 
-function SheetRow({ item }: SheetRowProps) {
+function WorkbookRow({ item }: WorkbookRowProps) {
     const orgHref = useOrgHref()
     return (
         <Pressable
-            onPress={() => router.push(orgHref('sheets/[id]', { id: item.id }))}
+            onPress={() => router.push(orgHref('calc/[id]', { id: item.id }))}
             className="flex-row items-center gap-3 px-3 py-2 rounded-md hover:bg-surface-secondary"
         >
             <FileSpreadsheet size={20} color="#22a06b" />

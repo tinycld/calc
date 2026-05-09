@@ -1,7 +1,13 @@
 import ExcelJS from 'exceljs'
 import { type CellValue, cellKey, type WorkbookModel, type WorksheetModel } from './workbook-types'
 
-export { type CellValue, cellKey, columnLabel, type WorkbookModel, type WorksheetModel } from './workbook-types'
+export {
+    type CellValue,
+    cellKey,
+    columnLabel,
+    type WorkbookModel,
+    type WorksheetModel,
+} from './workbook-types'
 
 export async function parseWorkbook(buffer: ArrayBuffer): Promise<WorkbookModel> {
     const wb = new ExcelJS.Workbook()

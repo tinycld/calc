@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { cellKey, type WorkbookModel } from '../tinycld/sheets/lib/workbook-types'
-import { yCellKey } from '../tinycld/sheets/lib/y-cell-key'
+import { cellKey, type WorkbookModel } from '../tinycld/calc/lib/workbook-types'
+import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
 import {
     bootstrapYDocFromWorkbook,
     CELLS_MAP,
     SHEETS_MAP,
     ydocIsEmpty,
     ydocSheetIds,
-} from '../tinycld/sheets/lib/y-doc-bootstrap'
+} from '../tinycld/calc/lib/y-doc-bootstrap'
 
 function makeWorkbook(): WorkbookModel {
     return {

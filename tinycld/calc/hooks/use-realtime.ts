@@ -21,9 +21,9 @@ export interface UseRealtimeOptions {
     source: FilePreviewSource | null
 }
 
-// useRealtime is the sheets-specific wrapper around core's
-// useRealtimeRoom. It supplies the "sheets" roomKind, stamps the
-// local awareness slot with sheets-shaped initial state, and wires
+// useRealtime is the calc-specific wrapper around core's
+// useRealtimeRoom. It supplies the "calc" roomKind, stamps the
+// local awareness slot with calc-shaped initial state, and wires
 // the .xlsx bootstrap path for first joiners.
 export function useRealtime({ workbookId, source }: UseRealtimeOptions): RealtimeRoomHandle | null {
     const { user } = useAuth()
@@ -64,7 +64,7 @@ export function useRealtime({ workbookId, source }: UseRealtimeOptions): Realtim
     )
 
     return useRealtimeRoom({
-        roomKind: 'sheets',
+        roomKind: 'calc',
         roomID: workbookId,
         initialAwareness: {
             user: { id: user.id, name: user.name, color: colorForUser(user.id) },

@@ -1,20 +1,20 @@
 {
-    "name": "@tinycld/sheets",
+    "name": "@tinycld/calc",
     "version": "0.1.0",
     "private": true,
     "type": "module",
-    "description": "Sheets for your organization",
+    "description": "Spreadsheets for your organization",
     "exports": {
         "./package.json": "./package.json",
         "./manifest": "./manifest.ts",
-        "./types": "./tinycld/sheets/types.ts",
-        "./collections": "./tinycld/sheets/collections.ts",
-        "./screens/*": "./tinycld/sheets/screens/*.tsx",
-        "./seed": "./tinycld/sheets/seed.ts",
-        "./sidebar": "./tinycld/sheets/sidebar.tsx",
-        "./provider": "./tinycld/sheets/provider.tsx",
-        "./hooks/*": "./tinycld/sheets/hooks/*.ts",
-        "./components/*": "./tinycld/sheets/components/*.tsx"
+        "./types": "./tinycld/calc/types.ts",
+        "./collections": "./tinycld/calc/collections.ts",
+        "./screens/*": "./tinycld/calc/screens/*.tsx",
+        "./seed": "./tinycld/calc/seed.ts",
+        "./sidebar": "./tinycld/calc/sidebar.tsx",
+        "./provider": "./tinycld/calc/provider.tsx",
+        "./hooks/*": "./tinycld/calc/hooks/*.ts",
+        "./components/*": "./tinycld/calc/components/*.tsx"
     },
     "scripts": {
         "lint": "biome check .",

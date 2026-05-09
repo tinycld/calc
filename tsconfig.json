@@ -4,7 +4,7 @@
         "baseUrl": ".",
         "rootDir": "..",
         "paths": {
-            "~/tinycld/sheets/*": ["./tinycld/sheets/*"],
+            "~/tinycld/calc/*": ["./tinycld/calc/*"],
             "@tinycld/app-generated/*": ["../tinycld/lib/generated/*"],
             "@tinycld/core/*": ["../tinycld/packages/@tinycld/core/*"],
             "~/*": ["../tinycld/packages/@tinycld/core/*"]

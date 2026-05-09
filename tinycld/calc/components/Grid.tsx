@@ -63,7 +63,12 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     // Viewport metrics: scroll position and measured size collapsed
     // into a single state so changes don't fan out into 4 separate
     // setState round-trips per scroll/layout event.
-    const [viewport, setViewport] = useState<Viewport>({ scrollX: 0, scrollY: 0, width: 0, height: 0 })
+    const [viewport, setViewport] = useState<Viewport>({
+        scrollX: 0,
+        scrollY: 0,
+        width: 0,
+        height: 0,
+    })
 
     const [selected, setSelected] = useState<SelectedCell | null>(null)
     const [editingCell, setEditingCell] = useState<SelectedCell | null>(null)

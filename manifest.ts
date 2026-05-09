@@ -1,11 +1,11 @@
 const manifest = {
-    name: 'Sheets',
-    slug: 'sheets',
+    name: 'Calc',
+    slug: 'calc',
     version: '0.1.0',
-    description: 'Sheets for your organization',
+    description: 'Spreadsheets for your organization',
     routes: { directory: 'screens' },
     nav: {
-        label: 'Sheets',
+        label: 'Calc',
         icon: 'file-spreadsheet',
         order: 20,
         shortcut: 's',
@@ -15,7 +15,7 @@ const manifest = {
     migrations: { directory: 'pb-migrations' },
     collections: { register: 'collections', types: 'types' },
     seed: { script: 'seed' },
-    server: { package: 'server', module: 'tinycld.org/packages/sheets' },
+    server: { package: 'server', module: 'tinycld.org/packages/calc' },
     dependencies: ['drive'],
 }
 

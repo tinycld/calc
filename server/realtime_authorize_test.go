@@ -1,4 +1,4 @@
-package sheets
+package calc
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 )
 
 // TestRegisterRealtimeRegisters confirms registerRealtime plugs the
-// "sheets" kind into the core realtime registry, and that the
+// "calc" kind into the core realtime registry, and that the
 // registered closure rejects nil auth without touching the DB.
 //
 // The share-grant / share-denied paths require a real PocketBase test
@@ -23,9 +23,9 @@ func TestRegisterRealtimeRegisters(t *testing.T) {
 	app := pocketbase.New()
 	registerRealtime(app)
 
-	authorize := realtime.LookupForTest("sheets")
+	authorize := realtime.LookupForTest("calc")
 	if authorize == nil {
-		t.Fatal("registerRealtime did not register the 'sheets' room kind")
+		t.Fatal("registerRealtime did not register the 'calc' room kind")
 	}
 
 	if err := authorize(nil, "any-drive-item-id"); !errors.Is(err, errNoShare) {

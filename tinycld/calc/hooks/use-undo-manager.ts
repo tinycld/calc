@@ -4,7 +4,7 @@ import type * as Y from 'yjs'
 import { CELLS_MAP, SHEETS_MAP } from '../lib/y-doc-bootstrap'
 
 // useUndoManager scopes Y.UndoManager + Cmd-Z/Cmd-Shift-Z to the
-// sheets-specific cells + sheets Y.Maps. All other behavior (origin
+// calc-specific cells + sheets Y.Maps. All other behavior (origin
 // filtering, captureTimeout, keyboard wiring) lives in the core hook.
 export function useUndoManager(doc: Y.Doc | null): void {
     const scope = useCallback(() => {

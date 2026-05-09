@@ -1,6 +1,6 @@
-# sheets
+# calc
 
-Sheets for your organization
+Spreadsheets for your organization
 
 Feature package for the [tinycld](https://github.com/tinycld/tinycld) ecosystem. Lives as a standalone git repo alongside the [`tinycld`](https://github.com/tinycld/tinycld) app shell and other sibling packages (`contacts`, `mail`, `calendar`, `drive`, `google-takeout-import`). The app shell bundles `@tinycld/core` inside it — there is no separate core repo to clone.
 
@@ -10,14 +10,14 @@ Feature package for the [tinycld](https://github.com/tinycld/tinycld) ecosystem.
 # Clone the app shell and this package as siblings
 cd ~/code/tinycld
 git clone git@github.com:tinycld/tinycld.git
-git clone git@github.com:tinycld/sheets.git
+git clone git@github.com:tinycld/calc.git
 
 # Install deps in the app shell
 cd tinycld
 bun install
 
 # Link this package into the app shell
-bun run packages:link ../sheets
+bun run packages:link ../calc
 
 # Run the full stack
 bun run dev

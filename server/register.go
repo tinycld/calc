@@ -1,4 +1,4 @@
-package sheets
+package calc
 
 import (
 	"github.com/pocketbase/pocketbase"
