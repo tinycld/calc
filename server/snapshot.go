@@ -6,9 +6,7 @@ package calc
 // persist.go consumes this struct and produces an updated .xlsx.
 //
 // The shape mirrors bootstrapYDocFromWorkbook (in
-// tinycld/calc/lib/y-doc-bootstrap.ts) inversely. It is the contract
-// that survives the goja → native-y-crdt swap: only the producer of
-// this struct (sheetsDocHandle.Snapshot) changes when y-crdt lands.
+// tinycld/calc/lib/y-doc-bootstrap.ts) inversely.
 type YDocSnapshot struct {
 	Sheets []SheetMeta
 	Cells  []CellEntry
@@ -25,18 +23,33 @@ type SheetMeta struct {
 
 // CellEntry is one cell value the doc has touched. SheetID matches a
 // SheetMeta.ID. Row/Col are 1-based (matching the Y.Doc cell-key
-// scheme: see tinycld/calc/lib/y-cell-key.ts). An empty Formula means
-// the cell is a value, not a formula. A nil Style means the doc does
-// not track any styling for this cell — the serializer leaves the
-// cell's existing on-disk style intact.
+// scheme: see tinycld/calc/lib/y-cell-key.ts).
+//
+// Kind is the typed-cell tag ("string", "number", "boolean", "date",
+// "formula"). Empty string means a legacy doc with no kind key written;
+// the serializer falls back to its previous "coerce numeric strings"
+// behavior in that case.
+//
+// RawString is populated when the doc-side raw value was a string
+// scalar; RawNumber and RawBool are nil unless the doc-side raw was
+// numeric / boolean respectively. Pointer types so the absence of a
+// numeric raw is distinguishable from a numeric zero.
+//
+// An empty Formula means the cell is a value, not a formula.
+//
+// A nil Style means the doc does not track any styling for this cell —
+// the serializer leaves the cell's existing on-disk style intact.
 type CellEntry struct {
-	SheetID string
-	Row     int
-	Col     int
-	Raw     string
-	Display string
-	Formula string
-	Style   *CellStyle
+	SheetID   string
+	Row       int
+	Col       int
+	Kind      string
+	RawString string
+	RawNumber *float64
+	RawBool   *bool
+	Display   string
+	Formula   string
+	Style     *CellStyle
 }
 
 // CellStyle is the partial-style shape that mirrors the TS CellStyle
@@ -45,11 +58,11 @@ type CellEntry struct {
 // false / empty". The serializer overlays only the non-nil fields onto
 // the cell's existing excelize.Style.
 //
-// JSON tags use camelCase keys to match the on-the-wire shape produced
-// by __sheetsSnapshot's JSON.stringify of the cell's style Y.Map. The
-// snapshot consumer json.Unmarshals straight into *CellStyle, so adding
-// a structurally-trivial attribute means: add a field here (with a
-// json tag) and a matching field on the TS CellStyle. Nothing else.
+// JSON tags use camelCase keys to match the doc-side shape: runtime.go's
+// decodeCellStyle flattens the style YMap into a plain map and routes
+// it through json.Marshal+Unmarshal, so adding a structurally-trivial
+// attribute means: add a field here (with a json tag) and a matching
+// field on the TS CellStyle. Nothing else.
 type CellStyle struct {
 	Font      *CellFont      `json:"font,omitempty"`
 	Fill      *CellFill      `json:"fill,omitempty"`

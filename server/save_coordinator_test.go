@@ -13,7 +13,7 @@ import (
 )
 
 // stubHandle is a minimal realtime.DocHandle that records calls.
-// Used by SaveCoordinator tests so they don't need goja.
+// Used by SaveCoordinator tests so they don't need a real y-crdt doc.
 type stubHandle struct {
 	mu          sync.Mutex
 	applied     int

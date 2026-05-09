@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
@@ -31,7 +33,7 @@ const driveItemsCollection = "drive_items"
 // The handle parameter is the room's DocHandle as returned by
 // Runtime.NewDoc; we type-assert to *sheetsDocHandle to access the
 // Snapshot method (not part of the realtime.DocHandle interface
-// because XLSX is calc-specific).
+// because XLSX-flavored snapshots are calc-specific).
 func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string) error {
 	if handle == nil {
 		return errors.New("calc: SaveRoom called with nil handle")
@@ -167,12 +169,8 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot) ([]byte, e
 			// something; SetCellFormula attaches the formula on top
 			// without clearing it. Calling SetCellValue *after*
 			// SetCellFormula would erase the formula.
-			val := cell.Raw
-			if val == "" {
-				val = cell.Display
-			}
-			if val != "" {
-				if err := f.SetCellValue(sheetName, ref, coerceCellValue(val)); err != nil {
+			if cached, ok := formulaCachedValue(cell); ok {
+				if err := f.SetCellValue(sheetName, ref, cached); err != nil {
 					return nil, fmt.Errorf("seed formula result at %s!%s: %w", sheetName, ref, err)
 				}
 			}
@@ -180,11 +178,7 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot) ([]byte, e
 				return nil, fmt.Errorf("set formula at %s!%s: %w", sheetName, ref, err)
 			}
 		} else {
-			val := cell.Raw
-			if val == "" {
-				val = cell.Display
-			}
-			if err := f.SetCellValue(sheetName, ref, coerceCellValue(val)); err != nil {
+			if err := f.SetCellValue(sheetName, ref, cellValueForExcelize(cell)); err != nil {
 				return nil, fmt.Errorf("set value at %s!%s: %w", sheetName, ref, err)
 			}
 		}
@@ -238,11 +232,107 @@ func applyCellStyle(f *excelize.File, sheet, ref string, patch *CellStyle) error
 	return nil
 }
 
-// coerceCellValue takes the snapshot's stringly-typed Raw/Display
-// value and promotes numeric strings to actual numbers so excelize
-// stores them as numeric cells (matching what the original parser
-// produced from the workbook). Non-numeric strings stay strings.
-func coerceCellValue(s string) any {
+// cellValueForExcelize picks the right Go value to hand to
+// excelize.SetCellValue based on the cell's Kind. excelize dispatches
+// internally on the value's reflect type — a Go int64/float64 lands
+// as a numeric cell, a bool as a boolean cell, a time.Time as a date
+// cell, and a string as a text cell. Matching kind to type at this
+// boundary is what gives the round-trip its type-fidelity.
+//
+// Empty Kind (legacy doc with no kind tag written) falls back to the
+// previous "try int → float → string" coercion of RawString, so
+// already-saved workbooks continue to round-trip as they did before.
+func cellValueForExcelize(c CellEntry) any {
+	switch c.Kind {
+	case "number":
+		if c.RawNumber == nil {
+			// Legacy fallback: kind says number but raw was carried
+			// as a string. Promote via the same path the legacy
+			// coercer used.
+			return legacyCoerceCellValue(c.RawString)
+		}
+		n := *c.RawNumber
+		// Excel stores integers as floats with no fractional part;
+		// surfacing them as int64 to excelize keeps the on-disk
+		// representation tidy (no trailing .0 in raw XML). The 2^53
+		// guard avoids precision loss for large floats that Go can't
+		// round-trip through int64 cleanly.
+		if !math.IsNaN(n) && !math.IsInf(n, 0) && n == math.Trunc(n) && math.Abs(n) < (1<<53) {
+			return int64(n)
+		}
+		return n
+	case "boolean":
+		if c.RawBool == nil {
+			return false
+		}
+		return *c.RawBool
+	case "date":
+		// ISO-only on the wire (the TS side never writes anything
+		// else). Try full RFC3339 first, then date-only.
+		if t, err := time.Parse(time.RFC3339, c.RawString); err == nil {
+			return t
+		}
+		if t, err := time.Parse("2006-01-02", c.RawString); err == nil {
+			return t
+		}
+		// Unparseable date — round-trip as the literal text rather
+		// than fail the whole save.
+		return c.RawString
+	case "string":
+		return c.RawString
+	case "formula":
+		// Reached when called from the formula cache path; just
+		// surface the cached scalar.
+		return c.RawString
+	case "":
+		// Legacy snapshot: no kind tag was written by the producer.
+		// Preserve prior behavior by promoting numeric-looking
+		// strings.
+		val := c.RawString
+		if val == "" {
+			val = c.Display
+		}
+		return legacyCoerceCellValue(val)
+	}
+	return c.RawString
+}
+
+// formulaCachedValue extracts the kind-aware cached scalar for a
+// formula cell, if one is present. Returns ok=false when the formula
+// has no cached value (e.g. a fresh =A1+B1 the user just typed) so the
+// caller can skip the SetCellValue seed.
+//
+// excelize semantics: when SetCellValue sees a numeric Go type, it
+// stores both the number and the cell type as Number; setting the
+// same cell to a string-of-digits stores it as an inline string and
+// excelize will recompute the formula's result. So promoting numeric
+// cached values up front is what keeps "this cell shows 57" durable
+// across the round-trip.
+func formulaCachedValue(c CellEntry) (any, bool) {
+	switch {
+	case c.RawNumber != nil:
+		v := *c.RawNumber
+		if !math.IsNaN(v) && !math.IsInf(v, 0) && v == math.Trunc(v) && math.Abs(v) < (1<<53) {
+			return int64(v), true
+		}
+		return v, true
+	case c.RawBool != nil:
+		return *c.RawBool, true
+	case c.RawString != "":
+		// Numeric-looking strings get promoted so excelize stores
+		// them as Number cells; non-numeric strings round-trip as
+		// strings.
+		return legacyCoerceCellValue(c.RawString), true
+	case c.Display != "":
+		return legacyCoerceCellValue(c.Display), true
+	}
+	return nil, false
+}
+
+// legacyCoerceCellValue is the prior pre-typed-cells fallback: try
+// int → float → string. Kept around for legacy docs that were
+// persisted before the typed-cell schema landed.
+func legacyCoerceCellValue(s string) any {
 	if s == "" {
 		return s
 	}

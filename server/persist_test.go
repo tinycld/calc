@@ -8,6 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
+	"github.com/xuri/excelize/v2"
 )
 
 // setupPersistTestApp creates a tests.TestApp with a minimal
@@ -186,4 +187,220 @@ func TestSaveRoomNilHandleReturnsError(t *testing.T) {
 			t.Fatalf("wrong error: %v", err)
 		}
 	}
+}
+
+// TestSerializerKindNumber: typed number cells emit excelize numeric
+// cells. Excelize stores native numerics with no `t` attribute on the
+// cell (the OOXML default), so GetCellType returns CellTypeUnset (0) —
+// that's how we distinguish a numeric cell from a string cell, which
+// returns CellTypeSharedString or CellTypeInlineString.
+func TestSerializerKindNumber(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	n := 42.0
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
+				Kind:      "number",
+				RawNumber: &n,
+				Display:   "42",
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if got := readCellType(t, out, "People", 2, 2); !isNumericCellType(got) {
+		t.Errorf("B2 cell type: want numeric (Unset/Number), got %v", got)
+	}
+	if got := readCell(t, out, "People", 2, 2); got != "42" {
+		t.Errorf("B2 value: want %q, got %q", "42", got)
+	}
+}
+
+// TestSerializerKindNumberFloat: non-integer numbers stay floats; the
+// integer-promotion guard only kicks in for whole values.
+func TestSerializerKindNumberFloat(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	n := 3.14
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{SheetID: "sheet1", Row: 2, Col: 2, Kind: "number", RawNumber: &n, Display: "3.14"},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if got := readCellType(t, out, "People", 2, 2); !isNumericCellType(got) {
+		t.Errorf("B2 cell type: want numeric (Unset/Number), got %v", got)
+	}
+	if got := readCell(t, out, "People", 2, 2); got != "3.14" {
+		t.Errorf("B2 value: want %q, got %q", "3.14", got)
+	}
+}
+
+// TestSerializerKindBoolean: typed boolean cells emit as boolean
+// cells, not the strings "TRUE"/"FALSE".
+func TestSerializerKindBoolean(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	b := true
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{SheetID: "sheet1", Row: 2, Col: 2, Kind: "boolean", RawBool: &b, Display: "TRUE"},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if got := readCellType(t, out, "People", 2, 2); got != excelize.CellTypeBool {
+		t.Errorf("B2 cell type: want bool, got %v", got)
+	}
+}
+
+// TestSerializerKindDate: typed date cells emit as date-flavored
+// numeric cells (excelize stores dates as serial numbers under a date
+// numFmt).
+func TestSerializerKindDate(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
+				Kind:      "date",
+				RawString: "2024-01-15",
+				Display:   "2024-01-15",
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	// excelize encodes dates as numeric cells under a date numFmt; the
+	// underlying CellType is therefore Number. Importantly the cell is
+	// *not* the literal string "2024-01-15" — re-parse and confirm.
+	if got := readCellType(t, out, "People", 2, 2); got == excelize.CellTypeSharedString {
+		t.Errorf("B2 stored as string, expected numeric date encoding")
+	}
+}
+
+// TestSerializerKindStringDoesNotPromoteToNumber: a string-kinded
+// "42" must stay a string in the workbook (the whole point of the
+// '-prefix convention).
+func TestSerializerKindStringDoesNotPromoteToNumber(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
+				Kind:      "string",
+				RawString: "42",
+				Display:   "42",
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if got := readCellType(t, out, "People", 2, 2); isNumericCellType(got) {
+		t.Errorf("B2 was promoted to number (cell type %v) despite kind=string", got)
+	}
+	if got := readCell(t, out, "People", 2, 2); got != "42" {
+		t.Errorf("B2 value: want %q, got %q", "42", got)
+	}
+}
+
+// TestSerializerLegacyCellNoKind: a snapshot with empty Kind (a doc
+// from before the typed-cell schema landed) falls back to the
+// pre-existing "promote numeric strings" coercer so already-saved
+// workbooks continue to round-trip as before.
+func TestSerializerLegacyCellNoKind(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{SheetID: "sheet1", Row: 2, Col: 2, RawString: "42", Display: "42"},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	// Legacy promotion: numeric-looking strings become numbers, just
+	// like the pre-typed-cells path did.
+	if got := readCellType(t, out, "People", 2, 2); !isNumericCellType(got) {
+		t.Errorf("legacy B2 cell type: want numeric (promoted), got %v", got)
+	}
+}
+
+// isNumericCellType returns true when excelize reports the cell as
+// numeric. Excelize stores native numerics with no `t` attribute on
+// the cell (the OOXML default), which surfaces as CellTypeUnset on
+// read; explicit `t="n"` would surface as CellTypeNumber. Treat both
+// as "this is a number cell".
+func isNumericCellType(t excelize.CellType) bool {
+	return t == excelize.CellTypeUnset || t == excelize.CellTypeNumber
 }

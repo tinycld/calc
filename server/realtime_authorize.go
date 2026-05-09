@@ -21,7 +21,7 @@ const roomKindCalc = "calc"
 var errNoShare = errors.New("calc: no drive_shares row for this user/item")
 
 // registerRealtime is called once at startup from Register(). It plugs
-// the calc authorize handler, the goja Runtime, and the
+// the calc authorize handler, the y-crdt Runtime, and the
 // SaveCoordinator into core's realtime registry. The closures
 // capture `app` so they can run share-access queries and persist
 // XLSX bytes back to drive_items.

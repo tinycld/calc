@@ -10,13 +10,13 @@ import (
 // path: overlayStyle, which copies a *CellStyle (snapshot.go) onto an
 // *excelize.Style (excelize's monolithic per-cell style record).
 //
-// The reverse direction — turning the JS-side snapshot into a
-// *CellStyle — does NOT use reflect: __sheetsSnapshot in jsruntime.go
-// emits the style subtree as a JSON string, and the snapshot consumer
-// json.Unmarshals it straight into *CellStyle using the standard
+// The reverse direction — turning the y-crdt-decoded style YMap into
+// a *CellStyle — does NOT use reflect: runtime.go's decodeCellStyle
+// flattens the style YMap into a plain map and json.Marshals it, then
+// json.Unmarshals straight into *CellStyle using the standard
 // library's tag-driven decoder. CellStyle's TS / Go field names are
-// chosen to match the JS camelCase the doc uses (see the json tags in
-// snapshot.go), so no per-attribute glue is needed.
+// chosen to match the camelCase keys the doc uses (see the json tags
+// in snapshot.go), so no per-attribute glue is needed.
 //
 // The overlay direction needs reflect because excelize's struct shape
 // doesn't line up with our CellStyle 1:1 in every case. Most attributes

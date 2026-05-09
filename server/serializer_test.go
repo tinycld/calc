@@ -29,6 +29,28 @@ func readCell(t *testing.T, xlsx []byte, sheetName string, row, col int) string 
 	return v
 }
 
+// readCellType opens xlsx bytes and returns the excelize CellType at
+// (sheetName, row, col). Used by per-kind round-trip tests to verify
+// that, e.g., a typed number cell really lands as a numeric cell on
+// disk rather than a string-of-digits.
+func readCellType(t *testing.T, xlsx []byte, sheetName string, row, col int) excelize.CellType {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	tp, err := f.GetCellType(sheetName, ref)
+	if err != nil {
+		t.Fatalf("get cell type %s!%s: %v", sheetName, ref, err)
+	}
+	return tp
+}
+
 // readFormula returns the formula expression at the given cell, or
 // the empty string if the cell has no formula.
 func readFormula(t *testing.T, xlsx []byte, sheetName string, row, col int) string {
@@ -66,7 +88,7 @@ func TestSerializerSingleCellChange(t *testing.T) {
 			{ID: "sheet2", Name: "Incomes", Position: 1},
 		},
 		Cells: []CellEntry{
-			{SheetID: "sheet1", Row: 2, Col: 2, Raw: "from-save", Display: "from-save"},
+			{SheetID: "sheet1", Row: 2, Col: 2, RawString: "from-save", Display: "from-save"},
 		},
 	}
 
@@ -112,7 +134,7 @@ func TestSerializerAppendNewSheet(t *testing.T) {
 			{ID: "sheet3", Name: "Notes", Position: 2},
 		},
 		Cells: []CellEntry{
-			{SheetID: "sheet3", Row: 1, Col: 1, Raw: "hello", Display: "hello"},
+			{SheetID: "sheet3", Row: 1, Col: 1, RawString: "hello", Display: "hello"},
 		},
 	}
 
@@ -148,7 +170,7 @@ func TestSerializerRenameExistingSheet(t *testing.T) {
 			{ID: "sheet2", Name: "Incomes", Position: 1},
 		},
 		Cells: []CellEntry{
-			{SheetID: "sheet1", Row: 2, Col: 2, Raw: "Renamed", Display: "Renamed"},
+			{SheetID: "sheet1", Row: 2, Col: 2, RawString: "Renamed", Display: "Renamed"},
 		},
 	}
 
@@ -193,7 +215,7 @@ func TestSerializerFormulaCell(t *testing.T) {
 				SheetID: "sheet1",
 				Row:     1,
 				Col:     11,
-				Raw:     "57",
+				RawString: "57",
 				Display: "57",
 				Formula: "F2+F3",
 			},
@@ -357,7 +379,7 @@ func TestSerializerStyleSetsBold(t *testing.T) {
 				SheetID: "sheet1",
 				Row:     2,
 				Col:     2,
-				Raw:     "from-save",
+				RawString: "from-save",
 				Display: "from-save",
 				Style:   &CellStyle{Font: &CellFont{Bold: boolPtr(true)}},
 			},
@@ -403,7 +425,7 @@ func TestSerializerStylePartialOverlay(t *testing.T) {
 				SheetID: "sheet1",
 				Row:     2,
 				Col:     2,
-				Raw:     "from-save",
+				RawString: "from-save",
 				Display: "from-save",
 				Style:   &CellStyle{Font: &CellFont{Bold: boolPtr(true)}},
 			},
@@ -437,7 +459,7 @@ func TestSerializerStyleAbsentLeavesCellAlone(t *testing.T) {
 			{ID: "sheet2", Name: "Incomes", Position: 1},
 		},
 		Cells: []CellEntry{
-			{SheetID: "sheet1", Row: 2, Col: 2, Raw: "from-save", Display: "from-save"},
+			{SheetID: "sheet1", Row: 2, Col: 2, RawString: "from-save", Display: "from-save"},
 		},
 	}
 
