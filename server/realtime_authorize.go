@@ -1,4 +1,4 @@
-package sheets
+package calc
 
 import (
 	"errors"
@@ -9,27 +9,45 @@ import (
 	"tinycld.org/core/realtime"
 )
 
-// roomKindSheets is the realtime roomKind name owned by this package.
-// Each connection at /api/realtime/sheets/<drive_item_id> is gated by
+// roomKindCalc is the realtime roomKind name owned by this package.
+// Each connection at /api/realtime/calc/<drive_item_id> is gated by
 // the authorize handler registered below.
-const roomKindSheets = "sheets"
+const roomKindCalc = "calc"
 
 // errNoShare is returned when the user has no drive_shares row for the
-// requested drive_item. It is the only kind of denial sheets emits;
+// requested drive_item. It is the only kind of denial calc emits;
 // distinguishing share roles (viewer vs. editor) happens client-side
 // for now (a future save-back effort will enforce roles server-side).
-var errNoShare = errors.New("sheets: no drive_shares row for this user/item")
+var errNoShare = errors.New("calc: no drive_shares row for this user/item")
 
 // registerRealtime is called once at startup from Register(). It plugs
-// the sheets authorize handler into core's realtime registry. The
-// closure captures `app` so it can run the share-access query on each
-// connection.
+// the calc authorize handler, the goja Runtime, and the
+// SaveCoordinator into core's realtime registry. The closures
+// capture `app` so they can run share-access queries and persist
+// XLSX bytes back to drive_items.
+//
+// Wiring:
+//   - Authorize: enforces drive_shares membership before the WS
+//     upgrade.
+//   - RuntimeProvider: hands out per-room server-side Y.Doc handles.
+//   - OnRoomCreate / OnDocUpdate / OnEmpty: the save coordinator
+//     consumes broker events to drive debounce/ceiling/teardown
+//     persistence.
 func registerRealtime(app *pocketbase.PocketBase) {
-	realtime.RegisterRoomKind(roomKindSheets, func(auth *core.Record, roomID string) error {
-		if auth == nil || auth.Id == "" {
-			return errNoShare
-		}
-		return checkDriveItemAccess(app, auth.Id, roomID)
+	runtime := NewRuntime()
+	coordinator := NewSaveCoordinator(MakeProductionFlush(app))
+
+	realtime.RegisterRoomKindWith(roomKindCalc, realtime.RoomKindOptions{
+		Authorize: func(auth *core.Record, roomID string) error {
+			if auth == nil || auth.Id == "" {
+				return errNoShare
+			}
+			return checkDriveItemAccess(app, auth.Id, roomID)
+		},
+		RuntimeProvider: runtime,
+		OnRoomCreate:    coordinator.OnRoomCreate,
+		OnDocUpdate:     coordinator.OnDocUpdate,
+		OnEmpty:         coordinator.OnRoomEmpty,
 	})
 }
 

@@ -1,0 +1,143 @@
+package calc
+
+import (
+	"errors"
+	"os"
+	"testing"
+
+	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/filesystem"
+)
+
+// setupPersistTestApp creates a tests.TestApp with a minimal
+// drive_items collection (just enough to seed an XLSX blob and
+// re-read it after SaveRoom). Real production schemas have many more
+// fields; we synthesize the bits SaveRoom touches.
+func setupPersistTestApp(t *testing.T) *tests.TestApp {
+	t.Helper()
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatalf("tests.NewTestApp: %v", err)
+	}
+	t.Cleanup(func() { app.Cleanup() })
+
+	items := core.NewBaseCollection(driveItemsCollection)
+	items.Fields.Add(&core.TextField{Name: "name"})
+	items.Fields.Add(&core.FileField{
+		Name:    "file",
+		MaxSize: 50 << 20, // 50 MiB — a real spreadsheet may be large
+	})
+	items.Fields.Add(&core.NumberField{Name: "size"})
+	if err := app.Save(items); err != nil {
+		t.Fatalf("save drive_items collection: %v", err)
+	}
+	return app
+}
+
+// seedDriveItem creates a drive_items record with the given file
+// bytes attached and returns the saved record's id.
+func seedDriveItem(t *testing.T, app *tests.TestApp, name string, content []byte) string {
+	t.Helper()
+	collection, err := app.FindCollectionByNameOrId(driveItemsCollection)
+	if err != nil {
+		t.Fatalf("find drive_items collection: %v", err)
+	}
+	rec := core.NewRecord(collection)
+	rec.Set("name", name)
+	rec.Set("size", len(content))
+	f, err := filesystem.NewFileFromBytes(content, name)
+	if err != nil {
+		t.Fatalf("NewFileFromBytes: %v", err)
+	}
+	rec.Set("file", f)
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("save drive_item record: %v", err)
+	}
+	return rec.Id
+}
+
+// TestSaveRoomWritesUpdatedXLSX is the integration test:
+//   - seed drive_items with tiny.xlsx
+//   - mint a Runtime + DocHandle
+//   - apply a yjs update setting cell B2 = "from-yjs"
+//   - call SaveRoom
+//   - reload the record, read the file blob, parse with excelize,
+//     assert B2 changed
+func TestSaveRoomWritesUpdatedXLSX(t *testing.T) {
+	tinyXlsx, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	app := setupPersistTestApp(t)
+	itemID := seedDriveItem(t, app, "tiny.xlsx", tinyXlsx)
+
+	rt := NewRuntime()
+	handle, err := rt.NewDoc(itemID)
+	if err != nil {
+		t.Fatalf("NewDoc: %v", err)
+	}
+	t.Cleanup(func() { _ = handle.Close() })
+
+	update := makeYDocUpdateForCell(t, "sheet1", "Sheet1", 0, 8, 6, 2, 2, "from-save", "from-save")
+	if err := handle.ApplyUpdate(update); err != nil {
+		t.Fatalf("ApplyUpdate: %v", err)
+	}
+
+	if err := SaveRoom(app, handle, itemID); err != nil {
+		t.Fatalf("SaveRoom: %v", err)
+	}
+
+	// Reload the record and read back the file bytes via the same
+	// helper SaveRoom uses, then re-parse to confirm the cell.
+	reloaded, err := app.FindRecordById(driveItemsCollection, itemID)
+	if err != nil {
+		t.Fatalf("reload drive_item: %v", err)
+	}
+	bytesAfter, err := readDriveItemBytes(app, reloaded)
+	if err != nil {
+		t.Fatalf("readDriveItemBytes after save: %v", err)
+	}
+	if len(bytesAfter) == 0 {
+		t.Fatal("file bytes empty after save")
+	}
+	if got := readBackCellInTinyXlsx(t, bytesAfter, 2, 2); got != "from-save" {
+		t.Fatalf("B2 after SaveRoom: want %q, got %q", "from-save", got)
+	}
+
+	// And the size field is updated to match.
+	if got, want := reloaded.GetInt("size"), len(bytesAfter); got != want {
+		t.Errorf("size field after save: want %d, got %d", want, got)
+	}
+}
+
+// TestSaveRoomMissingRecordReturnsError: passing an unknown
+// driveItemID surfaces the FindRecordById failure.
+func TestSaveRoomMissingRecordReturnsError(t *testing.T) {
+	app := setupPersistTestApp(t)
+	rt := NewRuntime()
+	handle, err := rt.NewDoc("missing-room")
+	if err != nil {
+		t.Fatalf("NewDoc: %v", err)
+	}
+	t.Cleanup(func() { _ = handle.Close() })
+
+	if err := SaveRoom(app, handle, "doesnotexist"); err == nil {
+		t.Fatal("expected SaveRoom on missing record to fail")
+	}
+}
+
+// TestSaveRoomNilHandleReturnsError: a guard so a misuse from the
+// caller side surfaces clearly rather than panicking.
+func TestSaveRoomNilHandleReturnsError(t *testing.T) {
+	app := setupPersistTestApp(t)
+	if err := SaveRoom(app, nil, "any"); err == nil {
+		t.Fatal("expected nil handle to fail")
+	} else if !errors.Is(err, errors.New("calc: SaveRoom called with nil handle")) {
+		// errors.Is on a sentinel-less error: just check the message.
+		if err.Error() != "calc: SaveRoom called with nil handle" {
+			t.Fatalf("wrong error: %v", err)
+		}
+	}
+}
