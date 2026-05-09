@@ -15,6 +15,6 @@ import (
 //
 // See contacts/server/register.go or calendar/server/register.go for richer
 // examples.
-func Register(_ *pocketbase.PocketBase) {
-	// No server-side logic yet.
+func Register(app *pocketbase.PocketBase) {
+	registerRealtime(app)
 }
