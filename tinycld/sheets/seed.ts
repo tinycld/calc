@@ -28,7 +28,12 @@ async function buildSampleWorkbook(): Promise<{ blob: Blob; size: number }> {
 
 export default async function seed(pb: PocketBase, ctx: SeedContext): Promise<void> {
     const { org, userOrg } = ctx
-    const fileName = 'Team Roster.xlsx'
+    // Disambiguate from the drive seed's own "Team Roster.xlsx" sample, which
+    // is a financial-data fixture from the Drive package's `sample.xlsx`. Both
+    // seeds run for every dev/test reset, and the existing-name check below
+    // would otherwise skip seeding if drive already created a file by the same
+    // name — leaving Sheets tests pointed at the wrong workbook.
+    const fileName = 'Team Scorecard.xlsx'
 
     const existing = await pb.collection('drive_items').getList(1, 1, {
         filter: pb.filter('org = {:org} && name = {:name}', { org: org.id, name: fileName }),
