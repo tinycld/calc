@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import type { WorkbookModel } from './workbook-types'
+import type { CellStyle, WorkbookModel } from './workbook-types'
 import { yCellKey } from './y-cell-key'
 
 // SHEETS_MAP is the Y.Map name holding sheet metadata, keyed by sheet id.
@@ -27,6 +27,12 @@ export const SHEETS_MAP = 'sheets'
 //   - YKeyValue per cell to drop tombstones AND nested Y.Map overhead
 export const CELLS_MAP = 'cells'
 
+// STYLE_KEY is the cell-Y.Map key under which an optional Y.Map of
+// formatting attributes lives (font, fill, alignment, numFmt). Present
+// only when the cell has at least one tracked style attribute. Absence
+// is significant — see CellStyle in workbook-types.ts.
+export const STYLE_KEY = 'style'
+
 export interface YSheetMeta {
     name: string
     position: number
@@ -38,6 +44,7 @@ export interface YCellValue {
     raw: string
     display: string
     formula?: string
+    style?: CellStyle
 }
 
 // bootstrapYDocFromWorkbook seeds an empty Y.Doc from a parsed
@@ -82,10 +89,83 @@ export function bootstrapYDocFromWorkbook(doc: Y.Doc, model: WorkbookModel): voi
                 if (value.formula) {
                     cell.set('formula', value.formula)
                 }
+                if (value.style != null) {
+                    const styleMap = buildStyleYMap(value.style)
+                    if (styleMap != null) {
+                        cell.set(STYLE_KEY, styleMap)
+                    }
+                }
                 cellsMap.set(yCellKey(sheetId, row, col), cell)
             }
         }
     })
+}
+
+// buildStyleYMap converts a partial CellStyle into a nested Y.Map tree
+// suitable for storing under cell[STYLE_KEY]. Only groups (font, fill,
+// alignment) and individual keys that are actually present in the
+// patch are written — the "absent = untracked" rule applies at every
+// nesting level. Returns null if the patch is structurally empty.
+//
+// New style groups land here additively: just add another `case` to
+// the switch with the same shape.
+export function buildStyleYMap(style: CellStyle): Y.Map<unknown> | null {
+    const out = new Y.Map<unknown>()
+    let any = false
+    for (const groupKey of Object.keys(style) as (keyof CellStyle)[]) {
+        const groupValue = style[groupKey]
+        if (groupValue == null) continue
+        if (typeof groupValue === 'string') {
+            // Scalar group (e.g. numFmt). Mirror as a plain string.
+            out.set(groupKey, groupValue)
+            any = true
+            continue
+        }
+        const groupMap = new Y.Map<unknown>()
+        let groupAny = false
+        for (const [k, v] of Object.entries(groupValue)) {
+            if (v == null) continue
+            groupMap.set(k, v as unknown)
+            groupAny = true
+        }
+        if (groupAny) {
+            out.set(groupKey, groupMap)
+            any = true
+        }
+    }
+    return any ? out : null
+}
+
+// readStyleFromYMap is the inverse of buildStyleYMap — walks the
+// nested style Y.Map tree and produces a partial CellStyle. Returns
+// undefined if the cell has no style entry or the entry is empty.
+export function readStyleFromYMap(cell: Y.Map<unknown>): CellStyle | undefined {
+    const entry = cell.get(STYLE_KEY)
+    if (entry == null) return undefined
+    if (!(entry instanceof Y.Map)) return undefined
+    const out: Record<string, unknown> = {}
+    let any = false
+    entry.forEach((v, k) => {
+        if (v == null) return
+        if (v instanceof Y.Map) {
+            const group: Record<string, unknown> = {}
+            let groupAny = false
+            v.forEach((vv, kk) => {
+                if (vv != null) {
+                    group[kk] = vv
+                    groupAny = true
+                }
+            })
+            if (groupAny) {
+                out[k] = group
+                any = true
+            }
+        } else {
+            out[k] = v
+            any = true
+        }
+    })
+    return any ? (out as CellStyle) : undefined
 }
 
 // ydocSheetIds returns the array of sheet ids in the doc's `sheets`

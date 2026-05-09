@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { setYCell } from '../tinycld/calc/hooks/use-y-cell'
+import { setYCell, setYCellStyle } from '../tinycld/calc/hooks/use-y-cell'
 import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
-import { CELLS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
+import { CELLS_MAP, STYLE_KEY } from '../tinycld/calc/lib/y-doc-bootstrap'
 
 // useYCell ties a React component to one Y.Map cell entry via
 // useSyncExternalStore. Mounting the hook here would require a React
@@ -38,20 +38,32 @@ describe('setYCell + cellsMap observe', () => {
         expect(cellsMap.has(yCellKey('sheet1', 2, 3))).toBe(false)
     })
 
-    it('observer fires for the watched key when its cell is set', () => {
+    it('parent observer fires on insert; subsequent edits observed via the nested cell map', () => {
+        // setYCell mutates the existing cell Y.Map in place rather
+        // than replacing it (so style/font/etc. survive value edits).
+        // The Grid hook (useYCell) handles this by attaching a deep
+        // observer on the nested cell map; the parent CELLS_MAP only
+        // sees insert / delete events.
         const doc = new Y.Doc()
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
         const watchedKey = yCellKey('sheet1', 1, 1)
-        let firedForWatched = 0
+        let parentFires = 0
         cellsMap.observe((event) => {
-            if (event.keysChanged.has(watchedKey)) firedForWatched++
+            if (event.keysChanged.has(watchedKey)) parentFires++
         })
 
         setYCell(doc, 'sheet1', 1, 1, 'A1')
-        expect(firedForWatched).toBe(1)
+        expect(parentFires).toBe(1)
 
+        // Re-edit the same cell: parent observer does NOT fire again —
+        // the change is on the nested map's `raw`/`display` keys.
+        let nestedFires = 0
+        cellsMap.get(watchedKey)?.observe(() => {
+            nestedFires++
+        })
         setYCell(doc, 'sheet1', 1, 1, 'A1-edited')
-        expect(firedForWatched).toBe(2)
+        expect(parentFires).toBe(1)
+        expect(nestedFires).toBe(1)
     })
 
     it('observer does NOT fire for the watched key when an unrelated cell changes', () => {
@@ -78,5 +90,70 @@ describe('setYCell + cellsMap observe', () => {
         })
         setYCell(doc, 'sheet1', 1, 1, 'one')
         expect(updates).toBe(1)
+    })
+
+    it('setYCell on an existing styled cell preserves the style entry', () => {
+        // Regression: setYCell must mutate raw/display in place rather
+        // than replacing the whole cell Y.Map, otherwise typing into a
+        // bolded cell silently drops the bold.
+        const doc = new Y.Doc()
+        setYCell(doc, 'sheet1', 1, 1, 'before')
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { bold: true } })
+        setYCell(doc, 'sheet1', 1, 1, 'after')
+
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+        const cell = cellsMap.get(yCellKey('sheet1', 1, 1))
+        expect(cell?.get('raw')).toBe('after')
+        const style = cell?.get(STYLE_KEY) as Y.Map<unknown> | undefined
+        const font = style?.get('font') as Y.Map<unknown> | undefined
+        expect(font?.get('bold')).toBe(true)
+    })
+})
+
+describe('setYCellStyle', () => {
+    it('writes a partial style under cell.style as nested Y.Maps', () => {
+        const doc = new Y.Doc()
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { bold: true } })
+
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+        const cell = cellsMap.get(yCellKey('sheet1', 1, 1))
+        expect(cell).toBeDefined()
+        const style = cell?.get(STYLE_KEY) as Y.Map<unknown> | undefined
+        expect(style).toBeDefined()
+        const font = style?.get('font') as Y.Map<unknown> | undefined
+        expect(font?.get('bold')).toBe(true)
+    })
+
+    it('deep-merges across calls — adding italic does not drop bold', () => {
+        const doc = new Y.Doc()
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { bold: true } })
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { italic: true } })
+
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+        const cell = cellsMap.get(yCellKey('sheet1', 1, 1))
+        const style = cell?.get(STYLE_KEY) as Y.Map<unknown> | undefined
+        const font = style?.get('font') as Y.Map<unknown> | undefined
+        expect(font?.get('bold')).toBe(true)
+        expect(font?.get('italic')).toBe(true)
+    })
+
+    it('overwriting a key yields the new value', () => {
+        const doc = new Y.Doc()
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { bold: true } })
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { bold: false } })
+
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+        const cell = cellsMap.get(yCellKey('sheet1', 1, 1))
+        const style = cell?.get(STYLE_KEY) as Y.Map<unknown> | undefined
+        const font = style?.get('font') as Y.Map<unknown> | undefined
+        expect(font?.get('bold')).toBe(false)
+    })
+
+    it('creates the cell Y.Map on demand when style is set on an empty cell', () => {
+        const doc = new Y.Doc()
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+        expect(cellsMap.has(yCellKey('sheet1', 1, 1))).toBe(false)
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { bold: true } })
+        expect(cellsMap.has(yCellKey('sheet1', 1, 1))).toBe(true)
     })
 })

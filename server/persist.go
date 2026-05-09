@@ -179,14 +179,19 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot) ([]byte, e
 			if err := f.SetCellFormula(sheetName, ref, cell.Formula); err != nil {
 				return nil, fmt.Errorf("set formula at %s!%s: %w", sheetName, ref, err)
 			}
-			continue
+		} else {
+			val := cell.Raw
+			if val == "" {
+				val = cell.Display
+			}
+			if err := f.SetCellValue(sheetName, ref, coerceCellValue(val)); err != nil {
+				return nil, fmt.Errorf("set value at %s!%s: %w", sheetName, ref, err)
+			}
 		}
-		val := cell.Raw
-		if val == "" {
-			val = cell.Display
-		}
-		if err := f.SetCellValue(sheetName, ref, coerceCellValue(val)); err != nil {
-			return nil, fmt.Errorf("set value at %s!%s: %w", sheetName, ref, err)
+		if cell.Style != nil {
+			if err := applyCellStyle(f, sheetName, ref, cell.Style); err != nil {
+				return nil, fmt.Errorf("apply style at %s!%s: %w", sheetName, ref, err)
+			}
 		}
 	}
 
@@ -195,6 +200,42 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot) ([]byte, e
 		return nil, fmt.Errorf("write workbook: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// applyCellStyle overlays a partial CellStyle onto the cell's existing
+// excelize style and writes the result back via NewStyle/SetCellStyle.
+//
+// "Existing" matters: the original .xlsx may already have a style on
+// this cell (a fill color, a number format, a font size). Reading it
+// first and overlaying only the snapshot's non-nil leaves preserves
+// every attribute the doc didn't track.
+func applyCellStyle(f *excelize.File, sheet, ref string, patch *CellStyle) error {
+	if patch == nil {
+		return nil
+	}
+	styleID, err := f.GetCellStyle(sheet, ref)
+	if err != nil {
+		return fmt.Errorf("get existing style: %w", err)
+	}
+	base := &excelize.Style{}
+	if styleID != 0 {
+		got, err := f.GetStyle(styleID)
+		if err != nil {
+			return fmt.Errorf("read style %d: %w", styleID, err)
+		}
+		if got != nil {
+			base = got
+		}
+	}
+	overlayStyle(base, patch)
+	newID, err := f.NewStyle(base)
+	if err != nil {
+		return fmt.Errorf("register style: %w", err)
+	}
+	if err := f.SetCellStyle(sheet, ref, ref, newID); err != nil {
+		return fmt.Errorf("apply style: %w", err)
+	}
+	return nil
 }
 
 // coerceCellValue takes the snapshot's stringly-typed Raw/Display

@@ -30,6 +30,21 @@ import (
 // Runtime being tested) so the test exercises the same wire format
 // real clients produce.
 func makeYDocUpdateForCell(t *testing.T, sheetID, sheetName string, sheetPos, rowCount, colCount, row, col int, raw, display string) []byte {
+	return makeYDocUpdate(t, sheetID, sheetName, sheetPos, rowCount, colCount, row, col, raw, display, nil)
+}
+
+// makeYDocUpdateForCellWithBold is the bold-aware variant — same as
+// makeYDocUpdateForCell but also stamps a style.font.bold=true entry
+// on the cell Y.Map, mirroring what a client emits when the user hits
+// the bold button.
+func makeYDocUpdateForCellWithBold(t *testing.T, sheetID, sheetName string, sheetPos, rowCount, colCount, row, col int, raw, display string) []byte {
+	return makeYDocUpdate(t, sheetID, sheetName, sheetPos, rowCount, colCount, row, col, raw, display, map[string]any{"font": map[string]any{"bold": true}})
+}
+
+// makeYDocUpdate is the shared workhorse. style is an optional plain
+// JS-shaped style object that gets faithfully reproduced as nested
+// Y.Maps under cell['style'].
+func makeYDocUpdate(t *testing.T, sheetID, sheetName string, sheetPos, rowCount, colCount, row, col int, raw, display string, style map[string]any) []byte {
 	t.Helper()
 
 	type result struct {
@@ -64,6 +79,7 @@ func makeYDocUpdateForCell(t *testing.T, sheetID, sheetName string, sheetPos, ro
 			"col":       col,
 			"raw":       raw,
 			"display":   display,
+			"style":     style,
 		})
 		_ = vm.Set("__sendCellUpdate", func(call goja.FunctionCall) goja.Value {
 			arg := call.Argument(0)
@@ -99,6 +115,26 @@ func makeYDocUpdateForCell(t *testing.T, sheetID, sheetName string, sheetPos, ro
 					const cell = new Y.Map();
 					cell.set('raw', __paramsForCell.raw);
 					cell.set('display', __paramsForCell.display);
+					if (__paramsForCell.style) {
+						const styleMap = new Y.Map();
+						const groups = __paramsForCell.style;
+						Object.keys(groups).forEach(function (groupKey) {
+							const group = groups[groupKey];
+							if (group == null) return;
+							if (typeof group === 'object') {
+								const groupMap = new Y.Map();
+								Object.keys(group).forEach(function (k) {
+									const v = group[k];
+									if (v == null) return;
+									groupMap.set(k, v);
+								});
+								styleMap.set(groupKey, groupMap);
+								return;
+							}
+							styleMap.set(groupKey, group);
+						});
+						cell.set('style', styleMap);
+					}
 					const key = __paramsForCell.sheetID + ':' + __paramsForCell.row + ':' + __paramsForCell.col;
 					cellsMap.set(key, cell);
 				});
@@ -247,6 +283,107 @@ func TestRuntimeMultipleApplyUpdates(t *testing.T) {
 	}
 	if got, ok := cells["sheet1:3:2"]; !ok || got.Raw != "v-two" {
 		t.Errorf("B3 in snapshot: ok=%v got=%+v", ok, got)
+	}
+}
+
+// TestServerRoundtripBoldUpdate is the broker-side equivalent of the
+// client's bootstrap → encode → applyUpdate roundtrip test. If the
+// server's __sheetsApply / __sheetsEncode mishandles a bootstrap
+// update that contains nested style Y.Maps, the encoded reply will
+// fail to decode on the client and we'll see lib0 "Unexpected end of
+// array" in the browser console.
+func TestServerRoundtripBoldUpdate(t *testing.T) {
+	rt := NewRuntime()
+	handle, err := rt.NewDoc("rt-room")
+	if err != nil {
+		t.Fatalf("NewDoc: %v", err)
+	}
+	t.Cleanup(func() { _ = handle.Close() })
+
+	update := makeYDocUpdateForCellWithBold(t, "sheet1", "Sheet1", 0, 8, 6, 2, 2, "bold-cell", "bold-cell")
+	if err := handle.ApplyUpdate(update); err != nil {
+		t.Fatalf("ApplyUpdate: %v", err)
+	}
+	state, err := handle.EncodeStateAsUpdate()
+	if err != nil {
+		t.Fatalf("EncodeStateAsUpdate: %v", err)
+	}
+	if len(state) == 0 {
+		t.Fatal("EncodeStateAsUpdate produced empty bytes")
+	}
+	// Apply that state to a fresh peer doc on the same JS side; if the
+	// state is malformed, applyUpdate throws.
+	rt2 := NewRuntime()
+	peer, err := rt2.NewDoc("peer-room")
+	if err != nil {
+		t.Fatalf("peer NewDoc: %v", err)
+	}
+	t.Cleanup(func() { _ = peer.Close() })
+	if err := peer.ApplyUpdate(state); err != nil {
+		t.Fatalf("peer ApplyUpdate: %v", err)
+	}
+}
+
+// TestSnapshotExtractsBoldStyle: a Y.Doc cell whose style.font.bold is
+// true must surface as snap.Cells[0].Style.Font.Bold = &true after
+// __sheetsSnapshot + the JSON unmarshal in Snapshot().
+func TestSnapshotExtractsBoldStyle(t *testing.T) {
+	rt := NewRuntime()
+	handle, err := rt.NewDoc("style-room")
+	if err != nil {
+		t.Fatalf("NewDoc: %v", err)
+	}
+	t.Cleanup(func() { _ = handle.Close() })
+
+	update := makeYDocUpdateForCellWithBold(t, "sheet1", "Sheet1", 0, 8, 6, 2, 2, "bold-cell", "bold-cell")
+	if err := handle.ApplyUpdate(update); err != nil {
+		t.Fatalf("ApplyUpdate: %v", err)
+	}
+
+	snap, err := handle.(*sheetsDocHandle).Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if len(snap.Cells) != 1 {
+		t.Fatalf("snapshot cells: want 1, got %d", len(snap.Cells))
+	}
+	c := snap.Cells[0]
+	if c.Style == nil {
+		t.Fatalf("snapshot cell missing Style: %+v", c)
+	}
+	if c.Style.Font == nil {
+		t.Fatalf("snapshot cell missing Style.Font: %+v", *c.Style)
+	}
+	if c.Style.Font.Bold == nil || !*c.Style.Font.Bold {
+		t.Fatalf("snapshot cell Style.Font.Bold: want &true, got %+v", c.Style.Font.Bold)
+	}
+}
+
+// TestSnapshotNoStyleProducesNilStyle: a vanilla cell without a style
+// entry must surface as Style == nil so the serializer leaves the
+// existing on-disk style alone.
+func TestSnapshotNoStyleProducesNilStyle(t *testing.T) {
+	rt := NewRuntime()
+	handle, err := rt.NewDoc("nostyle-room")
+	if err != nil {
+		t.Fatalf("NewDoc: %v", err)
+	}
+	t.Cleanup(func() { _ = handle.Close() })
+
+	update := makeYDocUpdateForCell(t, "sheet1", "Sheet1", 0, 8, 6, 1, 1, "x", "x")
+	if err := handle.ApplyUpdate(update); err != nil {
+		t.Fatalf("ApplyUpdate: %v", err)
+	}
+
+	snap, err := handle.(*sheetsDocHandle).Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if len(snap.Cells) != 1 {
+		t.Fatalf("snapshot cells: want 1, got %d", len(snap.Cells))
+	}
+	if snap.Cells[0].Style != nil {
+		t.Fatalf("expected nil Style, got %+v", *snap.Cells[0].Style)
 	}
 }
 

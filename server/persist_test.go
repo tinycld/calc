@@ -112,6 +112,52 @@ func TestSaveRoomWritesUpdatedXLSX(t *testing.T) {
 	}
 }
 
+// TestSaveRoomPersistsBold is the full-loop test: a Y.Doc update
+// stamps style.font.bold on a cell; SaveRoom serializes through the
+// snapshot path; the reloaded .xlsx still reports bold on that cell.
+func TestSaveRoomPersistsBold(t *testing.T) {
+	tinyXlsx, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	app := setupPersistTestApp(t)
+	itemID := seedDriveItem(t, app, "tiny.xlsx", tinyXlsx)
+
+	rt := NewRuntime()
+	handle, err := rt.NewDoc(itemID)
+	if err != nil {
+		t.Fatalf("NewDoc: %v", err)
+	}
+	t.Cleanup(func() { _ = handle.Close() })
+
+	update := makeYDocUpdateForCellWithBold(t, "sheet1", "Sheet1", 0, 8, 6, 2, 2, "from-save", "from-save")
+	if err := handle.ApplyUpdate(update); err != nil {
+		t.Fatalf("ApplyUpdate: %v", err)
+	}
+	if err := SaveRoom(app, handle, itemID); err != nil {
+		t.Fatalf("SaveRoom: %v", err)
+	}
+
+	reloaded, err := app.FindRecordById(driveItemsCollection, itemID)
+	if err != nil {
+		t.Fatalf("reload drive_item: %v", err)
+	}
+	bytesAfter, err := readDriveItemBytes(app, reloaded)
+	if err != nil {
+		t.Fatalf("readDriveItemBytes after save: %v", err)
+	}
+	// makeYDocUpdateForCellWithBold passes sheetName="Sheet1", which
+	// renames the on-disk "People" sheet to "Sheet1" via the position
+	// match — match the renamed name when reading back.
+	if !readCellBold(t, bytesAfter, "Sheet1", 2, 2) {
+		t.Fatalf("B2 expected bold after SaveRoom, got non-bold")
+	}
+	if got := readBackCellInTinyXlsx(t, bytesAfter, 2, 2); got != "from-save" {
+		t.Errorf("B2 value after SaveRoom: want %q, got %q", "from-save", got)
+	}
+}
+
 // TestSaveRoomMissingRecordReturnsError: passing an unknown
 // driveItemID surfaces the FindRecordById failure.
 func TestSaveRoomMissingRecordReturnsError(t *testing.T) {

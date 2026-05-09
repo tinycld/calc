@@ -1,7 +1,8 @@
 import ExcelJS from 'exceljs'
-import { type CellValue, cellKey, type WorkbookModel, type WorksheetModel } from './workbook-types'
+import { type CellStyle, type CellValue, cellKey, type WorkbookModel, type WorksheetModel } from './workbook-types'
 
 export {
+    type CellStyle,
     type CellValue,
     cellKey,
     columnLabel,
@@ -59,7 +60,8 @@ export async function parseWorkbook(buffer: ArrayBuffer): Promise<WorkbookModel>
                     display = formatDisplay(value)
                 }
 
-                cells[cellKey(rowNumber, colNumber)] = { raw, display, formula }
+                const style = extractCellStyle(cell)
+                cells[cellKey(rowNumber, colNumber)] = { raw, display, formula, style }
                 if (rowNumber > maxRow) maxRow = rowNumber
                 if (colNumber > maxCol) maxCol = colNumber
             })
@@ -78,6 +80,22 @@ export async function emptyWorkbookBuffer(sheetName = 'Sheet1'): Promise<ArrayBu
     wb.addWorksheet(sheetName)
     const buf = await wb.xlsx.writeBuffer()
     return buf as ArrayBuffer
+}
+
+// extractCellStyle reads the subset of ExcelJS's cell.style that we
+// currently track. Adding a new attribute here means: add the field to
+// CellStyle (workbook-types.ts) AND the matching CellStyle field on
+// the Go side (server/snapshot.go) so the snapshot consumer can decode
+// it. Today only font.bold is wired through; the rest of the shape is
+// in place so additions land additively.
+function extractCellStyle(cell: ExcelJS.Cell): CellStyle | undefined {
+    const out: CellStyle = {}
+    let any = false
+    if (cell.font?.bold) {
+        out.font = { ...(out.font ?? {}), bold: true }
+        any = true
+    }
+    return any ? out : undefined
 }
 
 function formatDisplay(value: unknown): string {

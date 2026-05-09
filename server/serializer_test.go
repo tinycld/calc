@@ -246,3 +246,206 @@ func TestSerializerEmptyOriginal(t *testing.T) {
 		t.Fatal("expected error for nil original bytes, got nil")
 	}
 }
+
+// readCellBold returns the font.bold flag for the given cell.
+func readCellBold(t *testing.T, xlsx []byte, sheetName string, row, col int) bool {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	id, err := f.GetCellStyle(sheetName, ref)
+	if err != nil {
+		t.Fatalf("get style %s!%s: %v", sheetName, ref, err)
+	}
+	if id == 0 {
+		return false
+	}
+	style, err := f.GetStyle(id)
+	if err != nil {
+		t.Fatalf("read style %d: %v", id, err)
+	}
+	if style == nil || style.Font == nil {
+		return false
+	}
+	return style.Font.Bold
+}
+
+// readCellFontSize returns the font.size at the given cell, or 0 if
+// no style is registered. Used to verify the overlay preserves
+// existing font attributes the snapshot doesn't touch.
+func readCellFontSize(t *testing.T, xlsx []byte, sheetName string, row, col int) float64 {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	id, err := f.GetCellStyle(sheetName, ref)
+	if err != nil {
+		t.Fatalf("get style %s!%s: %v", sheetName, ref, err)
+	}
+	if id == 0 {
+		return 0
+	}
+	style, err := f.GetStyle(id)
+	if err != nil {
+		t.Fatalf("read style %d: %v", id, err)
+	}
+	if style == nil || style.Font == nil {
+		return 0
+	}
+	return style.Font.Size
+}
+
+// stampFontSize pre-applies a font size on a cell and returns the new
+// xlsx bytes. Used to seed an "existing style" we then test the
+// overlay preserves.
+func stampFontSize(t *testing.T, xlsx []byte, sheetName string, row, col int, size float64) []byte {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	id, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Size: size}})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetCellStyle(sheetName, ref, ref, id); err != nil {
+		t.Fatalf("SetCellStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// boolPtr is a tiny convenience for building *bool literals in tests.
+func boolPtr(b bool) *bool { return &b }
+
+// TestSerializerStyleSetsBold: a snapshot whose cell carries
+// style.font.bold = true lands as a bold font on the resulting xlsx
+// cell.
+func TestSerializerStyleSetsBold(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1",
+				Row:     2,
+				Col:     2,
+				Raw:     "from-save",
+				Display: "from-save",
+				Style:   &CellStyle{Font: &CellFont{Bold: boolPtr(true)}},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if !readCellBold(t, out, "People", 2, 2) {
+		t.Errorf("B2 should be bold after style overlay, got non-bold")
+	}
+	if got := readCell(t, out, "People", 2, 2); got != "from-save" {
+		t.Errorf("B2 value: want %q, got %q", "from-save", got)
+	}
+}
+
+// TestSerializerStylePartialOverlay: an existing style attribute
+// (font size) on a cell must survive when the snapshot only carries a
+// different attribute (bold). This is the regression test for the
+// "don't blow away existing styles" risk that motivated the partial
+// overlay design.
+func TestSerializerStylePartialOverlay(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	// Pre-stamp B2 with size=14 so we can assert it survives.
+	withSize := stampFontSize(t, original, "People", 2, 2, 14)
+	if got := readCellFontSize(t, withSize, "People", 2, 2); got != 14 {
+		t.Fatalf("seed font size: want 14, got %v", got)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1",
+				Row:     2,
+				Col:     2,
+				Raw:     "from-save",
+				Display: "from-save",
+				Style:   &CellStyle{Font: &CellFont{Bold: boolPtr(true)}},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(withSize, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if !readCellBold(t, out, "People", 2, 2) {
+		t.Errorf("B2 should be bold after overlay")
+	}
+	if got := readCellFontSize(t, out, "People", 2, 2); got != 14 {
+		t.Errorf("B2 font size: want 14 preserved, got %v", got)
+	}
+}
+
+// TestSerializerStyleAbsentLeavesCellAlone: a snapshot cell with no
+// Style must leave the cell's existing on-disk style intact.
+func TestSerializerStyleAbsentLeavesCellAlone(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	withSize := stampFontSize(t, original, "People", 2, 2, 18)
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{SheetID: "sheet1", Row: 2, Col: 2, Raw: "from-save", Display: "from-save"},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(withSize, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if got := readCellFontSize(t, out, "People", 2, 2); got != 18 {
+		t.Errorf("B2 font size after styleless save: want 18 preserved, got %v", got)
+	}
+}

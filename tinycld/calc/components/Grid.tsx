@@ -1,19 +1,26 @@
-import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { Menu, Separator } from '@tinycld/core/ui/menu'
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
+    type GestureResponderEvent,
     type LayoutChangeEvent,
     type NativeScrollEvent,
     type NativeSyntheticEvent,
+    Platform,
     Pressable,
     ScrollView,
+    StyleSheet,
     Text,
     TextInput,
     View,
 } from 'react-native'
+import * as Y from 'yjs'
 import { type RemotePresence, usePresence } from '../hooks/use-presence'
 import { useWorkbook } from '../hooks/use-workbook-context'
-import { setYCell, useYCell } from '../hooks/use-y-cell'
+import { setYCell, setYCellStyle, useYCell } from '../hooks/use-y-cell'
 import { type SheetWithId, useYSheets } from '../hooks/use-y-sheets'
 import { columnLabel } from '../lib/workbook-types'
+import { yCellKey } from '../lib/y-cell-key'
+import { CELLS_MAP, readStyleFromYMap } from '../lib/y-doc-bootstrap'
 
 const CELL_WIDTH = 96
 const CELL_HEIGHT = 28
@@ -194,8 +201,41 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     const presence = usePresence(awareness)
     const presenceOnSheet = useMemo(() => presence.filter((p) => p.sheetId === sheetId), [presence, sheetId])
 
+    const onToggleBold = useCallback(() => {
+        if (selected == null || readOnly) return
+        const current = readCellStyle(doc, sheetId, selected.row, selected.col)
+        const nextBold = current?.font?.bold !== true
+        setYCellStyle(doc, sheetId, selected.row, selected.col, { font: { bold: nextBold } })
+    }, [doc, sheetId, selected, readOnly])
+
+    // Single Menu mount per Grid. The right-clicked / long-pressed cell
+    // is captured via a callback dispatched up from Cell, and the Menu
+    // is positioned at the cursor/touch coordinates via triggerPosition.
+    // This avoids per-cell <Menu> mounts (which would break <Cell>'s
+    // memoization and balloon DOM nodes in a windowed grid).
+    const [contextTarget, setContextTarget] = useState<{
+        cell: SelectedCell
+        cursor: { x: number; y: number }
+    } | null>(null)
+
+    const onCellContextMenu = useCallback(
+        (row: number, col: number, x: number, y: number) => {
+            // Match single-click behaviour: a context-menu gesture also
+            // selects the cell. Skip edit so the menu doesn't open over
+            // a TextInput.
+            setSelected({ row, col })
+            setEditingCell(null)
+            publishLocal({ selection: { row, col }, editing: null })
+            setContextTarget({ cell: { row, col }, cursor: { x, y } })
+        },
+        [publishLocal]
+    )
+
+    const closeContextMenu = useCallback(() => setContextTarget(null), [])
+
     return (
         <View className="flex-1 bg-background">
+            <Toolbar disabled={readOnly || selected == null} onToggleBold={onToggleBold} />
             <View className="flex-row">
                 <CornerCell />
                 <ColumnHeader
@@ -230,11 +270,53 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                     onLayout={onBodyLayout}
                     onHorizontalScroll={onHorizontalScroll}
                     onVerticalScroll={onVerticalScroll}
+                    onCellContextMenu={readOnly ? undefined : onCellContextMenu}
                 />
             </View>
+            <CellContextMenu
+                target={contextTarget}
+                doc={doc}
+                sheetId={sheetId}
+                onClose={closeContextMenu}
+            />
         </View>
     )
 })
+
+// readCellStyle is a one-shot read of a cell's style from the Y.Doc.
+// Used by handlers that need the current value to compute a toggle —
+// can't use the useYCell hook from inside a callback, and subscribing
+// the whole Grid to every cell change just to know whether bold is on
+// would be wasteful.
+function readCellStyle(doc: Y.Doc | null, sheetId: string, row: number, col: number) {
+    if (doc == null) return undefined
+    const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+    const cell = cellsMap.get(yCellKey(sheetId, row, col))
+    if (cell == null) return undefined
+    return readStyleFromYMap(cell)
+}
+
+interface ToolbarProps {
+    disabled: boolean
+    onToggleBold: () => void
+}
+
+function Toolbar({ disabled, onToggleBold }: ToolbarProps) {
+    return (
+        <View className="flex-row items-center bg-surface-secondary border-b border-border" style={{ height: 32, paddingHorizontal: 4 }}>
+            <Pressable
+                onPress={onToggleBold}
+                disabled={disabled}
+                className="items-center justify-center"
+                style={{ width: 28, height: 24, opacity: disabled ? 0.4 : 1 }}
+            >
+                <Text className="text-foreground" style={{ fontWeight: 'bold' }}>
+                    B
+                </Text>
+            </Pressable>
+        </View>
+    )
+}
 
 function CornerCell() {
     return (
@@ -349,6 +431,7 @@ interface BodyProps {
     onLayout: (e: LayoutChangeEvent) => void
     onHorizontalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
     onVerticalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
+    onCellContextMenu?: (row: number, col: number, x: number, y: number) => void
 }
 
 function Body({
@@ -369,6 +452,7 @@ function Body({
     onLayout,
     onHorizontalScroll,
     onVerticalScroll,
+    onCellContextMenu,
 }: BodyProps) {
     const sheetId = sheet?.id ?? ''
 
@@ -406,6 +490,7 @@ function Body({
                         onEditDraftChange={onEditDraftChange}
                         onCommitEdit={onCommitEdit}
                         onCancelEdit={onCancelEdit}
+                        onContextMenu={onCellContextMenu}
                     />
                 )
             }
@@ -494,6 +579,7 @@ interface CellProps {
     onEditDraftChange: (row: number, col: number, draft: string) => void
     onCommitEdit: (row: number, col: number, value: string) => void
     onCancelEdit: () => void
+    onContextMenu?: (row: number, col: number, x: number, y: number) => void
 }
 
 const Cell = memo(function Cell({
@@ -508,6 +594,7 @@ const Cell = memo(function Cell({
     onEditDraftChange,
     onCommitEdit,
     onCancelEdit,
+    onContextMenu,
 }: CellProps) {
     const { doc } = useWorkbook()
     const cellValue = useYCell(doc, sheetId, row, col)
@@ -539,12 +626,47 @@ const Cell = memo(function Cell({
         }
     }
 
+    // Native long-press fires before any subsequent onPress is dispatched,
+    // so wiring the context menu here doesn't conflict with the
+    // select-then-edit gesture above. Web uses onContextMenu (right-click)
+    // via a DOM prop the RN-Web Pressable forwards but doesn't type.
+    const onLongPress = onContextMenu
+        ? (e: GestureResponderEvent) => {
+              const { pageX, pageY } = e.nativeEvent
+              onContextMenu(row, col, pageX, pageY)
+          }
+        : undefined
+
+    const webContextMenuProp =
+        Platform.OS === 'web' && onContextMenu
+            ? {
+                  onContextMenu: (e: { preventDefault: () => void; clientX: number; clientY: number }) => {
+                      e.preventDefault()
+                      onContextMenu(row, col, e.clientX, e.clientY)
+                  },
+              }
+            : null
+
     const showRemoteDraft = remoteDraft != null
     const textColor = showRemoteDraft ? remoteEditor?.user.color : undefined
+    const isBold = cellValue?.style?.font?.bold === true
+    const isItalic = cellValue?.style?.font?.italic === true
+
+    const textStyle = showRemoteDraft
+        ? {
+              color: textColor,
+              fontStyle: 'italic' as const,
+              fontWeight: isBold ? ('bold' as const) : undefined,
+          }
+        : {
+              fontWeight: isBold ? ('bold' as const) : undefined,
+              fontStyle: isItalic ? ('italic' as const) : undefined,
+          }
 
     return (
         <Pressable
             onPress={onPress}
+            onLongPress={onLongPress}
             style={{
                 position: 'absolute',
                 left,
@@ -553,12 +675,10 @@ const Cell = memo(function Cell({
                 height: CELL_HEIGHT,
             }}
             className="border-r border-b border-border bg-background justify-center px-1"
+            // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
+            {...((webContextMenuProp ?? {}) as any)}
         >
-            <Text
-                className="text-xs"
-                numberOfLines={1}
-                style={showRemoteDraft ? { color: textColor, fontStyle: 'italic' } : undefined}
-            >
+            <Text className="text-xs" numberOfLines={1} style={textStyle}>
                 {showRemoteDraft ? remoteDraft : display}
             </Text>
         </Pressable>
@@ -657,5 +777,98 @@ function RemoteSelectionOverlay({ row, col, color, name }: RemoteSelectionOverla
                 </Text>
             </View>
         </View>
+    )
+}
+
+interface CellContextMenuProps {
+    target: { cell: SelectedCell; cursor: { x: number; y: number } } | null
+    doc: Y.Doc | null
+    sheetId: string
+    onClose: () => void
+}
+
+// Single Menu instance shared by every cell. Mounted in Grid so cells
+// stay free of any per-cell Menu overhead. Positioned at the
+// cursor/touch coordinates via Menu's triggerPosition prop (a 0×0
+// "trigger rect" anchored at the click point produces a popover that
+// drops down to the bottom-right of the cursor, with edge-flip handled
+// by Menu.Content).
+function CellContextMenu({ target, doc, sheetId, onClose }: CellContextMenuProps) {
+    const contentRef = useRef<View | null>(null)
+
+    // Web: dismiss on any pointerdown outside the menu content.
+    // Mirrors the pattern in @tinycld/core/components/ContextMenu —
+    // Gluestack's overlay scrim is unreliable for outside-click
+    // dismissal (clicks can land on cells underneath).
+    //
+    // Native: a Pressable absolute-fill scrim inside Menu.Portal handles
+    // taps outside; rendered conditionally below.
+    useEffect(() => {
+        if (Platform.OS !== 'web') return
+        if (target == null) return
+        if (typeof document === 'undefined') return
+        const handler = (event: PointerEvent) => {
+            const targetNode = event.target as Node | null
+            const node = contentRef.current as unknown as Node | null
+            if (targetNode && node && node.contains(targetNode)) return
+            onClose()
+        }
+        document.addEventListener('pointerdown', handler, true)
+        return () => {
+            document.removeEventListener('pointerdown', handler, true)
+        }
+    }, [target, onClose])
+
+    const isOpen = target != null
+    const triggerPos = target ? { x: target.cursor.x, y: target.cursor.y, width: 0, height: 0 } : null
+
+    const handleOpenChange = useCallback(
+        (open: boolean) => {
+            if (!open) onClose()
+        },
+        [onClose]
+    )
+
+    const onClear = useCallback(() => {
+        if (target == null || doc == null) return
+        setYCell(doc, sheetId, target.cell.row, target.cell.col, '')
+    }, [doc, sheetId, target])
+
+    const onToggleBold = useCallback(() => {
+        if (target == null || doc == null) return
+        const current = readCellStyle(doc, sheetId, target.cell.row, target.cell.col)
+        const nextBold = current?.font?.bold !== true
+        setYCellStyle(doc, sheetId, target.cell.row, target.cell.col, { font: { bold: nextBold } })
+    }, [doc, sheetId, target])
+
+    const onToggleItalic = useCallback(() => {
+        if (target == null || doc == null) return
+        const current = readCellStyle(doc, sheetId, target.cell.row, target.cell.col)
+        const nextItalic = current?.font?.italic !== true
+        setYCellStyle(doc, sheetId, target.cell.row, target.cell.col, { font: { italic: nextItalic } })
+    }, [doc, sheetId, target])
+
+    const currentStyle = target ? readCellStyle(doc, sheetId, target.cell.row, target.cell.col) : undefined
+    const isBold = currentStyle?.font?.bold === true
+    const isItalic = currentStyle?.font?.italic === true
+
+    return (
+        <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
+            <Menu.Portal>
+                {Platform.OS !== 'web' && <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />}
+                <Menu.Content ref={contentRef} placement="bottom" align="start">
+                    <Menu.Item onPress={onClear}>
+                        <Menu.ItemTitle>Clear contents</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Separator className="my-1 mx-2" />
+                    <Menu.Item onPress={onToggleBold}>
+                        <Menu.ItemTitle>{isBold ? 'Remove bold' : 'Bold'}</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Menu.Item onPress={onToggleItalic}>
+                        <Menu.ItemTitle>{isItalic ? 'Remove italic' : 'Italic'}</Menu.ItemTitle>
+                    </Menu.Item>
+                </Menu.Content>
+            </Menu.Portal>
+        </Menu>
     )
 }

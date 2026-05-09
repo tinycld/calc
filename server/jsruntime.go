@@ -2,6 +2,7 @@ package calc
 
 import (
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -93,8 +94,16 @@ func (r *Runtime) ensureStarted() error {
 					return __sheetsDocs.has(String(id));
 				};
 				// __sheetsSnapshot returns a plain-JS snapshot of the
-				// room's Y.Doc. The Go side then walks the returned
-				// object once via reflection — no further JS calls.
+				// room's Y.Doc. The Go side walks the returned object
+				// once and json.Unmarshals each cell's styleJSON into
+				// *CellStyle — no reflect or per-attribute glue lives
+				// in Go.
+				//
+				// The style subtree is exported as a JSON string rather
+				// than a nested object on purpose: it lets the Go side
+				// use the standard library decoder (with json tags on
+				// CellStyle) instead of hand-walking goja Values, so
+				// new attributes round-trip with zero new Go code.
 				globalThis.__sheetsSnapshot = function (id) {
 					const doc = __sheetsDocs.get(String(id));
 					if (!doc) throw new Error('no doc for id ' + id);
@@ -110,6 +119,37 @@ func (r *Runtime) ensureStarted() error {
 						});
 					});
 					sheets.sort(function (a, b) { return a.position - b.position; });
+
+					// exportStyle walks a nested Y.Map tree (groups and
+					// scalars) and returns a plain JS object suitable
+					// for JSON.stringify. Nested Y.Maps are recognized
+					// by the presence of a forEach method.
+					function exportStyle(styleMap) {
+						if (!styleMap || typeof styleMap.forEach !== 'function') return null;
+						const out = {};
+						let any = false;
+						styleMap.forEach(function (v, k) {
+							if (v == null) return;
+							if (v && typeof v.forEach === 'function') {
+								const group = {};
+								let groupAny = false;
+								v.forEach(function (vv, kk) {
+									if (vv == null) return;
+									group[kk] = vv;
+									groupAny = true;
+								});
+								if (groupAny) {
+									out[k] = group;
+									any = true;
+								}
+								return;
+							}
+							out[k] = v;
+							any = true;
+						});
+						return any ? out : null;
+					}
+
 					const cells = [];
 					cellsMap.forEach(function (cellMap, key) {
 						const parts = String(key).split(':');
@@ -120,14 +160,17 @@ func (r *Runtime) ensureStarted() error {
 						const raw = cellMap.get('raw');
 						const display = cellMap.get('display');
 						const formula = cellMap.get('formula');
-						cells.push({
+						const styleObj = exportStyle(cellMap.get('style'));
+						const entry = {
 							sheetId: String(parts[0]),
 							row: row,
 							col: col,
 							raw: raw == null ? '' : String(raw),
 							display: display == null ? '' : String(display),
 							formula: formula == null ? '' : String(formula),
-						});
+							styleJSON: styleObj ? JSON.stringify(styleObj) : '',
+						};
+						cells.push(entry);
 					});
 					return { sheets: sheets, cells: cells };
 				};
@@ -321,14 +364,28 @@ func (h *sheetsDocHandle) Snapshot() (YDocSnapshot, error) {
 		snap.Cells = make([]CellEntry, 0, cellsLen)
 		for i := 0; i < cellsLen; i++ {
 			entry := cellsObj.Get(fmt.Sprintf("%d", i)).ToObject(vm)
-			snap.Cells = append(snap.Cells, CellEntry{
+			cell := CellEntry{
 				SheetID: entry.Get("sheetId").String(),
 				Row:     int(entry.Get("row").ToInteger()),
 				Col:     int(entry.Get("col").ToInteger()),
 				Raw:     entry.Get("raw").String(),
 				Display: entry.Get("display").String(),
 				Formula: entry.Get("formula").String(),
-			})
+			}
+			// Style is shipped as a JSON string under styleJSON so the
+			// stdlib json decoder (with the tags on CellStyle) does
+			// the camelCase translation for us. Empty string = no
+			// tracked style on this cell.
+			if styleJSON := entry.Get("styleJSON"); styleJSON != nil && !goja.IsUndefined(styleJSON) && !goja.IsNull(styleJSON) {
+				if s := styleJSON.String(); s != "" {
+					var cs CellStyle
+					if err := json.Unmarshal([]byte(s), &cs); err != nil {
+						return fmt.Errorf("decode cell style for %s!%d:%d: %w", cell.SheetID, cell.Row, cell.Col, err)
+					}
+					cell.Style = &cs
+				}
+			}
+			snap.Cells = append(snap.Cells, cell)
 		}
 		return nil
 	})
