@@ -1,9 +1,12 @@
 import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import * as Y from 'yjs'
-import type { CellStyle } from '../lib/workbook-types'
+import type { InferredCellInput } from '../lib/cell-input'
+import { inferCellInput } from '../lib/cell-input'
+import { FORMULA_ORIGIN } from '../lib/formula/origins'
+import { type CellRaw, formatCell, type CellStyle } from '../lib/workbook-types'
 import { yCellKey } from '../lib/y-cell-key'
-import { buildStyleYMap, CELLS_MAP, readStyleFromYMap, STYLE_KEY, type YCellValue } from '../lib/y-doc-bootstrap'
+import { buildStyleYMap, CELLS_MAP, readYCell, STYLE_KEY, type YCellValue } from '../lib/y-doc-bootstrap'
 
 // useYCell subscribes to one Y.Map cell entry and re-renders the caller
 // only when that specific cell changes. Internally uses
@@ -77,10 +80,11 @@ export function useYCell(doc: Y.Doc | null, sheetId: string, row: number, col: n
             snapshotRef.current = null
             return null
         }
-        const next = readYCellValue(cell)
+        const next = readYCell(cell)
         const prev = snapshotRef.current
         if (
             prev != null &&
+            prev.kind === next.kind &&
             prev.raw === next.raw &&
             prev.display === next.display &&
             prev.formula === next.formula &&
@@ -95,22 +99,6 @@ export function useYCell(doc: Y.Doc | null, sheetId: string, row: number, col: n
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
-function readYCellValue(cell: Y.Map<unknown>): YCellValue {
-    // The xlsx parser writes raw as `string | number | boolean | Date
-    // | null` while the live editor writes plain strings. Guard the
-    // read so the rendered display always sees a string.
-    const raw = cell.get('raw')
-    const display = cell.get('display')
-    const formula = cell.get('formula')
-    const style = readStyleFromYMap(cell)
-    return {
-        raw: typeof raw === 'string' ? raw : raw == null ? '' : String(raw),
-        display: typeof display === 'string' ? display : display == null ? '' : String(display),
-        formula: typeof formula === 'string' ? formula : undefined,
-        style,
-    }
-}
-
 // sameStyle is a structural-equality check used by the snapshot cache
 // to avoid handing back a fresh object identity when no style attribute
 // actually changed. JSON.stringify is fine here — partial style
@@ -122,42 +110,112 @@ function sameStyle(a: CellStyle | undefined, b: CellStyle | undefined): boolean 
     return JSON.stringify(a) === JSON.stringify(b)
 }
 
-// setYCell is the write-side counterpart — wraps a Y.Map.set in a
-// transact so a single Enter generates one Yjs update and one undo
-// step. The LOCAL_ORIGIN tag is what the realtime undo manager
-// allowlists; without it the edit would not be captured for undo.
-// Empty input deletes the cell.
+// setYCell is the high-level commit path: take the user-typed string,
+// run it through inferCellInput, and persist the resulting typed
+// (kind, raw, display, formula) tuple to the Y.Doc.
 //
-// When the cell already exists, mutate raw/display/formula in place
-// rather than replacing the whole Y.Map. Replacing would discard the
-// nested style Y.Map (and its CRDT history), so typing into a bolded
-// cell would silently drop the bold.
+// Empty input deletes the cell entry (matches Excel's "backspace
+// clears" semantics — there's no kind-string raw-empty state created
+// from the editor).
+//
+// When the cell already exists, this mutates the existing nested
+// Y.Map in place rather than replacing it; replacement would discard
+// the nested style Y.Map (and its CRDT history), so typing into a
+// bolded cell would silently drop the bold.
+//
+// The LOCAL_ORIGIN tag is what the realtime undo manager allowlists;
+// without it the edit would not be captured for undo.
 export function setYCell(doc: Y.Doc, sheetId: string, row: number, col: number, input: string): void {
+    if (input === '') {
+        deleteYCell(doc, sheetId, row, col)
+        return
+    }
+    setYCellTyped(doc, sheetId, row, col, inferCellInput(input))
+}
+
+// setYCellTyped writes a pre-inferred value to a cell. Programmatic
+// callers (tests, paste-special handlers, future bulk-edit paths) skip
+// the inference step and hand the typed shape directly. The editor
+// commit path goes through setYCell, which calls inferCellInput first.
+export function setYCellTyped(
+    doc: Y.Doc,
+    sheetId: string,
+    row: number,
+    col: number,
+    input: InferredCellInput
+): void {
     const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
     const key = yCellKey(sheetId, row, col)
     doc.transact(() => {
-        if (input === '') {
+        // Empty string-kinded input is the editor's "user backspaced
+        // out everything and pressed Enter" path: clear the cell.
+        if (input.kind === 'string' && input.raw === '') {
             cellsMap.delete(key)
             return
         }
-        const existing = cellsMap.get(key)
-        if (existing != null) {
-            // Continuing the no-coercion rule: raw and display are the
-            // same string the user typed. Style and any other tracked
-            // attributes are left intact.
-            existing.set('raw', input)
-            existing.set('display', input)
-            // A value-only edit isn't a formula; clear any prior
-            // formula so reads don't see stale state.
-            if (existing.has('formula')) {
-                existing.delete('formula')
-            }
-            return
+        let cell = cellsMap.get(key)
+        if (cell == null) {
+            cell = new Y.Map<unknown>()
+            cellsMap.set(key, cell)
         }
-        const cell = new Y.Map<unknown>()
-        cell.set('raw', input)
-        cell.set('display', input)
-        cellsMap.set(key, cell)
+        cell.set('kind', input.kind)
+        cell.set('raw', input.raw)
+        cell.set('display', input.display)
+        if (input.formula != null) {
+            cell.set('formula', input.formula)
+        } else if (cell.has('formula')) {
+            cell.delete('formula')
+        }
+    }, LOCAL_ORIGIN)
+}
+
+// setYCellFormulaResult writes the engine-computed result of a formula
+// cell back into the Y.Doc, leaving kind, formula, and style untouched.
+//
+// Tagged with FORMULA_ORIGIN so:
+//   - the realtime undo manager (which allowlists LOCAL_ORIGIN) does
+//     not capture it — undo rewinds the user's formula edit, not the
+//     recomputed result
+//   - the formula bridge's own observeDeep callback can short-circuit
+//     and skip re-forwarding the writeback into HF
+//
+// Self-equality short-circuit: when peers also evaluate the same
+// formula and arrive at the same value, the no-op avoids redundant
+// CRDT updates on the wire.
+//
+// Only acts on cells that already have kind === 'formula'. If the cell
+// is missing or has a different kind, the call is a no-op (a writeback
+// arriving against a cell whose formula was just deleted shouldn't
+// resurrect it).
+export function setYCellFormulaResult(
+    doc: Y.Doc,
+    sheetId: string,
+    row: number,
+    col: number,
+    raw: CellRaw
+): void {
+    const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+    const key = yCellKey(sheetId, row, col)
+    const cell = cellsMap.get(key)
+    if (cell == null) return
+    if (cell.get('kind') !== 'formula') return
+    if (cell.get('raw') === raw) return
+    const formula = cell.get('formula')
+    const formulaText = typeof formula === 'string' ? formula : undefined
+    const display = formatCell('formula', raw, formulaText)
+    doc.transact(() => {
+        cell.set('raw', raw)
+        cell.set('display', display)
+    }, FORMULA_ORIGIN)
+}
+
+// deleteYCell removes a cell entry entirely. Used by the editor's
+// "clear" path and by the context menu's "Clear contents" action.
+export function deleteYCell(doc: Y.Doc, sheetId: string, row: number, col: number): void {
+    const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+    const key = yCellKey(sheetId, row, col)
+    doc.transact(() => {
+        cellsMap.delete(key)
     }, LOCAL_ORIGIN)
 }
 
@@ -172,13 +230,7 @@ export function setYCell(doc: Y.Doc, sheetId: string, row: number, col: number, 
 // setting it to a defined value overwrites. This matches the snapshot
 // semantics: only what's present is sent, only what's present is
 // applied.
-export function setYCellStyle(
-    doc: Y.Doc,
-    sheetId: string,
-    row: number,
-    col: number,
-    patch: CellStyle
-): void {
+export function setYCellStyle(doc: Y.Doc, sheetId: string, row: number, col: number, patch: CellStyle): void {
     const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
     const key = yCellKey(sheetId, row, col)
     doc.transact(() => {

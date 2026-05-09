@@ -13,14 +13,16 @@ import {
     TextInput,
     View,
 } from 'react-native'
-import * as Y from 'yjs'
+import type * as Y from 'yjs'
 import { type RemotePresence, usePresence } from '../hooks/use-presence'
 import { useWorkbook } from '../hooks/use-workbook-context'
 import { setYCell, setYCellStyle, useYCell } from '../hooks/use-y-cell'
 import { type SheetWithId, useYSheets } from '../hooks/use-y-sheets'
-import { columnLabel } from '../lib/workbook-types'
+import { columnLabel, formatCell } from '../lib/workbook-types'
 import { yCellKey } from '../lib/y-cell-key'
 import { CELLS_MAP, readStyleFromYMap } from '../lib/y-doc-bootstrap'
+import { FormulaBar } from './FormulaBar'
+import { Toolbar } from './Toolbar'
 
 const CELL_WIDTH = 96
 const CELL_HEIGHT = 28
@@ -29,6 +31,16 @@ const HEADER_HEIGHT = CELL_HEIGHT
 const OVERSCAN = 4
 const MIN_ROWS = 50
 const MIN_COLS = 26
+
+// Inset shadow applied to the active row/column header cell on top of
+// the bg-accent fill. Two paired insets produce a "pressed" look — a
+// dim top-left edge plus a slightly brighter bottom-right edge, like
+// the cell is sunken into the toolbar. RN-Web compiles boxShadow to
+// CSS; on native, `style.boxShadow` is ignored gracefully (the bg +
+// bold text already convey the active state without it).
+const ACTIVE_HEADER_INSET_STYLE = {
+    boxShadow: 'inset 1px 1px 0 rgba(0,0,0,0.18), inset -1px -1px 0 rgba(255,255,255,0.18)',
+} as const
 
 export interface GridHandle {
     scrollToCell: (row: number, col: number) => void
@@ -44,6 +56,12 @@ interface GridProps {
 interface SelectedCell {
     row: number
     col: number
+}
+
+interface EditSession {
+    row: number
+    col: number
+    draft: string
 }
 
 interface Viewport {
@@ -78,7 +96,11 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     })
 
     const [selected, setSelected] = useState<SelectedCell | null>(null)
-    const [editingCell, setEditingCell] = useState<SelectedCell | null>(null)
+    // editSession unifies "which cell is being edited" + "its in-progress
+    // draft". Lifted to Grid so the in-cell editor and the formula bar
+    // share one source of truth — typing in either updates the same
+    // draft and peer awareness, and one Enter/blur commits both views.
+    const [editSession, setEditSession] = useState<EditSession | null>(null)
 
     // publishLocal writes the consumer-shaped awareness slot. Called
     // by every handler that changes selection/editing rather than via
@@ -102,20 +124,20 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     const onSelectCell = useCallback(
         (cell: SelectedCell) => {
             setSelected(cell)
-            setEditingCell(null)
+            setEditSession(null)
             publishLocal({ selection: cell, editing: null })
         },
         [publishLocal]
     )
 
     const onEditCell = useCallback(
-        (cell: SelectedCell) => {
+        (cell: SelectedCell, initialDraft = '') => {
             if (readOnly) return
             setSelected(cell)
-            setEditingCell(cell)
+            setEditSession({ row: cell.row, col: cell.col, draft: initialDraft })
             publishLocal({
                 selection: cell,
-                editing: { row: cell.row, col: cell.col, draft: '' },
+                editing: { row: cell.row, col: cell.col, draft: initialDraft },
             })
         },
         [readOnly, publishLocal]
@@ -123,6 +145,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
 
     const onEditDraftChange = useCallback(
         (row: number, col: number, draft: string) => {
+            setEditSession({ row, col, draft })
             publishLocal({ selection: { row, col }, editing: { row, col, draft } })
         },
         [publishLocal]
@@ -131,12 +154,12 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     const onCommitEdit = useCallback(
         (row: number, col: number, value: string) => {
             if (readOnly) {
-                setEditingCell(null)
+                setEditSession(null)
                 publishLocal({ selection: { row, col }, editing: null })
                 return
             }
             setYCell(doc, sheetId, row, col, value)
-            setEditingCell(null)
+            setEditSession(null)
             publishLocal({ selection: { row, col }, editing: null })
         },
         [doc, sheetId, readOnly, publishLocal]
@@ -144,7 +167,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
 
     const onCancelEdit = useCallback(() => {
         const cell = selected
-        setEditingCell(null)
+        setEditSession(null)
         publishLocal({ selection: cell, editing: null })
     }, [selected, publishLocal])
 
@@ -208,6 +231,52 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
         setYCellStyle(doc, sheetId, selected.row, selected.col, { font: { bold: nextBold } })
     }, [doc, sheetId, selected, readOnly])
 
+    const onToggleItalic = useCallback(() => {
+        if (selected == null || readOnly) return
+        const current = readCellStyle(doc, sheetId, selected.row, selected.col)
+        const nextItalic = current?.font?.italic !== true
+        setYCellStyle(doc, sheetId, selected.row, selected.col, { font: { italic: nextItalic } })
+    }, [doc, sheetId, selected, readOnly])
+
+    // Subscribe to the selected cell so the toolbar's active state and
+    // the formula bar's value re-render when the cell changes (locally
+    // or via a peer). Passing null row/col would force useYCell to
+    // observe a synthetic key — instead we early-out via doc==null when
+    // there's no selection by keying the call on row/col 0,0 and
+    // treating the result as "no selection" downstream.
+    const selectedCellValue = useYCell(doc, sheetId, selected?.row ?? 0, selected?.col ?? 0)
+    const isBold = selected != null && selectedCellValue?.style?.font?.bold === true
+    const isItalic = selected != null && selectedCellValue?.style?.font?.italic === true
+
+    // The formula bar shows the user-input form when typing (the
+    // editSession draft), the formula text for formula cells, or the
+    // displayed value otherwise. For formula cells we surface the
+    // expression rather than the cached result so editing a formula
+    // round-trips its formula text.
+    const formulaBarValue = computeFormulaBarValue(editSession, selectedCellValue, selected != null)
+    const formulaBarLabel = selected != null ? `${columnLabel(selected.col)}${selected.row}` : null
+
+    const onFormulaChange = useCallback(
+        (next: string) => {
+            if (selected == null || readOnly) return
+            // First keystroke into the formula bar implicitly opens an
+            // edit session — there's no "click to edit" step in the
+            // formula bar UX. Subsequent keystrokes update the same
+            // draft and propagate to peers via awareness.
+            onEditDraftChange(selected.row, selected.col, next)
+        },
+        [selected, readOnly, onEditDraftChange]
+    )
+
+    const onFormulaCommit = useCallback(() => {
+        if (editSession == null) return
+        onCommitEdit(editSession.row, editSession.col, editSession.draft)
+    }, [editSession, onCommitEdit])
+
+    const onFormulaCancel = useCallback(() => {
+        onCancelEdit()
+    }, [onCancelEdit])
+
     // Single Menu mount per Grid. The right-clicked / long-pressed cell
     // is captured via a callback dispatched up from Cell, and the Menu
     // is positioned at the cursor/touch coordinates via triggerPosition.
@@ -224,7 +293,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
             // selects the cell. Skip edit so the menu doesn't open over
             // a TextInput.
             setSelected({ row, col })
-            setEditingCell(null)
+            setEditSession(null)
             publishLocal({ selection: { row, col }, editing: null })
             setContextTarget({ cell: { row, col }, cursor: { x, y } })
         },
@@ -235,7 +304,21 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
 
     return (
         <View className="flex-1 bg-background">
-            <Toolbar disabled={readOnly || selected == null} onToggleBold={onToggleBold} />
+            <Toolbar
+                disabled={readOnly || selected == null}
+                isBold={isBold}
+                isItalic={isItalic}
+                onToggleBold={onToggleBold}
+                onToggleItalic={onToggleItalic}
+            />
+            <FormulaBar
+                cellLabel={formulaBarLabel}
+                value={formulaBarValue}
+                disabled={readOnly || selected == null}
+                onChange={onFormulaChange}
+                onCommit={onFormulaCommit}
+                onCancel={onFormulaCancel}
+            />
             <View className="flex-row">
                 <CornerCell />
                 <ColumnHeader
@@ -243,6 +326,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                     contentWidth={contentWidth}
                     firstCol={visible.firstCol}
                     lastCol={visible.lastCol}
+                    activeCol={selected?.col ?? null}
                 />
             </View>
             <View className="flex-1 flex-row">
@@ -251,6 +335,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                     contentHeight={contentHeight}
                     firstRow={visible.firstRow}
                     lastRow={visible.lastRow}
+                    activeRow={selected?.row ?? null}
                 />
                 <Body
                     horizontalRef={horizontalRef}
@@ -260,7 +345,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                     visible={visible}
                     sheet={sheet}
                     selected={selected}
-                    editingCell={editingCell}
+                    editSession={editSession}
                     presenceOnSheet={presenceOnSheet}
                     onSelect={onSelectCell}
                     onEdit={onEditCell}
@@ -273,15 +358,29 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                     onCellContextMenu={readOnly ? undefined : onCellContextMenu}
                 />
             </View>
-            <CellContextMenu
-                target={contextTarget}
-                doc={doc}
-                sheetId={sheetId}
-                onClose={closeContextMenu}
-            />
+            <CellContextMenu target={contextTarget} doc={doc} sheetId={sheetId} onClose={closeContextMenu} />
         </View>
     )
 })
+
+// computeFormulaBarValue picks the right text to display in the
+// formula bar:
+//   - while editing, show the in-progress draft
+//   - for formula cells, show the formula expression (so editing
+//     round-trips the formula text rather than its cached result)
+//   - otherwise, show the same string the cell renders
+function computeFormulaBarValue(
+    editSession: EditSession | null,
+    cell: ReturnType<typeof useYCell>,
+    hasSelection: boolean
+): string {
+    if (editSession != null) return editSession.draft
+    if (!hasSelection || cell == null) return ''
+    if (cell.kind === 'formula' && cell.formula) {
+        return cell.formula
+    }
+    return formatCell(cell.kind, cell.raw, cell.formula)
+}
 
 // readCellStyle is a one-shot read of a cell's style from the Y.Doc.
 // Used by handlers that need the current value to compute a toggle —
@@ -294,28 +393,6 @@ function readCellStyle(doc: Y.Doc | null, sheetId: string, row: number, col: num
     const cell = cellsMap.get(yCellKey(sheetId, row, col))
     if (cell == null) return undefined
     return readStyleFromYMap(cell)
-}
-
-interface ToolbarProps {
-    disabled: boolean
-    onToggleBold: () => void
-}
-
-function Toolbar({ disabled, onToggleBold }: ToolbarProps) {
-    return (
-        <View className="flex-row items-center bg-surface-secondary border-b border-border" style={{ height: 32, paddingHorizontal: 4 }}>
-            <Pressable
-                onPress={onToggleBold}
-                disabled={disabled}
-                className="items-center justify-center"
-                style={{ width: 28, height: 24, opacity: disabled ? 0.4 : 1 }}
-            >
-                <Text className="text-foreground" style={{ fontWeight: 'bold' }}>
-                    B
-                </Text>
-            </Pressable>
-        </View>
-    )
 }
 
 function CornerCell() {
@@ -332,24 +409,34 @@ interface ColumnHeaderProps {
     contentWidth: number
     firstCol: number
     lastCol: number
+    activeCol: number | null
 }
 
-function ColumnHeader({ scrollRef, contentWidth, firstCol, lastCol }: ColumnHeaderProps) {
+function ColumnHeader({ scrollRef, contentWidth, firstCol, lastCol, activeCol }: ColumnHeaderProps) {
     const cells: React.ReactNode[] = []
     for (let col = firstCol; col <= lastCol; col++) {
+        const isActive = col === activeCol
         cells.push(
             <View
                 key={col}
-                className="bg-surface-secondary border-r border-b border-border items-center justify-center"
+                className={`border-r border-b border-border items-center justify-center ${
+                    isActive ? 'bg-accent' : 'bg-surface-secondary'
+                }`}
                 style={{
                     position: 'absolute',
                     left: (col - 1) * CELL_WIDTH,
                     top: 0,
                     width: CELL_WIDTH,
                     height: HEADER_HEIGHT,
+                    ...(isActive ? ACTIVE_HEADER_INSET_STYLE : null),
                 }}
             >
-                <Text className="text-xs text-muted-foreground">{columnLabel(col)}</Text>
+                <Text
+                    className={`text-xs ${isActive ? 'text-accent-foreground' : 'text-muted-foreground'}`}
+                    style={isActive ? { fontWeight: 'bold' } : undefined}
+                >
+                    {columnLabel(col)}
+                </Text>
             </View>
         )
     }
@@ -378,24 +465,34 @@ interface RowHeaderProps {
     contentHeight: number
     firstRow: number
     lastRow: number
+    activeRow: number | null
 }
 
-function RowHeader({ scrollRef, contentHeight, firstRow, lastRow }: RowHeaderProps) {
+function RowHeader({ scrollRef, contentHeight, firstRow, lastRow, activeRow }: RowHeaderProps) {
     const cells: React.ReactNode[] = []
     for (let row = firstRow; row <= lastRow; row++) {
+        const isActive = row === activeRow
         cells.push(
             <View
                 key={row}
-                className="bg-surface-secondary border-r border-b border-border items-center justify-center"
+                className={`border-r border-b border-border items-center justify-center ${
+                    isActive ? 'bg-accent' : 'bg-surface-secondary'
+                }`}
                 style={{
                     position: 'absolute',
                     left: 0,
                     top: (row - 1) * CELL_HEIGHT,
                     width: ROW_HEADER_WIDTH,
                     height: CELL_HEIGHT,
+                    ...(isActive ? ACTIVE_HEADER_INSET_STYLE : null),
                 }}
             >
-                <Text className="text-xs text-muted-foreground">{row}</Text>
+                <Text
+                    className={`text-xs ${isActive ? 'text-accent-foreground' : 'text-muted-foreground'}`}
+                    style={isActive ? { fontWeight: 'bold' } : undefined}
+                >
+                    {row}
+                </Text>
             </View>
         )
     }
@@ -421,7 +518,7 @@ interface BodyProps {
     visible: { firstRow: number; lastRow: number; firstCol: number; lastCol: number }
     sheet: SheetWithId | null
     selected: SelectedCell | null
-    editingCell: SelectedCell | null
+    editSession: EditSession | null
     presenceOnSheet: RemotePresence[]
     onSelect: (cell: SelectedCell) => void
     onEdit: (cell: SelectedCell) => void
@@ -442,7 +539,7 @@ function Body({
     visible,
     sheet,
     selected,
-    editingCell,
+    editSession,
     presenceOnSheet,
     onSelect,
     onEdit,
@@ -473,9 +570,15 @@ function Body({
     if (sheet != null) {
         for (let row = visible.firstRow; row <= visible.lastRow; row++) {
             for (let col = visible.firstCol; col <= visible.lastCol; col++) {
-                const isEditing = editingCell?.row === row && editingCell?.col === col
+                const isEditing = editSession?.row === row && editSession?.col === col
                 const isSelected = selected?.row === row && selected?.col === col
                 const remoteEditor = remoteEditingByCell.get(`${row}:${col}`) ?? null
+                // editingDraft is only passed to the cell that owns the
+                // edit session — this keeps Cell.memo equality stable
+                // for non-editing cells (passing the draft to every
+                // cell would invalidate every memoization on each
+                // keystroke).
+                const editingDraft = isEditing ? editSession.draft : ''
                 cells.push(
                     <Cell
                         key={`${row}:${col}`}
@@ -484,6 +587,7 @@ function Body({
                         col={col}
                         isSelected={isSelected}
                         isEditing={isEditing}
+                        editingDraft={editingDraft}
                         remoteEditor={remoteEditor}
                         onSelect={onSelect}
                         onEdit={onEdit}
@@ -498,7 +602,7 @@ function Body({
     }
 
     const localSelectionOverlay =
-        selected != null && editingCell == null ? (
+        selected != null && editSession == null ? (
             <View
                 pointerEvents="none"
                 style={{
@@ -573,9 +677,10 @@ interface CellProps {
     col: number
     isSelected: boolean
     isEditing: boolean
+    editingDraft: string
     remoteEditor: RemotePresence | null
     onSelect: (cell: SelectedCell) => void
-    onEdit: (cell: SelectedCell) => void
+    onEdit: (cell: SelectedCell, initialDraft?: string) => void
     onEditDraftChange: (row: number, col: number, draft: string) => void
     onCommitEdit: (row: number, col: number, value: string) => void
     onCancelEdit: () => void
@@ -588,6 +693,7 @@ const Cell = memo(function Cell({
     col,
     isSelected,
     isEditing,
+    editingDraft,
     remoteEditor,
     onSelect,
     onEdit,
@@ -598,7 +704,17 @@ const Cell = memo(function Cell({
 }: CellProps) {
     const { doc } = useWorkbook()
     const cellValue = useYCell(doc, sheetId, row, col)
-    const display = cellValue?.display ?? ''
+    // formatCell is the single source of truth for the visible string;
+    // `display` on disk is still maintained as a cache for old peers
+    // and the server-side serializer, but the live render computes from
+    // (kind, raw) so future formatting (Phase 3 numFmt) lights up here
+    // automatically.
+    const display = cellValue == null ? '' : formatCell(cellValue.kind, cellValue.raw, cellValue.formula)
+    // Editing a formula cell should preload the formula expression
+    // (e.g. "=SUM(A1:A2)"), not its computed result. This matches how
+    // the formula bar surfaces formula text and lets users round-trip
+    // a formula edit without losing the expression.
+    const editDraft = cellValue?.kind === 'formula' && cellValue.formula ? cellValue.formula : display
 
     const remoteDraft = remoteEditor?.editing?.draft
 
@@ -610,7 +726,7 @@ const Cell = memo(function Cell({
             <CellEditor
                 left={left}
                 top={top}
-                initial={display}
+                value={editingDraft}
                 onDraftChange={(draft) => onEditDraftChange(row, col, draft)}
                 onCommit={(value) => onCommitEdit(row, col, value)}
                 onCancel={onCancelEdit}
@@ -620,7 +736,7 @@ const Cell = memo(function Cell({
 
     const onPress = () => {
         if (isSelected) {
-            onEdit({ row, col })
+            onEdit({ row, col }, editDraft)
         } else {
             onSelect({ row, col })
         }
@@ -667,6 +783,7 @@ const Cell = memo(function Cell({
         <Pressable
             onPress={onPress}
             onLongPress={onLongPress}
+            accessibilityLabel={`Cell ${columnLabel(col)}${row}`}
             style={{
                 position: 'absolute',
                 left,
@@ -688,32 +805,21 @@ const Cell = memo(function Cell({
 interface CellEditorProps {
     left: number
     top: number
-    initial: string
+    value: string
     onDraftChange: (draft: string) => void
     onCommit: (value: string) => void
     onCancel: () => void
 }
 
-function CellEditor({ left, top, initial, onDraftChange, onCommit, onCancel }: CellEditorProps) {
-    const [value, setValue] = useState(initial)
-
-    // Publish keystrokes directly into local awareness via the
-    // onDraftChange callback — no useEffect mirroring step. Awareness
-    // encoding/transport is debounced upstream by y-protocols's
-    // natural batching, so we don't add our own debounce here.
-    const onChangeText = useCallback(
-        (next: string) => {
-            setValue(next)
-            onDraftChange(next)
-        },
-        [onDraftChange]
-    )
-
+function CellEditor({ left, top, value, onDraftChange, onCommit, onCancel }: CellEditorProps) {
+    // Fully controlled — Grid owns the draft state in editSession so
+    // the formula bar and the in-cell editor stay synchronized.
+    // Awareness publishing flows up through onDraftChange.
     return (
         <TextInput
             autoFocus
             value={value}
-            onChangeText={onChangeText}
+            onChangeText={onDraftChange}
             onSubmitEditing={() => onCommit(value)}
             onBlur={() => onCommit(value)}
             onKeyPress={(e) => {
@@ -810,7 +916,7 @@ function CellContextMenu({ target, doc, sheetId, onClose }: CellContextMenuProps
         const handler = (event: PointerEvent) => {
             const targetNode = event.target as Node | null
             const node = contentRef.current as unknown as Node | null
-            if (targetNode && node && node.contains(targetNode)) return
+            if (targetNode && node?.contains(targetNode)) return
             onClose()
         }
         document.addEventListener('pointerdown', handler, true)

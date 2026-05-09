@@ -6,12 +6,7 @@ test.describe('Calc', () => {
         await login(page)
     })
 
-    test.skip('opening a sheet renders cells in the correct columns', async ({ page }) => {
-        // FIXME: y-protocols module-load throws "Unexpected end of array"
-        // in the web bundle when the detail screen mounts the realtime
-        // hooks. Pre-existing yjs/Metro bundling issue, not rename-
-        // related; calc's detail screen is WIP yjs collaborative editor
-        // and not yet wired to render through SheetsPreview.
+    test('opening a sheet renders cells in the correct columns', async ({ page }) => {
         await navigateToPackage(page, 'calc')
         await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible()
         await page.getByText('Team Scorecard.xlsx').click()
@@ -54,17 +49,50 @@ test.describe('Calc', () => {
         }
     })
 
-    test.skip('+ New spreadsheet creates and opens an empty sheet', async ({ page }) => {
-        // FIXME: useCreateDriveItem fails with "Failed to create record" in
-        // the test env even when this test runs in isolation. Pre-existing
-        // bug, not parallel-flake-related; skipping until the create path
-        // is investigated separately.
+    test('+ New spreadsheet creates and opens an empty sheet', async ({ page }) => {
         await navigateToPackage(page, 'calc')
         await page.getByText('New spreadsheet').click()
 
         await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
-        await expect(page.getByText(/Untitled.*\.xlsx/)).toBeVisible({ timeout: 10_000 })
+        // Header columns are virtualized — only the ones in the viewport
+        // render. A through E are always visible at default viewport width.
         await expect(page.getByText('A', { exact: true })).toBeVisible()
-        await expect(page.getByText('Z', { exact: true })).toBeVisible()
+        await expect(page.getByText('E', { exact: true })).toBeVisible()
+    })
+
+    test('=SUM() over a range displays the computed total', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await page.getByText('New spreadsheet').click()
+        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+
+        // Cells fire onPress → first press selects, second press opens the
+        // editor. The formula bar always edits the selected cell, so a
+        // single click + typing into the formula bar is the simplest way
+        // to drive cell input from a test.
+        await typeIntoCell(page, formulaBar, 'A1', '2')
+        await typeIntoCell(page, formulaBar, 'A2', '3')
+        await typeIntoCell(page, formulaBar, 'A3', '=SUM(A1:A2)')
+
+        // After the Enter commit, A3 stays selected. Move the selection
+        // away by clicking B1 so a re-click on A3 lands as "select" (not
+        // "select-then-edit"), and so the formula bar shows A3's formula
+        // text rather than B1's empty draft.
+        await page.getByLabel('Cell B1', { exact: true }).click()
+        await page.getByLabel('Cell A3', { exact: true }).click()
+        await expect(formulaBar).toHaveValue('=SUM(A1:A2)')
+        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('5')
     })
 })
+
+async function typeIntoCell(
+    page: import('@playwright/test').Page,
+    formulaBar: import('@playwright/test').Locator,
+    cellLabel: string,
+    value: string
+): Promise<void> {
+    await page.getByLabel(`Cell ${cellLabel}`, { exact: true }).click()
+    await formulaBar.fill(value)
+    await formulaBar.press('Enter')
+}

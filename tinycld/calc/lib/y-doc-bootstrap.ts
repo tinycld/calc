@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import type { CellStyle, WorkbookModel } from './workbook-types'
+import type { CellKind, CellRaw, CellStyle, WorkbookModel } from './workbook-types'
 import { yCellKey } from './y-cell-key'
 
 // SHEETS_MAP is the Y.Map name holding sheet metadata, keyed by sheet id.
@@ -40,8 +40,15 @@ export interface YSheetMeta {
     colCount: number
 }
 
+// YCellValue is the typed snapshot returned by useYCell. `kind` carries
+// the cell's semantic type; `raw` is the value in a Yjs-serializable
+// form (no JS Date — dates are ISO strings). Legacy cells written
+// before the typed-cell schema landed have no `kind` key on disk; the
+// reader synthesizes `kind: 'string'` and string-coerces `raw` to
+// match what was rendered before.
 export interface YCellValue {
-    raw: string
+    kind: CellKind
+    raw: CellRaw
     display: string
     formula?: string
     style?: CellStyle
@@ -80,11 +87,14 @@ export function bootstrapYDocFromWorkbook(doc: Y.Doc, model: WorkbookModel): voi
                 if (!Number.isFinite(row) || !Number.isFinite(col)) continue
 
                 const cell = new Y.Map<unknown>()
-                // Plain-string raw/display, continuing the no-coercion
-                // rule from the prior session. Numbers / dates parsed
-                // from the .xlsx are stringified as the parser already
-                // computed them.
-                cell.set('raw', String(value.raw ?? ''))
+                // `kind` is authoritative for what the cell IS; `raw`
+                // carries the value in a Yjs-serializable form (Dates
+                // are normalized to ISO strings upstream by the
+                // adapter). `display` is the cache of formatCell(kind,
+                // raw) so old peers (and serializers without the
+                // formatter) can render correctly without recomputing.
+                cell.set('kind', value.kind)
+                cell.set('raw', toYRaw(value.raw))
                 cell.set('display', value.display)
                 if (value.formula) {
                     cell.set('formula', value.formula)
@@ -99,6 +109,82 @@ export function bootstrapYDocFromWorkbook(doc: Y.Doc, model: WorkbookModel): voi
             }
         }
     })
+}
+
+// toYRaw normalizes a CellValue.raw (which may carry a JS Date from
+// the upstream parser) into a Yjs-serializable scalar. Dates are
+// converted to ISO strings; everything else passes through.
+function toYRaw(raw: CellStyle | CellRaw | Date | undefined): CellRaw {
+    if (raw == null) return null
+    if (raw instanceof Date) {
+        if (
+            raw.getUTCHours() === 0 &&
+            raw.getUTCMinutes() === 0 &&
+            raw.getUTCSeconds() === 0 &&
+            raw.getUTCMilliseconds() === 0
+        ) {
+            return raw.toISOString().slice(0, 10)
+        }
+        return raw.toISOString()
+    }
+    if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') return raw
+    return null
+}
+
+// readYCell is the canonical reader for one cell's value out of the
+// Y.Doc. Legacy cells (written before the typed-cell schema) have no
+// `kind` key; the reader synthesizes `kind: 'string'` and coerces
+// `raw` to a string so display continues to render the way it did.
+//
+// Used by useYCell (and any other consumer that needs a typed snapshot
+// out of the doc — a single source of read-side truth keeps live
+// renders and the snapshot pipeline in sync).
+export function readYCell(cell: Y.Map<unknown>): YCellValue {
+    const rawRaw = cell.get('raw')
+    const kindRaw = cell.get('kind')
+    const display = cell.get('display')
+    const formula = cell.get('formula')
+    const style = readStyleFromYMap(cell)
+
+    const kind: CellKind =
+        kindRaw === 'number' || kindRaw === 'boolean' || kindRaw === 'date' || kindRaw === 'formula'
+            ? kindRaw
+            : 'string'
+    let raw: CellRaw
+    switch (kind) {
+        case 'number':
+            raw = typeof rawRaw === 'number' ? rawRaw : Number(rawRaw)
+            if (typeof raw === 'number' && !Number.isFinite(raw)) raw = null
+            break
+        case 'boolean':
+            raw = typeof rawRaw === 'boolean' ? rawRaw : null
+            break
+        case 'date':
+            raw = typeof rawRaw === 'string' ? rawRaw : null
+            break
+        case 'formula':
+            // Cached scalar may be string/number/boolean/null. Trust
+            // whatever was written; null means "no cached value yet".
+            raw =
+                typeof rawRaw === 'string' || typeof rawRaw === 'number' || typeof rawRaw === 'boolean'
+                    ? rawRaw
+                    : null
+            break
+        case 'string':
+            // Legacy cells written before kind existed wrote `raw` as a
+            // string; new string cells likewise carry strings. Coerce
+            // anything else (defensively) to its string form.
+            raw = typeof rawRaw === 'string' ? rawRaw : rawRaw == null ? '' : String(rawRaw)
+            break
+    }
+
+    return {
+        kind,
+        raw,
+        display: typeof display === 'string' ? display : display == null ? '' : String(display),
+        formula: typeof formula === 'string' ? formula : undefined,
+        style,
+    }
 }
 
 // buildStyleYMap converts a partial CellStyle into a nested Y.Map tree

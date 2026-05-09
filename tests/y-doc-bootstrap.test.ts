@@ -18,9 +18,9 @@ function makeWorkbook(): WorkbookModel {
                 rowCount: 3,
                 colCount: 3,
                 cells: {
-                    [cellKey(1, 1)]: { raw: 'A1', display: 'A1' },
-                    [cellKey(1, 2)]: { raw: 'B1', display: 'B1' },
-                    [cellKey(2, 1)]: { raw: 'A2', display: 'A2' },
+                    [cellKey(1, 1)]: { kind: 'string', raw: 'A1', display: 'A1' },
+                    [cellKey(1, 2)]: { kind: 'string', raw: 'B1', display: 'B1' },
+                    [cellKey(2, 1)]: { kind: 'string', raw: 'A2', display: 'A2' },
                 },
             },
             {
@@ -28,7 +28,7 @@ function makeWorkbook(): WorkbookModel {
                 rowCount: 2,
                 colCount: 2,
                 cells: {
-                    [cellKey(1, 1)]: { raw: 42, display: '42' },
+                    [cellKey(1, 1)]: { kind: 'number', raw: 42, display: '42' },
                 },
             },
         ],
@@ -61,19 +61,21 @@ describe('bootstrapYDocFromWorkbook', () => {
         expect(sheet2?.get('position')).toBe(1)
     })
 
-    it('populates cells under composite sheet:row:col keys', () => {
+    it('populates cells under composite sheet:row:col keys with typed raw', () => {
         const doc = new Y.Doc()
         bootstrapYDocFromWorkbook(doc, makeWorkbook())
 
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
         const cellA1 = cellsMap.get(yCellKey('sheet1', 1, 1))
+        expect(cellA1?.get('kind')).toBe('string')
         expect(cellA1?.get('raw')).toBe('A1')
         expect(cellA1?.get('display')).toBe('A1')
 
-        // Sheet 2 cell A1 — different sheet, separate key, parsed-numeric
-        // value coerced to string per the no-coercion rule.
+        // Sheet 2 cell A1: a number kind stays a JS number on disk, no
+        // longer the legacy stringification.
         const sheet2A1 = cellsMap.get(yCellKey('sheet2', 1, 1))
-        expect(sheet2A1?.get('raw')).toBe('42')
+        expect(sheet2A1?.get('kind')).toBe('number')
+        expect(sheet2A1?.get('raw')).toBe(42)
         expect(sheet2A1?.get('display')).toBe('42')
     })
 
@@ -89,5 +91,66 @@ describe('bootstrapYDocFromWorkbook', () => {
         // bootstrapping a 100-cell workbook shouldn't fan out as 100
         // separate WS frames.
         expect(updateCount).toBe(1)
+    })
+
+    it('writes booleans, dates, and formulas with their kind tag', () => {
+        const doc = new Y.Doc()
+        const wb: WorkbookModel = {
+            sheets: [
+                {
+                    name: 'Mixed',
+                    rowCount: 4,
+                    colCount: 1,
+                    cells: {
+                        [cellKey(1, 1)]: { kind: 'boolean', raw: true, display: 'TRUE' },
+                        [cellKey(2, 1)]: { kind: 'date', raw: '2024-01-15', display: '2024-01-15' },
+                        [cellKey(3, 1)]: {
+                            kind: 'formula',
+                            raw: 42,
+                            display: '42',
+                            formula: 'A1+A2',
+                        },
+                    },
+                },
+            ],
+        }
+        bootstrapYDocFromWorkbook(doc, wb)
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+
+        const boolCell = cellsMap.get(yCellKey('sheet1', 1, 1))
+        expect(boolCell?.get('kind')).toBe('boolean')
+        expect(boolCell?.get('raw')).toBe(true)
+
+        const dateCell = cellsMap.get(yCellKey('sheet1', 2, 1))
+        expect(dateCell?.get('kind')).toBe('date')
+        expect(dateCell?.get('raw')).toBe('2024-01-15')
+
+        const formulaCell = cellsMap.get(yCellKey('sheet1', 3, 1))
+        expect(formulaCell?.get('kind')).toBe('formula')
+        expect(formulaCell?.get('raw')).toBe(42)
+        expect(formulaCell?.get('formula')).toBe('A1+A2')
+    })
+
+    it('normalizes JS Date values from the parser into ISO strings on the Y.Doc', () => {
+        // The xlsx adapter emits ISO strings up front, but if a caller
+        // passes a Date through (e.g. a hand-built model), bootstrap
+        // still has to normalize because Yjs cannot serialize Date.
+        const doc = new Y.Doc()
+        const d = new Date('2024-01-15T00:00:00.000Z')
+        const wb: WorkbookModel = {
+            sheets: [
+                {
+                    name: 'D',
+                    rowCount: 1,
+                    colCount: 1,
+                    cells: {
+                        [cellKey(1, 1)]: { kind: 'date', raw: d, display: '2024-01-15' },
+                    },
+                },
+            ],
+        }
+        bootstrapYDocFromWorkbook(doc, wb)
+        const cell = doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1))
+        expect(cell?.get('raw')).toBe('2024-01-15')
     })
 })
