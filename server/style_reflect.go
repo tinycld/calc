@@ -51,7 +51,7 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 		if srcPtr.Elem().Bool() {
 			dst.Font.Underline = "single"
 		} else {
-			dst.Font.Underline = ""
+			dst.Font.Underline = "none"
 		}
 	},
 }

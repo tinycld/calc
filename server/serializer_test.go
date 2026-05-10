@@ -631,6 +631,64 @@ func TestSerializerStyleSetsUnderline(t *testing.T) {
 	}
 }
 
+// TestSerializerStyleClearsUnderline: snapshot font.underline = false
+// on a cell that already has an underline in the base xlsx must
+// remove it. We pre-stamp B2 with single-underline, then save with
+// the snapshot's Underline=false — the resulting xlsx must round-trip
+// without underline (excelize round-trips "none" as "none", which
+// readCellUnderline returns; what it must NOT return is "single").
+func TestSerializerStyleClearsUnderline(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	// Pre-stamp B2 with a single underline.
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	id, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Underline: "single"}})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetCellStyle("People", "B2", "B2", id); err != nil {
+		t.Fatalf("SetCellStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+	if got := readCellUnderline(t, seeded, "People", 2, 2); got != "single" {
+		t.Fatalf("seed: want underline=single, got %q", got)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1",
+				Row:     2,
+				Col:     2,
+				Style:   &CellStyle{Font: &CellFont{Underline: boolPtr(false)}},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	if got := readCellUnderline(t, out, "People", 2, 2); got != "none" {
+		t.Errorf("B2 underline: want %q (explicit OOXML cancel), got %q — underline not properly cleared", "none", got)
+	}
+}
+
 // TestSerializerStyleSetsStrike: snapshot font.strike = true lands as
 // strikethrough on the xlsx cell.
 func TestSerializerStyleSetsStrike(t *testing.T) {
