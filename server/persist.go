@@ -188,14 +188,8 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 			return nil, fmt.Errorf("get existing dimension on %s: %w", name, err)
 		}
 		existingCol, existingRow := parseDimensionRef(existingRef)
-		finalCol := meta.ColCount
-		if existingCol > finalCol {
-			finalCol = existingCol
-		}
-		finalRow := meta.RowCount
-		if existingRow > finalRow {
-			finalRow = existingRow
-		}
+		finalCol := max(meta.ColCount, existingCol)
+		finalRow := max(meta.RowCount, existingRow)
 		bottomRight, err := excelize.CoordinatesToCellName(finalCol, finalRow)
 		if err != nil {
 			return nil, fmt.Errorf("dimension coords (col=%d,row=%d): %w", finalCol, finalRow, err)
