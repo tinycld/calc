@@ -1,42 +1,160 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Bold, Italic, Redo, Undo } from 'lucide-react-native'
-import type { ComponentType } from 'react'
-import { Pressable, View } from 'react-native'
+import {
+    ArrowLeft,
+    ArrowRight,
+    Bold,
+    DollarSign,
+    Italic,
+    Percent,
+    Redo,
+    Strikethrough,
+    Undo,
+} from 'lucide-react-native'
+import { memo } from 'react'
+import { Text, View } from 'react-native'
+import type { HorizontalAlign } from '../hooks/grid/use-grid-format-controls'
+import type { BorderPresetId } from '../lib/border-presets'
+import type { CellBorders } from '../lib/workbook-types'
+import { BordersMenu } from './toolbar/BordersMenu'
+import { FillColorMenu } from './toolbar/FillColorMenu'
+import { FontSizeStepper } from './toolbar/FontSizeStepper'
+import { HorizontalAlignMenu } from './toolbar/HorizontalAlignMenu'
+import { NumberFormatMenu } from './toolbar/NumberFormatMenu'
+import { TextColorMenu } from './toolbar/TextColorMenu'
+import { ToolbarButton, ToolbarDivider } from './toolbar/ToolbarButton'
 
-interface ToolbarProps {
+export interface ToolbarProps {
     // Selection-based disable for the formatting buttons. Undo/Redo
     // ignore this — you can undo without a selected cell.
     disabled: boolean
-    isBold: boolean
-    isItalic: boolean
+
     canUndo: boolean
     canRedo: boolean
-    onToggleBold: () => void
-    onToggleItalic: () => void
     onUndo: () => void
     onRedo: () => void
+
+    isBold: boolean
+    isItalic: boolean
+    isStrike: boolean
+    onToggleBold: () => void
+    onToggleItalic: () => void
+    onToggleStrike: () => void
+
+    currentNumFmt: string | undefined
+    onApplyPreset: (id: string) => void
+    onApplyCurrency: () => void
+    onApplyPercent: () => void
+    onDecreaseDecimal: () => void
+    onIncreaseDecimal: () => void
+
+    fontSize: number | undefined
+    onSetFontSize: (size: number) => void
+
+    fontColor: string | undefined
+    onSetFontColor: (color: string) => void
+
+    fillColor: string | undefined
+    onSetFillColor: (color: string) => void
+
+    borders: CellBorders | undefined
+    onSetBorders: (presetId: BorderPresetId) => void
+
+    horizontalAlign: HorizontalAlign | undefined
+    onSetHorizontalAlign: (align: HorizontalAlign) => void
 }
 
-export function Toolbar({
-    disabled,
-    isBold,
-    isItalic,
-    canUndo,
-    canRedo,
-    onToggleBold,
-    onToggleItalic,
-    onUndo,
-    onRedo,
-}: ToolbarProps) {
+// memo'd so that selection-range churn during a drag (which only
+// affects the Grid body's range tint and overlays) doesn't re-render
+// the entire toolbar subtree of menus, color pickers, and font
+// stepper. All ToolbarProps callbacks must be stable references —
+// see Grid.tsx where the inline arrows are wrapped in useCallback.
+export const Toolbar = memo(ToolbarImpl)
+
+function ToolbarImpl(props: ToolbarProps) {
+    const {
+        disabled,
+        canUndo,
+        canRedo,
+        onUndo,
+        onRedo,
+        isBold,
+        isItalic,
+        isStrike,
+        onToggleBold,
+        onToggleItalic,
+        onToggleStrike,
+        currentNumFmt,
+        onApplyPreset,
+        onApplyCurrency,
+        onApplyPercent,
+        onDecreaseDecimal,
+        onIncreaseDecimal,
+        fontSize,
+        onSetFontSize,
+        fontColor,
+        onSetFontColor,
+        fillColor,
+        onSetFillColor,
+        borders,
+        onSetBorders,
+        horizontalAlign,
+        onSetHorizontalAlign,
+    } = props
+
     return (
         <View
             className="flex-row items-center bg-surface-secondary border-b border-border"
             style={{ height: 32, paddingHorizontal: 4 }}
         >
-            <ToolbarButton icon={Undo} active={false} disabled={!canUndo} onPress={onUndo} label="Undo" />
-            <ToolbarButton icon={Redo} active={false} disabled={!canRedo} onPress={onRedo} label="Redo" />
+            <ToolbarButton icon={Undo} disabled={!canUndo} onPress={onUndo} label="Undo" />
+            <ToolbarButton icon={Redo} disabled={!canRedo} onPress={onRedo} label="Redo" />
             <ToolbarDivider />
-            <ToolbarButton icon={Bold} active={isBold} disabled={disabled} onPress={onToggleBold} label="Bold" />
+
+            <NumberFormatMenu
+                currentNumFmt={currentNumFmt}
+                disabled={disabled}
+                onApplyPreset={onApplyPreset}
+            />
+            <ToolbarButton
+                icon={DollarSign}
+                disabled={disabled}
+                onPress={onApplyCurrency}
+                label="Format as currency"
+            />
+            <ToolbarButton
+                icon={Percent}
+                disabled={disabled}
+                onPress={onApplyPercent}
+                label="Format as percent"
+            />
+            <ToolbarButton
+                disabled={disabled}
+                onPress={onDecreaseDecimal}
+                label="Decrease decimal places"
+                width={32}
+            >
+                <DecimalIcon direction="decrease" />
+            </ToolbarButton>
+            <ToolbarButton
+                disabled={disabled}
+                onPress={onIncreaseDecimal}
+                label="Increase decimal places"
+                width={32}
+            >
+                <DecimalIcon direction="increase" />
+            </ToolbarButton>
+            <ToolbarDivider />
+
+            <FontSizeStepper size={fontSize} disabled={disabled} onSetSize={onSetFontSize} />
+            <ToolbarDivider />
+
+            <ToolbarButton
+                icon={Bold}
+                active={isBold}
+                disabled={disabled}
+                onPress={onToggleBold}
+                label="Bold"
+            />
             <ToolbarButton
                 icon={Italic}
                 active={isItalic}
@@ -44,37 +162,38 @@ export function Toolbar({
                 onPress={onToggleItalic}
                 label="Italic"
             />
+            <ToolbarButton
+                icon={Strikethrough}
+                active={isStrike}
+                disabled={disabled}
+                onPress={onToggleStrike}
+                label="Strikethrough"
+            />
+            <TextColorMenu color={fontColor} disabled={disabled} onSetColor={onSetFontColor} />
+            <FillColorMenu color={fillColor} disabled={disabled} onSetColor={onSetFillColor} />
+            <BordersMenu borders={borders} disabled={disabled} onSetBorders={onSetBorders} />
+            <ToolbarDivider />
+
+            <HorizontalAlignMenu
+                align={horizontalAlign}
+                disabled={disabled}
+                onSetAlign={onSetHorizontalAlign}
+            />
         </View>
     )
 }
 
-function ToolbarDivider() {
-    return <View className="bg-border" style={{ width: 1, height: 16, marginHorizontal: 4 }} />
-}
-
-interface ToolbarButtonProps {
-    icon: ComponentType<{ size?: number; color?: string }>
-    active: boolean
-    disabled: boolean
-    onPress: () => void
-    label: string
-}
-
-function ToolbarButton({ icon: Icon, active, disabled, onPress, label }: ToolbarButtonProps) {
-    // useThemeColor (not className) — Lucide icons take a literal `color`
-    // string prop.
+// DecimalIcon is a lightweight composition: ".0" text plus a left or
+// right arrow. Lucide doesn't ship the Google-Sheets-style "decrease /
+// increase decimal" glyph, and pulling in react-native-svg just for
+// this would be heavier than a Text + arrow stack.
+function DecimalIcon({ direction }: { direction: 'increase' | 'decrease' }) {
     const fg = useThemeColor('foreground')
+    const Arrow = direction === 'increase' ? ArrowRight : ArrowLeft
     return (
-        <Pressable
-            onPress={onPress}
-            disabled={disabled}
-            accessibilityLabel={label}
-            accessibilityRole="button"
-            accessibilityState={{ disabled, selected: active }}
-            className={`items-center justify-center rounded ${active ? 'bg-accent' : ''}`}
-            style={{ width: 28, height: 24, marginHorizontal: 1, opacity: disabled ? 0.4 : 1 }}
-        >
-            <Icon size={14} color={fg} />
-        </Pressable>
+        <View className="flex-row items-center" style={{ gap: 1 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'monospace', color: fg }}>.0</Text>
+            <Arrow size={10} color={fg} />
+        </View>
     )
 }

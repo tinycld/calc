@@ -1,6 +1,7 @@
-import { forwardRef, useMemo } from 'react'
+import { forwardRef, useCallback, useMemo } from 'react'
 import { View } from 'react-native'
 import { useGridColumnResize } from '../hooks/grid/use-grid-column-resize'
+import { useGridFormatControls } from '../hooks/grid/use-grid-format-controls'
 import { useGridFormulaBar } from '../hooks/grid/use-grid-formula-bar'
 import { useGridRowResize } from '../hooks/grid/use-grid-row-resize'
 import { type GridStoreInstance, useGridStoreInstance } from '../hooks/grid/use-grid-store-instance'
@@ -124,6 +125,12 @@ function GridInner({
     )
 
     const toolbar = useGridToolbarToggles({ doc, sheetId, readOnly })
+    const format = useGridFormatControls({
+        doc,
+        sheetId,
+        readOnly,
+        selectedCellValue: toolbar.selectedCellValue,
+    })
     const formulaBar = useGridFormulaBar({
         selectedRow: toolbar.selectedRow,
         selectedCol: toolbar.selectedCol,
@@ -139,18 +146,45 @@ function GridInner({
     })
     useRefDragExtender()
 
+    // Inline arrows for the currency/percent/decimal preset shortcuts
+    // would re-create on every render and force <Toolbar> to re-render
+    // its full subtree. Wrap in useCallback so identity is stable —
+    // the underlying applyPreset/stepDecimal are stable from the hook.
+    const onApplyCurrency = useCallback(() => format.applyPreset('currency'), [format.applyPreset])
+    const onApplyPercent = useCallback(() => format.applyPreset('percent'), [format.applyPreset])
+    const onDecreaseDecimal = useCallback(() => format.stepDecimal(-1), [format.stepDecimal])
+    const onIncreaseDecimal = useCallback(() => format.stepDecimal(1), [format.stepDecimal])
+
     return (
-        <View className="flex-1 bg-background">
+        <View className="flex-1 bg-background web:select-none">
             <Toolbar
                 disabled={readOnly || !toolbar.hasSelection}
-                isBold={toolbar.isBold}
-                isItalic={toolbar.isItalic}
                 canUndo={undoState.canUndo}
                 canRedo={undoState.canRedo}
-                onToggleBold={toolbar.onToggleBold}
-                onToggleItalic={toolbar.onToggleItalic}
                 onUndo={undoState.undo}
                 onRedo={undoState.redo}
+                isBold={toolbar.isBold}
+                isItalic={toolbar.isItalic}
+                isStrike={toolbar.isStrike}
+                onToggleBold={toolbar.onToggleBold}
+                onToggleItalic={toolbar.onToggleItalic}
+                onToggleStrike={toolbar.onToggleStrike}
+                currentNumFmt={format.currentNumFmt}
+                onApplyPreset={format.applyPreset}
+                onApplyCurrency={onApplyCurrency}
+                onApplyPercent={onApplyPercent}
+                onDecreaseDecimal={onDecreaseDecimal}
+                onIncreaseDecimal={onIncreaseDecimal}
+                fontSize={format.fontSize}
+                onSetFontSize={format.setFontSize}
+                fontColor={format.fontColor}
+                onSetFontColor={format.setFontColor}
+                fillColor={format.fillColor}
+                onSetFillColor={format.setFillColor}
+                borders={format.borders}
+                onSetBorders={format.setBorders}
+                horizontalAlign={format.horizontalAlign}
+                onSetHorizontalAlign={format.setHorizontalAlign}
             />
             <FormulaBar
                 ref={instance.formulaBarInputRef}
