@@ -43,6 +43,17 @@ type SheetMeta struct {
 	// render time; this is the "fill row 7 yellow" affordance.
 	// Sparse: rows without a row-level style have no entry.
 	RowStyles map[int]*CellStyle
+
+	// Color is the user-chosen tab color (hex string like "#FF0000").
+	// Empty string means no override; the serializer leaves whatever
+	// tab color the source xlsx had alone in that case.
+	Color string
+
+	// Hidden mirrors the Y.Doc's `hidden` flag. When true the
+	// serializer marks the worksheet hidden via SetSheetVisible.
+	// Excelize forbids hiding the only visible sheet — see the guard
+	// in persist.go.
+	Hidden bool
 }
 
 // CellEntry is one cell value the doc has touched. SheetID matches a

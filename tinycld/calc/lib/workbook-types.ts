@@ -107,6 +107,13 @@ export interface WorksheetModel {
     rowCount: number
     colCount: number
     cells: Record<string, CellValue>
+    // Optional tab color (e.g. "#FF0000"). Imported from the source
+    // xlsx; absent when the source has no tab color set.
+    color?: string
+    // Optional hidden flag. When true, useYSheets filters this sheet
+    // out of the public list while the sheet-management UI still sees
+    // it via useAllYSheets.
+    hidden?: boolean
 }
 
 export interface WorkbookModel {

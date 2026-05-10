@@ -1,5 +1,5 @@
 import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
-import { useCallback, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import * as Y from 'yjs'
 import {
     type ColWidths,
@@ -7,19 +7,41 @@ import {
     readColWidthsFromMeta,
     readRowHeightsFromMeta,
 } from '../lib/dimensions'
-import { SHEETS_MAP, type YSheetMeta, ydocSheetIds } from '../lib/y-doc-bootstrap'
+import {
+    SHEET_COLOR_KEY,
+    SHEET_HIDDEN_KEY,
+    SHEETS_MAP,
+    type YSheetMeta,
+    ydocSheetIds,
+} from '../lib/y-doc-bootstrap'
 
 export interface SheetWithId extends YSheetMeta {
     id: string
 }
 
-// useYSheets returns the array of sheets in the workbook, sorted by
-// position. Re-renders when the `sheets` Y.Map mutates (sheet added,
-// removed, renamed, resized).
+// useYSheets returns the array of VISIBLE sheets in the workbook,
+// sorted by position. Hidden sheets (meta.hidden === true) are
+// filtered out so screens that consume this list (Grid, formula
+// references, sheet tabs default render) never see them.
 //
-// Returns an empty array while doc is null or unbootstrapped — that
-// matches the parser's empty-workbook behavior.
+// Use useAllYSheets when you need every sheet including hidden ones —
+// the sheet-management UI shows hidden sheets in a "Show hidden"
+// submenu and needs the full list.
+//
+// Re-renders when the `sheets` Y.Map mutates (sheet added, removed,
+// renamed, resized, hidden flag toggled).
 export function useYSheets(doc: Y.Doc | null): SheetWithId[] {
+    const all = useAllYSheets(doc)
+    return useMemo(() => {
+        if (all.every(s => !s.hidden)) return all
+        return all.filter(s => !s.hidden)
+    }, [all])
+}
+
+// useAllYSheets returns every sheet (visible + hidden), sorted by
+// position. Used by the sheet-management UI; everything else should
+// use useYSheets so hidden sheets stay out of sight.
+export function useAllYSheets(doc: Y.Doc | null): SheetWithId[] {
     const subscribe = useCallback(
         (onChange: () => void) => {
             if (doc == null) return () => {}
@@ -41,6 +63,8 @@ export function useYSheets(doc: Y.Doc | null): SheetWithId[] {
         const ids = ydocSheetIds(doc)
         const next: SheetWithId[] = ids.map(id => {
             const meta = sheetsMap.get(id)
+            const colorRaw = meta?.get(SHEET_COLOR_KEY)
+            const hiddenRaw = meta?.get(SHEET_HIDDEN_KEY)
             return {
                 id,
                 name: (meta?.get('name') as string) ?? id,
@@ -49,6 +73,8 @@ export function useYSheets(doc: Y.Doc | null): SheetWithId[] {
                 colCount: (meta?.get('colCount') as number) ?? 0,
                 colWidths: readColWidthsFromMeta(meta),
                 rowHeights: readRowHeightsFromMeta(meta),
+                color: typeof colorRaw === 'string' ? colorRaw : undefined,
+                hidden: hiddenRaw === true ? true : undefined,
             }
         })
         const prev = snapshotRef.current
@@ -108,7 +134,9 @@ function sameSheets(a: SheetWithId[], b: SheetWithId[]): boolean {
             x.name !== y.name ||
             x.position !== y.position ||
             x.rowCount !== y.rowCount ||
-            x.colCount !== y.colCount
+            x.colCount !== y.colCount ||
+            x.color !== y.color ||
+            x.hidden !== y.hidden
         ) {
             return false
         }

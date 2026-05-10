@@ -14,7 +14,7 @@ import { useFormulaBridge } from '../hooks/use-formula-bridge'
 import { useRealtime } from '../hooks/use-realtime'
 import { useUndoManager } from '../hooks/use-undo-manager'
 import { useWorkbook, WorkbookProvider } from '../hooks/use-workbook-context'
-import { addSheet, useYSheets } from '../hooks/use-y-sheets'
+import { addSheet, useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { applyCsvToDoc } from '../lib/csv/apply-paste'
 import { useCsvImportStore } from '../lib/csv/import-store'
 
@@ -69,16 +69,18 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     const undoState = useUndoManager(doc)
     useFormulaBridge(doc)
     const sheets = useYSheets(doc)
+    const allSheets = useAllYSheets(doc)
     const orgHref = useOrgHref()
     const comments = useCellComments(workbookId)
     usePendingCsvImport(doc, workbookId, sheets.length > 0)
 
     // Resolve the active sheet from the URL query, falling back to the
-    // first sheet when the param is missing or stale (peer-renamed,
-    // future delete). Don't write the fallback to the URL — only
-    // explicit clicks update it (otherwise every workbook URL would
-    // get dirtied on first load).
-    const activeSheet = sheets.find(s => s.id === sheetParam) ?? sheets[0] ?? null
+    // first visible sheet when the param is missing, stale (peer-
+    // renamed, deleted), or now hidden. If every sheet is hidden,
+    // surface the first one regardless — the workbook is degenerate
+    // but still navigable.
+    const activeSheet =
+        sheets.find(s => s.id === sheetParam) ?? sheets[0] ?? allSheets[0] ?? null
 
     const onSelect = useCallback(
         (nextSheetId: string) => {
@@ -101,7 +103,12 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                     <ConnectionStatus isConnected={isConnected} />
                 </View>
                 <Grid sheetId={activeSheet.id} driveItemId={workbookId} undoState={undoState} />
-                <SheetTabs sheets={sheets} activeSheetId={activeSheet.id} onSelect={onSelect} />
+                <SheetTabs
+                    doc={doc}
+                    allSheets={allSheets}
+                    activeSheetId={activeSheet.id}
+                    onSelect={onSelect}
+                />
             </View>
         </CommentsProvider>
     )

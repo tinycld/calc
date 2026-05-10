@@ -56,7 +56,18 @@ export interface YSheetMeta {
     // in lib/filter.ts. Bootstrap doesn't touch this field; it
     // round-trips because we never strip unknown keys.
     filterView?: unknown
+    // Optional tab color. User-chosen literal hex string (e.g. "#FF0000").
+    // Absent = render with the default tab color. Round-trips through
+    // excelize's TabColorRGB on the server side.
+    color?: string
+    // Optional hidden flag. Absent = visible. Hidden sheets are filtered
+    // out of the public sheet list (see useYSheets) but still appear in
+    // the "Show hidden" submenu in the sheet-tabs UI.
+    hidden?: boolean
 }
+
+export const SHEET_COLOR_KEY = 'color'
+export const SHEET_HIDDEN_KEY = 'hidden'
 
 // YCellValue is the typed snapshot returned by useYCell. `kind` carries
 // the cell's semantic type; `raw` is the value in a Yjs-serializable
@@ -95,6 +106,12 @@ export function bootstrapYDocFromWorkbook(doc: Y.Doc, model: WorkbookModel): voi
             meta.set('position', i)
             meta.set('rowCount', sheet.rowCount)
             meta.set('colCount', sheet.colCount)
+            if (sheet.color != null && sheet.color !== '') {
+                meta.set(SHEET_COLOR_KEY, sheet.color)
+            }
+            if (sheet.hidden === true) {
+                meta.set(SHEET_HIDDEN_KEY, true)
+            }
             sheetsMap.set(sheetId, meta)
 
             for (const [localKey, value] of Object.entries(sheet.cells)) {
@@ -281,6 +298,29 @@ export function readStyleFromYMap(cell: Y.Map<unknown>): CellStyle | undefined {
     const entry = cell.get(STYLE_KEY)
     if (!(entry instanceof Y.Map)) return undefined
     return readStyleFromYMapEntry(entry)
+}
+
+// cloneYMapDeep returns a fresh, unintegrated Y.Map that mirrors
+// source's contents. Nested Y.Maps are recursively cloned. Scalars
+// (number/string/boolean/null) are copied by value. Anything else
+// (Y.Array, Y.Text — not currently used in cell or style maps) is
+// copied by reference of the scalar form, which is unreachable for
+// today's schema.
+//
+// Used by row/column structural mutations (insert/delete shift cells)
+// and by sheet duplication (clone every cell into the new sheet).
+// Lives here rather than in structural-mutations.ts so use-sheet-actions
+// can share it without dragging in the structural-mutations namespace.
+export function cloneYMapDeep(source: Y.Map<unknown>): Y.Map<unknown> {
+    const out = new Y.Map<unknown>()
+    source.forEach((value, key) => {
+        if (value instanceof Y.Map) {
+            out.set(key, cloneYMapDeep(value as Y.Map<unknown>))
+        } else {
+            out.set(key, value)
+        }
+    })
+    return out
 }
 
 // ydocSheetIds returns the array of sheet ids in the doc's `sheets`

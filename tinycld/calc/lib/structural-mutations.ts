@@ -37,7 +37,7 @@ import {
 } from './formula/rewrite-on-structural-mutation'
 import { ROW_STYLES_KEY } from './sheet-styles'
 import { parseYCellKey, yCellKey } from './y-cell-key'
-import { CELLS_MAP, SHEETS_MAP } from './y-doc-bootstrap'
+import { CELLS_MAP, cloneYMapDeep, SHEETS_MAP } from './y-doc-bootstrap'
 
 type RowInsertPosition = 'above' | 'below'
 type ColInsertPosition = 'left' | 'right'
@@ -62,25 +62,6 @@ function snapshotSheetCells(
         hits.push({ key, row: parsed.row, col: parsed.col, value })
     })
     return hits
-}
-
-// cloneYMapDeep returns a fresh, unintegrated Y.Map that mirrors the
-// source's contents. Nested Y.Maps are recursively cloned. Scalars
-// (number/string/boolean/null) are copied by value. Anything else
-// (Y.Array, Y.Text — not currently used in cell or style maps) would
-// need its own clone branch; assert via a typeof check and fall back
-// to copy-by-reference of the scalar form, which is unreachable for
-// today's schema.
-function cloneYMapDeep(source: Y.Map<unknown>): Y.Map<unknown> {
-    const out = new Y.Map<unknown>()
-    source.forEach((value, key) => {
-        if (value instanceof Y.Map) {
-            out.set(key, cloneYMapDeep(value as Y.Map<unknown>))
-        } else {
-            out.set(key, value)
-        }
-    })
-    return out
 }
 
 function moveCellsBy(

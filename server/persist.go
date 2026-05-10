@@ -253,6 +253,53 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 				return nil, fmt.Errorf("set row style %s!%d: %w", name, row, err)
 			}
 		}
+
+		// Tab color: round-trip through SheetPropsOptions.TabColorRGB.
+		// excelize accepts the hex with or without the leading "#"; we
+		// strip it for portability with older sheet readers that store
+		// the bare RGB hex.
+		if meta.Color != "" {
+			rgb := strings.TrimPrefix(meta.Color, "#")
+			if err := f.SetSheetProps(name, &excelize.SheetPropsOptions{
+				TabColorRGB: &rgb,
+			}); err != nil {
+				return nil, fmt.Errorf("set tab color on %s: %w", name, err)
+			}
+		}
+	}
+
+	// Visibility pass: applied AFTER every sheet write so the count of
+	// visible sheets is accurate. SetSheetVisible refuses to hide the
+	// only remaining visible sheet — that's a workbook-level rule, not
+	// our own. Sheets the snapshot wants visible (Hidden=false) get
+	// explicitly re-shown so a Y.Doc unhide propagates.
+	for _, meta := range snap.Sheets {
+		name, ok := sheetNameByID[meta.ID]
+		if !ok {
+			continue
+		}
+		if err := f.SetSheetVisible(name, !meta.Hidden); err != nil {
+			return nil, fmt.Errorf("set sheet visible on %s: %w", name, err)
+		}
+	}
+
+	// Final pass: drop any sheets that exist on disk but the snapshot
+	// no longer references. Without this, a sheet deleted via the
+	// sheet-management UI would persist in the saved xlsx — the
+	// positional rename pass above would either rename it to something
+	// new (if the snapshot has a sheet at that index) or leave it
+	// alone (if there are fewer snapshot sheets than disk sheets).
+	keptNames := make(map[string]struct{}, len(sheetNameByID))
+	for _, name := range sheetNameByID {
+		keptNames[name] = struct{}{}
+	}
+	for _, name := range f.GetSheetList() {
+		if _, kept := keptNames[name]; kept {
+			continue
+		}
+		if err := f.DeleteSheet(name); err != nil {
+			return nil, fmt.Errorf("delete sheet %s: %w", name, err)
+		}
 	}
 
 	for _, cell := range snap.Cells {

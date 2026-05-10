@@ -216,6 +216,8 @@ func collectSheets(sheetsMap *ycrdt.YMap) ([]SheetMeta, error) {
 			collectErr = err
 			return
 		}
+		color, _ := meta.Get("color").(string)
+		hidden, _ := meta.Get("hidden").(bool)
 		out = append(out, SheetMeta{
 			ID:         sheetID,
 			Name:       name,
@@ -225,6 +227,8 @@ func collectSheets(sheetsMap *ycrdt.YMap) ([]SheetMeta, error) {
 			RowHeights: decodeSparseIntMap(meta, "rowHeights"),
 			ColWidths:  decodeSparseIntMap(meta, "colWidths"),
 			RowStyles:  rowStyles,
+			Color:      color,
+			Hidden:     hidden,
 		})
 	})
 	if collectErr != nil {

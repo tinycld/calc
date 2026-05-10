@@ -1015,6 +1015,85 @@ test.describe('Find & Replace', () => {
     })
 })
 
+test.describe('Sheet management', () => {
+    test.setTimeout(120_000)
+
+    test.beforeEach(async ({ page }) => {
+        await login(page)
+    })
+
+    test('+ button adds a new tab named "Sheet 2"', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+        await page.getByLabel('Add sheet', { exact: true }).click()
+        await expect(page.getByLabel('Sheet Sheet 2', { exact: true })).toBeVisible()
+    })
+
+    test('double-click a tab to rename', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+        await page.getByLabel('Add sheet', { exact: true }).click()
+        const tab = page.getByLabel('Sheet Sheet 2', { exact: true })
+        await tab.dblclick()
+        const input = page.getByLabel('Rename sheet', { exact: true })
+        await input.fill('Renamed')
+        await input.press('Enter')
+        await expect(page.getByLabel('Sheet Renamed', { exact: true })).toBeVisible()
+    })
+
+    test('right-click → Duplicate creates "<name> (copy)"', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+        await page.getByLabel('Add sheet', { exact: true }).click()
+        const tab = page.getByLabel('Sheet Sheet 2', { exact: true })
+        await tab.dblclick()
+        const input = page.getByLabel('Rename sheet', { exact: true })
+        await input.fill('Renamed')
+        await input.press('Enter')
+        const renamed = page.getByLabel('Sheet Renamed', { exact: true })
+        await renamed.click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Duplicate' }).click()
+        await expect(page.getByLabel('Sheet Renamed (copy)', { exact: true })).toBeVisible()
+    })
+
+    test('right-click → Delete with confirm removes the tab', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+        await page.getByLabel('Add sheet', { exact: true }).click()
+        const tab = page.getByLabel('Sheet Sheet 2', { exact: true })
+        // Type into A1 of Sheet 2 so the destructive-delete confirm
+        // triggers (delete on an empty sheet skips the dialog).
+        await tab.click()
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        await typeIntoCell(page, formulaBar, 'A1', 'hi')
+        await tab.click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Delete' }).click()
+        await page.getByRole('button', { name: 'Delete' }).click()
+        await expect(page.getByLabel('Sheet Sheet 2', { exact: true })).toHaveCount(0)
+    })
+
+    test('reorder via Move-left swaps tab order', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+        await page.getByLabel('Add sheet', { exact: true }).click()
+        await page.getByLabel('Add sheet', { exact: true }).click()
+        // Now have Sheet 1, Sheet 2, Sheet 3. Right-click Sheet 3, move
+        // left twice — final order should be Sheet 3, Sheet 1, Sheet 2.
+        const sheet3 = page.getByLabel('Sheet Sheet 3', { exact: true })
+        await sheet3.click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Move left' }).click()
+        await sheet3.click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Move left' }).click()
+        const order = await page.evaluate(() => {
+            const tabs = Array.from(
+                document.querySelectorAll('[aria-label^="Sheet Sheet "]')
+            ) as HTMLElement[]
+            return tabs.map(el => el.getAttribute('aria-label'))
+        })
+        expect(order[0]).toBe('Sheet Sheet 3')
+    })
+})
+
 async function typeIntoCell(
     page: import('@playwright/test').Page,
     formulaBar: import('@playwright/test').Locator,

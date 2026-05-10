@@ -25,6 +25,14 @@ type WorksheetModel struct {
 	RowCount int                     `json:"rowCount"`
 	ColCount int                     `json:"colCount"`
 	Cells    map[string]CellValueDTO `json:"cells"`
+	// Color is the imported tab color as a "#RRGGBB" hex string.
+	// Empty when the source xlsx has no tab color set.
+	Color string `json:"color,omitempty"`
+	// Hidden mirrors the source xlsx's per-sheet visibility flag.
+	// Hidden sheets still get fully read (so peers who unhide them
+	// see the data) but the client filters them from the default
+	// sheet list — see useYSheets.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // CellValueDTO mirrors the TS CellValue. `raw` is one of
@@ -75,6 +83,23 @@ func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (Work
 	if err != nil {
 		return WorksheetModel{}, err
 	}
+	// Tab color + visibility live on the worksheet props. Errors here
+	// are non-fatal (fall back to absent / visible) — older xlsx files
+	// without sheet-level styling shouldn't break the import.
+	var tabColor string
+	if props, err := f.GetSheetProps(sheetName); err == nil {
+		if props.TabColorRGB != nil && *props.TabColorRGB != "" {
+			rgb := *props.TabColorRGB
+			if !strings.HasPrefix(rgb, "#") {
+				rgb = "#" + rgb
+			}
+			tabColor = rgb
+		}
+	}
+	hidden := false
+	if visible, err := f.GetSheetVisible(sheetName); err == nil {
+		hidden = !visible
+	}
 	cells := make(map[string]CellValueDTO)
 	maxRow, maxCol := 0, 0
 
@@ -118,6 +143,8 @@ func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (Work
 		RowCount: rowCount,
 		ColCount: colCount,
 		Cells:    cells,
+		Color:    tabColor,
+		Hidden:   hidden,
 	}, nil
 }
 
@@ -329,6 +356,12 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 			meta.Set("position", i)
 			meta.Set("rowCount", sheet.RowCount)
 			meta.Set("colCount", sheet.ColCount)
+			if sheet.Color != "" {
+				meta.Set("color", sheet.Color)
+			}
+			if sheet.Hidden {
+				meta.Set("hidden", true)
+			}
 			sheetsMap.Set(sheetID, meta)
 
 			for localKey, value := range sheet.Cells {
