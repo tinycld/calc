@@ -37,6 +37,19 @@ export interface SelectedCell {
     col: number
 }
 
+// CellRange is always normalized: startRow ≤ endRow, startCol ≤ endCol.
+// The range describes a rectangle of cells that the user has selected
+// in addition to the single `selected` anchor cell. When the range is
+// null the selection is just the anchor (a single cell). The anchor is
+// always *inside* the range, so iterators can ignore it and just walk
+// the range.
+export interface CellRange {
+    startRow: number
+    startCol: number
+    endRow: number
+    endCol: number
+}
+
 export interface EditSession {
     row: number
     col: number
@@ -87,7 +100,16 @@ export interface HandleMenuTarget {
 // specific cell's CRDT entry changes. The store is for selection,
 // editing, ref-drag, suggestion-popover, and menu state.
 export interface GridState {
+    // The anchor cell — drives the formula bar, header highlights, and
+    // the keyboard-nav origin. Always inside `selectionRange` when that
+    // is non-null. Existing call sites that use `selected` continue to
+    // see the active cell.
     selected: SelectedCell | null
+    // Optional rectangle for multi-cell selection. `null` means the
+    // selection is just the single `selected` cell. When non-null the
+    // range is normalized (start ≤ end on both axes) and contains
+    // `selected`.
+    selectionRange: CellRange | null
     editSession: EditSession | null
     // Programmatic-insert override for the input's selection prop.
     // Cleared on the next onSelectionChange so subsequent typing
@@ -139,6 +161,12 @@ export interface GridStoreDeps {
 
 export interface GridActions {
     selectCell: (cell: SelectedCell) => void
+    // Extend the current selection to include `cell` while keeping the
+    // anchor (`selected`) fixed. Computes the bounding rectangle from
+    // the anchor to `cell` and stores it in `selectionRange`. If there
+    // is no anchor yet, this is equivalent to selectCell. Used by
+    // shift-click and drag-select.
+    extendSelectionTo: (cell: SelectedCell) => void
     editCell: (cell: SelectedCell, initialDraft?: string) => void
     setEditDraft: (row: number, col: number, draft: string) => void
     setEditSelection: (row: number, col: number, start: number, end: number) => void
@@ -175,8 +203,18 @@ export interface GridStore extends GridState, GridActions {}
 
 export type GridStoreApi = StoreApi<GridStore> & { refs: GridRefs }
 
+// Local helper — duplicated rather than importing from
+// lib/selection-range.ts to avoid a circular import (the lib imports
+// CellRange from this file).
+function rangeContainsCell(range: CellRange, row: number, col: number): boolean {
+    return (
+        row >= range.startRow && row <= range.endRow && col >= range.startCol && col <= range.endCol
+    )
+}
+
 const initialState: GridState = {
     selected: null,
+    selectionRange: null,
     editSession: null,
     pendingSelection: null,
     activeSurface: 'cell',
@@ -213,7 +251,50 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             selectCell: cell => {
                 commitInflight(cell)
                 refs.lastRefSlice.current = null
-                set({ selected: cell, editSession: null, pendingSelection: null })
+                set({
+                    selected: cell,
+                    selectionRange: null,
+                    editSession: null,
+                    pendingSelection: null,
+                })
+            },
+
+            extendSelectionTo: cell => {
+                // commitInflight FIRST: extending the selection ends
+                // any edit session on a different cell, and that draft
+                // must be persisted (mirror of selectCell — the gate
+                // would silently drop the user's typing otherwise).
+                // Calling unconditionally is safe: commitInflight
+                // no-ops when there is no edit session, when
+                // readOnly, or when the edit target equals `cell`.
+                commitInflight(cell)
+                refs.lastRefSlice.current = null
+                const anchor = get().selected
+                if (anchor == null) {
+                    // No anchor yet — fall through to a plain
+                    // single-cell select so the gesture isn't lost.
+                    set({
+                        selected: cell,
+                        selectionRange: null,
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                const range: CellRange = {
+                    startRow: Math.min(anchor.row, cell.row),
+                    endRow: Math.max(anchor.row, cell.row),
+                    startCol: Math.min(anchor.col, cell.col),
+                    endCol: Math.max(anchor.col, cell.col),
+                }
+                // Single-cell range collapses to null so the rest of the
+                // store stays in the canonical "no range" form.
+                const single = range.startRow === range.endRow && range.startCol === range.endCol
+                set({
+                    selectionRange: single ? null : range,
+                    editSession: null,
+                    pendingSelection: null,
+                })
             },
 
             editCell: (cell, initialDraft = '') => {
@@ -223,6 +304,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 refs.lastRefSlice.current = null
                 set({
                     selected: cell,
+                    selectionRange: null,
                     editSession: { row: cell.row, col: cell.col, draft: initialDraft },
                     pendingSelection: { start: cursor, end: cursor },
                     activeSurface: 'cell',
@@ -269,6 +351,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 refs.lastRefSlice.current = null
                 set({
                     selected: { row, col },
+                    selectionRange: null,
                     editSession: null,
                     pendingSelection: null,
                 })
@@ -386,9 +469,27 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             },
 
             openCellContextMenu: (row, col, x, y) => {
+                // Right-clicking inside an existing multi-cell range
+                // keeps the range alive so range-targeted menu items
+                // (clear contents, etc.) still apply to the whole
+                // selection. Right-clicking outside the range collapses
+                // to a single-cell selection on the clicked cell.
+                //
+                // Read-then-commit ordering matters: we capture the
+                // pre-commit selectionRange BEFORE commitInflight,
+                // because today commitInflight only writes the cell
+                // and doesn't touch selectionRange — but if that ever
+                // changes (e.g. an auto-deselect on commit), this
+                // branch would silently lose the range. The captured
+                // `state` snapshot keeps the contract explicit.
+                const state = get()
+                const insideRange =
+                    state.selectionRange != null &&
+                    rangeContainsCell(state.selectionRange, row, col)
                 commitInflight({ row, col })
                 set({
-                    selected: { row, col },
+                    selected: insideRange ? state.selected : { row, col },
+                    selectionRange: insideRange ? state.selectionRange : null,
                     editSession: null,
                     contextTarget: { cell: { row, col }, cursor: { x, y } },
                 })

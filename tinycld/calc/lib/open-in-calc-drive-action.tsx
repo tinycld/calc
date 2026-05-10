@@ -26,8 +26,8 @@ registerDriveItemAction('calc.open', () => {
         id: 'calc.open',
         icon: ExternalLink,
         label: 'Open in Calc',
-        isApplicable: (item) => item.mimeType === XLSX_MIME_TYPE,
-        onPress: (item) => {
+        isApplicable: item => item.mimeType === XLSX_MIME_TYPE,
+        onPress: item => {
             router.push(orgHref('calc/[id]', { id: item.id }))
         },
     }

@@ -24,7 +24,7 @@ describe('FormulaBridge origin tagging', () => {
         } satisfies WorkbookModel)
 
         const observedOrigins: unknown[] = []
-        doc.on('afterTransaction', (txn) => {
+        doc.on('afterTransaction', txn => {
             // Filter out the bootstrap and user-edit transactions; the
             // ones triggered by HF carry FORMULA_ORIGIN.
             if (txn.changed.size === 0) return
@@ -45,7 +45,7 @@ describe('FormulaBridge origin tagging', () => {
             // At least one observed transaction must carry FORMULA_ORIGIN
             // (the writeback). We don't assert on the count because
             // transaction grouping is yjs-internal.
-            expect(observedOrigins.some((o) => o === FORMULA_ORIGIN)).toBe(true)
+            expect(observedOrigins.some(o => o === FORMULA_ORIGIN)).toBe(true)
         } finally {
             bridge.stop()
         }

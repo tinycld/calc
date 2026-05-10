@@ -22,15 +22,27 @@ describe('inferCellInput', () => {
         })
 
         it("'TRUE is a string, not a boolean", () => {
-            expect(inferCellInput("'TRUE")).toEqual({ kind: 'string', raw: 'TRUE', display: 'TRUE' })
+            expect(inferCellInput("'TRUE")).toEqual({
+                kind: 'string',
+                raw: 'TRUE',
+                display: 'TRUE',
+            })
         })
 
         it("'2024-01-15 is a string, not a date", () => {
-            expect(inferCellInput("'2024-01-15")).toEqual({ kind: 'string', raw: '2024-01-15', display: '2024-01-15' })
+            expect(inferCellInput("'2024-01-15")).toEqual({
+                kind: 'string',
+                raw: '2024-01-15',
+                display: '2024-01-15',
+            })
         })
 
         it("'=A1+B1 is a string, not a formula", () => {
-            expect(inferCellInput("'=A1+B1")).toEqual({ kind: 'string', raw: '=A1+B1', display: '=A1+B1' })
+            expect(inferCellInput("'=A1+B1")).toEqual({
+                kind: 'string',
+                raw: '=A1+B1',
+                display: '=A1+B1',
+            })
         })
 
         it('two leading apostrophes only strip one (the second is preserved as a literal char)', () => {

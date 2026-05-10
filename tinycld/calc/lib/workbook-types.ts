@@ -19,6 +19,7 @@ export interface CellFont {
     bold?: boolean
     italic?: boolean
     underline?: boolean
+    strike?: boolean
     size?: number
     name?: string
     color?: string
@@ -37,10 +38,24 @@ export interface CellAlignment {
     wrapText?: boolean
 }
 
+// CellBorders stores edge presence as four booleans. Width and color
+// are uniform (1px, foreground) for now — matching the simple
+// "borders dropdown" affordance the toolbar exposes. A future
+// per-edge color/style picker can grow these into objects without
+// schema breakage (the deep-merge in setYCellStyle treats any object
+// patch additively).
+export interface CellBorders {
+    top?: boolean
+    right?: boolean
+    bottom?: boolean
+    left?: boolean
+}
+
 export interface CellStyle {
     font?: CellFont
     fill?: CellFill
     alignment?: CellAlignment
+    borders?: CellBorders
     numFmt?: string
 }
 
@@ -78,7 +93,12 @@ export interface CellValue {
 // callers were built against.
 import { applyNumFmt } from './number-format/format'
 
-export function formatCell(kind: CellKind, raw: CellRaw | Date, formula?: string, numFmt?: string): string {
+export function formatCell(
+    kind: CellKind,
+    raw: CellRaw | Date,
+    formula?: string,
+    numFmt?: string
+): string {
     return applyNumFmt(kind, raw, numFmt, formula)
 }
 

@@ -49,7 +49,7 @@ describe('setYCell + cellsMap observe', () => {
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
         const watchedKey = yCellKey('sheet1', 1, 1)
         let parentFires = 0
-        cellsMap.observe((event) => {
+        cellsMap.observe(event => {
             if (event.keysChanged.has(watchedKey)) parentFires++
         })
 
@@ -72,7 +72,7 @@ describe('setYCell + cellsMap observe', () => {
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
         const watchedKey = yCellKey('sheet1', 1, 1)
         let firedForWatched = 0
-        cellsMap.observe((event) => {
+        cellsMap.observe(event => {
             if (event.keysChanged.has(watchedKey)) firedForWatched++
         })
 
@@ -251,7 +251,9 @@ describe('setYCellTyped + inferred commit path', () => {
     it('typing a number stores kind=number with a numeric raw', () => {
         const doc = new Y.Doc()
         setYCell(doc, 'sheet1', 1, 1, '42')
-        const snap = readYCell(doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>)
+        const snap = readYCell(
+            doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>
+        )
         expect(snap.kind).toBe('number')
         expect(snap.raw).toBe(42)
         expect(snap.display).toBe('42')
@@ -260,7 +262,9 @@ describe('setYCellTyped + inferred commit path', () => {
     it('typing TRUE stores kind=boolean', () => {
         const doc = new Y.Doc()
         setYCell(doc, 'sheet1', 1, 1, 'TRUE')
-        const snap = readYCell(doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>)
+        const snap = readYCell(
+            doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>
+        )
         expect(snap.kind).toBe('boolean')
         expect(snap.raw).toBe(true)
     })
@@ -268,7 +272,9 @@ describe('setYCellTyped + inferred commit path', () => {
     it('typing an ISO date stores kind=date with the ISO string raw', () => {
         const doc = new Y.Doc()
         setYCell(doc, 'sheet1', 1, 1, '2024-01-15')
-        const snap = readYCell(doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>)
+        const snap = readYCell(
+            doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>
+        )
         expect(snap.kind).toBe('date')
         expect(snap.raw).toBe('2024-01-15')
     })
@@ -286,7 +292,9 @@ describe('setYCellTyped + inferred commit path', () => {
     it("typing '42 forces a string kind (the apostrophe convention)", () => {
         const doc = new Y.Doc()
         setYCell(doc, 'sheet1', 1, 1, "'42")
-        const snap = readYCell(doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>)
+        const snap = readYCell(
+            doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>
+        )
         expect(snap.kind).toBe('string')
         expect(snap.raw).toBe('42')
     })

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { applyFunctionInsertion, filterFunctions, parseFunctionToken } from '../tinycld/calc/lib/formula/autocomplete'
+import {
+    applyFunctionInsertion,
+    filterFunctions,
+    parseFunctionToken,
+} from '../tinycld/calc/lib/formula/autocomplete'
 
 describe('parseFunctionToken', () => {
     it('returns null when draft does not start with =', () => {
@@ -83,19 +87,31 @@ describe('filterFunctions', () => {
 
 describe('applyFunctionInsertion', () => {
     it('replaces partial token with NAME( and places cursor inside parens', () => {
-        const result = applyFunctionInsertion('=LE', { token: 'LE', tokenStart: 1, tokenEnd: 3 }, 'LEFT')
+        const result = applyFunctionInsertion(
+            '=LE',
+            { token: 'LE', tokenStart: 1, tokenEnd: 3 },
+            'LEFT'
+        )
         expect(result.draft).toBe('=LEFT(')
         expect(result.selection).toEqual({ start: 6, end: 6 })
     })
 
     it('preserves text after the cursor', () => {
-        const result = applyFunctionInsertion('=LE+1', { token: 'LE', tokenStart: 1, tokenEnd: 3 }, 'LEFT')
+        const result = applyFunctionInsertion(
+            '=LE+1',
+            { token: 'LE', tokenStart: 1, tokenEnd: 3 },
+            'LEFT'
+        )
         expect(result.draft).toBe('=LEFT(+1')
         expect(result.selection).toEqual({ start: 6, end: 6 })
     })
 
     it('inserts inside an outer function', () => {
-        const result = applyFunctionInsertion('=SUM(LE', { token: 'LE', tokenStart: 5, tokenEnd: 7 }, 'LEN')
+        const result = applyFunctionInsertion(
+            '=SUM(LE',
+            { token: 'LE', tokenStart: 5, tokenEnd: 7 },
+            'LEN'
+        )
         expect(result.draft).toBe('=SUM(LEN(')
         expect(result.selection).toEqual({ start: 9, end: 9 })
     })

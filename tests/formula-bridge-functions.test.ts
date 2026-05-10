@@ -67,7 +67,9 @@ describe('FormulaBridge SUM and AVERAGE', () => {
 
     it('AVERAGE on empty input is #DIV/0!', () => {
         const doc = new Y.Doc()
-        bootstrapYDocFromWorkbook(doc, { sheets: [{ name: 'Sheet1', rowCount: 5, colCount: 5, cells: {} }] })
+        bootstrapYDocFromWorkbook(doc, {
+            sheets: [{ name: 'Sheet1', rowCount: 5, colCount: 5, cells: {} }],
+        })
         const bridge = startBridge(doc)
         try {
             setYCellTyped(doc, 'sheet1', 1, 1, {

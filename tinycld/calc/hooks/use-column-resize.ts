@@ -200,7 +200,9 @@ export function useColumnResize({
     // ScrollView underneath doesn't steal the gesture. PanResponder is
     // memoized per column via useMemo so the closure captures the
     // column without re-allocating on every render.
-    const panResponderCacheRef = useRef<Map<number, ReturnType<typeof PanResponder.create>>>(new Map())
+    const panResponderCacheRef = useRef<Map<number, ReturnType<typeof PanResponder.create>>>(
+        new Map()
+    )
 
     const makeNativeProps = useCallback(
         (col: number): Record<string, unknown> => {

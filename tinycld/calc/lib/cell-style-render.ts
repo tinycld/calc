@@ -46,7 +46,18 @@ export function cellStyleToRenderProps(style: CellStyle | undefined): CellRender
     if (style.font != null) {
         if (style.font.bold) textStyle.fontWeight = 'bold'
         if (style.font.italic) textStyle.fontStyle = 'italic'
-        if (style.font.underline) textStyle.textDecorationLine = 'underline'
+        // RN's textDecorationLine accepts at most the combined
+        // `'underline line-through'`, so build the value from whichever
+        // of the two flags are set.
+        const decorations: string[] = []
+        if (style.font.underline) decorations.push('underline')
+        if (style.font.strike) decorations.push('line-through')
+        if (decorations.length > 0) {
+            textStyle.textDecorationLine = decorations.join(' ') as
+                | 'underline'
+                | 'line-through'
+                | 'underline line-through'
+        }
         if (typeof style.font.size === 'number') textStyle.fontSize = style.font.size
         if (typeof style.font.name === 'string' && style.font.name !== '') {
             textStyle.fontFamily = style.font.name
@@ -65,6 +76,28 @@ export function cellStyleToRenderProps(style: CellStyle | undefined): CellRender
         const color = style.fill.fgColor ?? style.fill.bgColor
         if (typeof color === 'string' && color !== '') {
             viewStyle.backgroundColor = normalizeColor(color)
+        }
+    }
+
+    if (style.borders != null) {
+        // Uniform 1px black borders for now — matches Excel's default
+        // border color. Per-edge color/style is a future extension.
+        const BORDER_COLOR = '#000000'
+        if (style.borders.top) {
+            viewStyle.borderTopWidth = 1
+            viewStyle.borderTopColor = BORDER_COLOR
+        }
+        if (style.borders.right) {
+            viewStyle.borderRightWidth = 1
+            viewStyle.borderRightColor = BORDER_COLOR
+        }
+        if (style.borders.bottom) {
+            viewStyle.borderBottomWidth = 1
+            viewStyle.borderBottomColor = BORDER_COLOR
+        }
+        if (style.borders.left) {
+            viewStyle.borderLeftWidth = 1
+            viewStyle.borderLeftColor = BORDER_COLOR
         }
     }
 

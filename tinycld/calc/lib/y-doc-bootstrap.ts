@@ -174,7 +174,11 @@ export function readYCell(cell: Y.Map<unknown>): YCellValue {
             // Cached scalar may be string/number/boolean/null. Trust
             // whatever was written; null means "no cached value yet".
             raw =
-                typeof rawRaw === 'string' || typeof rawRaw === 'number' || typeof rawRaw === 'boolean' ? rawRaw : null
+                typeof rawRaw === 'string' ||
+                typeof rawRaw === 'number' ||
+                typeof rawRaw === 'boolean'
+                    ? rawRaw
+                    : null
             break
         case 'string':
             // Legacy cells written before kind existed wrote `raw` as a
@@ -271,7 +275,7 @@ export function ydocSheetIds(doc: Y.Doc): string[] {
         entries.push({ id, position })
     })
     entries.sort((a, b) => a.position - b.position)
-    return entries.map((e) => e.id)
+    return entries.map(e => e.id)
 }
 
 // ydocIsEmpty returns true if the doc has no sheets yet — i.e. it has

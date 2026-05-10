@@ -122,7 +122,9 @@ test.describe('Calc', () => {
         }
     })
 
-    test('formula function autocomplete: typing =LE shows LEFT/LEN, Tab inserts', async ({ page }) => {
+    test('formula function autocomplete: typing =LE shows LEFT/LEN, Tab inserts', async ({
+        page,
+    }) => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
 
@@ -149,7 +151,9 @@ test.describe('Calc', () => {
         await formulaBar.press('Escape')
     })
 
-    test('formula function autocomplete: ArrowDown moves highlight before Tab inserts', async ({ page }) => {
+    test('formula function autocomplete: ArrowDown moves highlight before Tab inserts', async ({
+        page,
+    }) => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
 
@@ -177,7 +181,9 @@ test.describe('Calc', () => {
         await formulaBar.press('Escape')
     })
 
-    test('cell-ref insertion: clicking a cell mid-formula inserts its address', async ({ page }) => {
+    test('cell-ref insertion: clicking a cell mid-formula inserts its address', async ({
+        page,
+    }) => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
 
@@ -273,7 +279,9 @@ test.describe('Calc', () => {
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('hello')
     })
 
-    test('typing in a cell then clicking another commits the value instead of dropping it', async ({ page }) => {
+    test('typing in a cell then clicking another commits the value instead of dropping it', async ({
+        page,
+    }) => {
         // Regression: clicking a different cell while editing used to
         // discard the in-flight draft. Web preventDefault on mousedown
         // (added so cell-ref insertion can fire mid-formula) suppresses
@@ -328,6 +336,204 @@ test.describe('Calc', () => {
         await expect(a2).toHaveText('')
     })
 
+    test('drag-select extends a range and bold applies to every cell', async ({ page }) => {
+        // Multi-cell selection: mouse-drag from A1 to B2 should grow
+        // the selection to a 2x2 rectangle. Clicking Bold while the
+        // range is active should turn all four cells bold (mixed-
+        // toggle: any-off → all-on).
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const a1 = page.getByLabel('Cell A1', { exact: true })
+        const b2 = page.getByLabel('Cell B2', { exact: true })
+
+        // Capture cell rects so we drag from interior centers — the
+        // PanResponder needs >3px of movement to claim the gesture.
+        const a1Box = await a1.boundingBox()
+        const b2Box = await b2.boundingBox()
+        if (a1Box == null || b2Box == null) throw new Error('cell rects missing')
+
+        await page.mouse.move(a1Box.x + a1Box.width / 2, a1Box.y + a1Box.height / 2)
+        await page.mouse.down()
+        // Stepped move so React Native's PanResponder fires the full
+        // grant→move→release sequence reliably; a single jump can be
+        // coalesced into a no-move release in some browsers.
+        await page.mouse.move(b2Box.x + b2Box.width / 2, b2Box.y + b2Box.height / 2, { steps: 8 })
+        await page.mouse.up()
+
+        // Range tint paints a rgba(34, 160, 107, 0.10) backgroundColor
+        // on B1, A2, B2 (the anchor A1 keeps the brighter outline,
+        // not the tint). Read the computed background of B2 — if the
+        // range never extended, B2 stays on the default bg-background
+        // class color. Asserting on the tinted cells (rather than the
+        // anchor) is the load-bearing signal that the range expanded.
+        const tintColor = 'rgba(34, 160, 107, 0.1)'
+        await expect
+            .poll(async () => {
+                return page.evaluate(label => {
+                    const el = document.querySelector(
+                        `[aria-label="${label}"]`
+                    ) as HTMLElement | null
+                    if (el == null) return null
+                    return window.getComputedStyle(el).backgroundColor
+                }, 'Cell B2')
+            })
+            .toBe(tintColor)
+
+        // Click Bold. The toolbar button uses accessibilityLabel="Bold"
+        // which RN-Web compiles to aria-label.
+        await page.getByRole('button', { name: 'Bold' }).click()
+
+        // Verify every cell in the 2x2 range is now bold by reading
+        // the rendered Text node's fontWeight. RN-Web compiles
+        // textStyle.fontWeight = 'bold' to inline style — computed
+        // value is "700" in Chromium. Looking at the cell wrapper's
+        // descendant <Text> (a span on web).
+        for (const label of ['Cell A1', 'Cell B1', 'Cell A2', 'Cell B2']) {
+            const fw = await page.evaluate(l => {
+                const cell = document.querySelector(`[aria-label="${l}"]`)
+                if (cell == null) return null
+                // The visible text node is the cell's first descendant
+                // text element. RN-Web wraps Text as a div.
+                const text = cell.querySelector('div')
+                if (text == null) return null
+                return window.getComputedStyle(text).fontWeight
+            }, label)
+            expect(fw, `${label} should be bold`).toBe('700')
+        }
+    })
+
+    test('shift-click extends the selection to the clicked cell', async ({ page }) => {
+        // Web-only modifier path (no shift on touch). Selecting A1
+        // then shift-clicking C2 should grow the range to A1:C2; the
+        // tint must paint on cells inside the rectangle (e.g. B2)
+        // without the user dragging.
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        await page.getByLabel('Cell A1', { exact: true }).click()
+
+        // Use Playwright's `modifiers` option so the synthetic
+        // mousedown carries shiftKey: true at dispatch time. A
+        // separate keyboard.down('Shift') doesn't always propagate
+        // into the next mouse event, so the explicit option is more
+        // reliable. The Cell's onMouseDown reads event.shiftKey
+        // before the underlying Pressable fires onPress (which would
+        // otherwise collapse the range via selectCell).
+        await page.getByLabel('Cell C2', { exact: true }).click({ modifiers: ['Shift'] })
+
+        // B2 sits inside the A1:C2 rectangle and is not the anchor,
+        // so it gets the range tint (rgba(34, 160, 107, 0.10)).
+        const tintColor = 'rgba(34, 160, 107, 0.1)'
+        await expect
+            .poll(
+                async () =>
+                    page.evaluate(label => {
+                        const el = document.querySelector(
+                            `[aria-label="${label}"]`
+                        ) as HTMLElement | null
+                        if (el == null) return null
+                        return window.getComputedStyle(el).backgroundColor
+                    }, 'Cell B2'),
+                { message: 'B2 should be tinted as part of A1:C2 range' }
+            )
+            .toBe(tintColor)
+    })
+
+    test('drag inside a cell while editing does not start a range', async ({ page }) => {
+        // Regression: the drag-select web wiring must early-return
+        // when isAnyEditing is true. If it didn't, mousedown on a
+        // cell during a formula edit would collapse the editor and
+        // either drop the draft or wreck the ref-tap path. Verify by
+        // typing a formula into A1, then mouse-dragging from B1 to
+        // D1 — the formula bar must still hold its draft and no
+        // range tint should land on C1.
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+
+        await page.getByLabel('Cell A1', { exact: true }).click()
+        await formulaBar.focus()
+        await formulaBar.fill('=')
+
+        // Drag B1 → D1. Without the editing gate, this would extend
+        // a selection and collapse the formula edit.
+        const b1Box = await page.getByLabel('Cell B1', { exact: true }).boundingBox()
+        const d1Box = await page.getByLabel('Cell D1', { exact: true }).boundingBox()
+        if (b1Box == null || d1Box == null) throw new Error('cell rects missing')
+        await page.mouse.move(b1Box.x + b1Box.width / 2, b1Box.y + b1Box.height / 2)
+        await page.mouse.down()
+        await page.mouse.move(d1Box.x + d1Box.width / 2, d1Box.y + d1Box.height / 2, { steps: 8 })
+        await page.mouse.up()
+
+        // C1 is not the anchor and (if the gate worked) is not in
+        // any range. The default cell background is bg-background,
+        // which renders as white in the test theme; explicitly
+        // assert it's NOT the green tint.
+        const c1Bg = await page.evaluate(() => {
+            const el = document.querySelector('[aria-label="Cell C1"]') as HTMLElement | null
+            return el ? window.getComputedStyle(el).backgroundColor : null
+        })
+        expect(
+            c1Bg,
+            'C1 should not pick up the range tint while a formula edit is in flight'
+        ).not.toBe('rgba(34, 160, 107, 0.1)')
+
+        // The drag started on B1, which means an mid-formula click
+        // on B1 would normally insert "B1" into the draft (the ref-
+        // tap path). At minimum, the draft must still start with
+        // '=' (not have been cleared by a stray commit).
+        const draft = await formulaBar.inputValue()
+        expect(draft.startsWith('=')).toBe(true)
+
+        await formulaBar.press('Escape')
+        await formulaBar.press('Escape')
+    })
+
+    test('selection handle drag extends the range', async ({ page }) => {
+        // The 8x8 green dot at the bottom-right of the selection is
+        // the touch-friendly equivalent of shift-click. Dragging it
+        // should grow the range without first collapsing the anchor.
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        // Anchor on A1. The handle paints at the bottom-right of
+        // the anchor cell when no range is active.
+        await page.getByLabel('Cell A1', { exact: true }).click()
+
+        const handle = page.getByLabel('Selection handle', { exact: true })
+        await expect(handle).toBeVisible()
+        const handleBox = await handle.boundingBox()
+        if (handleBox == null) throw new Error('selection handle has no box')
+
+        const c3Box = await page.getByLabel('Cell C3', { exact: true }).boundingBox()
+        if (c3Box == null) throw new Error('C3 has no box')
+
+        await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
+        await page.mouse.down()
+        await page.mouse.move(c3Box.x + c3Box.width / 2, c3Box.y + c3Box.height / 2, { steps: 10 })
+        await page.mouse.up()
+
+        // B2 sits inside A1:C3 and gets the tint. Anchor (A1)
+        // stays the anchor — confirmed indirectly by the handle
+        // moving (it now anchors at C3's bottom-right) and B2
+        // being tinted.
+        const tintColor = 'rgba(34, 160, 107, 0.1)'
+        await expect
+            .poll(
+                async () =>
+                    page.evaluate(label => {
+                        const el = document.querySelector(
+                            `[aria-label="${label}"]`
+                        ) as HTMLElement | null
+                        return el ? window.getComputedStyle(el).backgroundColor : null
+                    }, 'Cell B2'),
+                { message: 'B2 should be tinted after handle-drag to C3' }
+            )
+            .toBe(tintColor)
+    })
+
     test('=SUM() over a range displays the computed total', async ({ page }) => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
@@ -376,7 +582,9 @@ async function openNewSpreadsheet(page: import('@playwright/test').Page): Promis
     // when that happens the click silently does nothing — the page stays
     // on the index and the subsequent waitForURL hangs until the test
     // timeout.
-    await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible({
+        timeout: 30_000,
+    })
     const newBtn = page.getByRole('button', { name: 'New spreadsheet' })
     await newBtn.click()
     // The click triggers an async create + navigation. Under parallel-
@@ -391,9 +599,10 @@ async function openNewSpreadsheet(page: import('@playwright/test').Page): Promis
 // Header cells contain a single text node ("A" / "B") inside an
 // absolute-positioned <View>; the rect of that parent is what
 // callers compare across resize gestures.
-async function readHeaderRects(
-    page: import('@playwright/test').Page
-): Promise<{ A: { left: number; width: number } | null; B: { left: number; width: number } | null }> {
+async function readHeaderRects(page: import('@playwright/test').Page): Promise<{
+    A: { left: number; width: number } | null
+    B: { left: number; width: number } | null
+}> {
     return page.evaluate(() => {
         const find = (text: string) => {
             for (const el of Array.from(document.querySelectorAll('div'))) {

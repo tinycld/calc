@@ -34,7 +34,13 @@ export const NUMBER_FORMAT_PRESETS: NumberFormatPreset[] = [
 
     { id: 'number', label: 'Number', sample: '1,000.12', numFmt: '#,##0.00', group: 'numeric' },
     { id: 'percent', label: 'Percent', sample: '10.12%', numFmt: '0.00%', group: 'numeric' },
-    { id: 'scientific', label: 'Scientific', sample: '1.01E+03', numFmt: '0.00E+00', group: 'numeric' },
+    {
+        id: 'scientific',
+        label: 'Scientific',
+        sample: '1.01E+03',
+        numFmt: '0.00E+00',
+        group: 'numeric',
+    },
 
     {
         id: 'accounting',
@@ -50,7 +56,13 @@ export const NUMBER_FORMAT_PRESETS: NumberFormatPreset[] = [
         numFmt: '#,##0.00;(#,##0.00)',
         group: 'monetary',
     },
-    { id: 'currency', label: 'Currency', sample: '$1,000.12', numFmt: '$#,##0.00', group: 'monetary' },
+    {
+        id: 'currency',
+        label: 'Currency',
+        sample: '$1,000.12',
+        numFmt: '$#,##0.00',
+        group: 'monetary',
+    },
     {
         id: 'currency-rounded',
         label: 'Currency rounded',
@@ -80,14 +92,14 @@ export function findPresetByNumFmt(numFmt: string | undefined): NumberFormatPres
         // Convention: undefined === automatic. The 'automatic' preset
         // carries numFmt: null, but the cell-side stores absence as
         // undefined; treat them the same.
-        return NUMBER_FORMAT_PRESETS.find((p) => p.id === 'automatic')
+        return NUMBER_FORMAT_PRESETS.find(p => p.id === 'automatic')
     }
-    return NUMBER_FORMAT_PRESETS.find((p) => p.numFmt === numFmt)
+    return NUMBER_FORMAT_PRESETS.find(p => p.numFmt === numFmt)
 }
 
 // findPresetById is a direct lookup by registry id. Returns undefined
 // for unknown ids so callers can fall back gracefully (e.g. a stale
 // preset id from an older client).
 export function findPresetById(id: string): NumberFormatPreset | undefined {
-    return NUMBER_FORMAT_PRESETS.find((p) => p.id === id)
+    return NUMBER_FORMAT_PRESETS.find(p => p.id === id)
 }

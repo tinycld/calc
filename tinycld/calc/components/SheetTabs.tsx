@@ -31,7 +31,7 @@ export function SheetTabs({ sheets, activeSheetId, onSelect }: SheetTabsProps) {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ alignItems: 'flex-end' }}
             >
-                {sheets.map((sheet) => {
+                {sheets.map(sheet => {
                     const isActive = sheet.id === activeSheetId
                     return (
                         <Pressable
@@ -54,7 +54,9 @@ export function SheetTabs({ sheets, activeSheetId, onSelect }: SheetTabsProps) {
                             <Text
                                 numberOfLines={1}
                                 className={
-                                    isActive ? 'text-xs font-medium text-foreground' : 'text-xs text-muted-foreground'
+                                    isActive
+                                        ? 'text-xs font-medium text-foreground'
+                                        : 'text-xs text-muted-foreground'
                                 }
                             >
                                 {sheet.name}

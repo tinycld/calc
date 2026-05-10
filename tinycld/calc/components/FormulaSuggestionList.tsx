@@ -2,7 +2,7 @@ import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
 
 interface FormulaSuggestionListProps {
-    items: ReadonlyArray<string>
+    items: readonly string[]
     selectedIndex: number
     // Position relative to the Grid root. width is optional — the
     // dropdown sizes to its content if omitted.
@@ -11,7 +11,10 @@ interface FormulaSuggestionListProps {
     onHover: (index: number) => void
 }
 
-const webShadow = Platform.OS === 'web' ? ({ boxShadow: '0 4px 16px rgba(0,0,0,0.18)' } as Record<string, unknown>) : {}
+const webShadow =
+    Platform.OS === 'web'
+        ? ({ boxShadow: '0 4px 16px rgba(0,0,0,0.18)' } as Record<string, unknown>)
+        : {}
 
 // Generic, presentational dropdown for formula function suggestions.
 // All keyboard navigation lives in Grid (which routes ↑/↓/Tab/Enter
@@ -23,7 +26,13 @@ const webShadow = Platform.OS === 'web' ? ({ boxShadow: '0 4px 16px rgba(0,0,0,0
 // reason MailRecipientSuggestionList sits in a relative parent doesn't
 // apply here, since our anchors come from the formula bar OR a cell
 // inside a virtualized scroller.
-export function FormulaSuggestionList({ items, selectedIndex, anchor, onSelect, onHover }: FormulaSuggestionListProps) {
+export function FormulaSuggestionList({
+    items,
+    selectedIndex,
+    anchor,
+    onSelect,
+    onHover,
+}: FormulaSuggestionListProps) {
     const backgroundColor = useThemeColor('background')
     const borderColor = useThemeColor('border')
     const hoverBgColor = useThemeColor('surface-secondary')
@@ -58,7 +67,11 @@ export function FormulaSuggestionList({ items, selectedIndex, anchor, onSelect, 
                             style={({ pressed }) => ({
                                 paddingHorizontal: 10,
                                 paddingVertical: 5,
-                                backgroundColor: isSelected ? accentColor : pressed ? hoverBgColor : backgroundColor,
+                                backgroundColor: isSelected
+                                    ? accentColor
+                                    : pressed
+                                      ? hoverBgColor
+                                      : backgroundColor,
                             })}
                         >
                             <Text

@@ -71,7 +71,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     // future delete). Don't write the fallback to the URL — only
     // explicit clicks update it (otherwise every workbook URL would
     // get dirtied on first load).
-    const activeSheet = sheets.find((s) => s.id === sheetParam) ?? sheets[0] ?? null
+    const activeSheet = sheets.find(s => s.id === sheetParam) ?? sheets[0] ?? null
 
     const onSelect = useCallback(
         (nextSheetId: string) => {

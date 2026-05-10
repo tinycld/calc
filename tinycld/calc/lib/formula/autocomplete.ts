@@ -73,7 +73,7 @@ function isInsideStringLiteral(draft: string, cursor: number): boolean {
 // the given prefix (case-insensitive), sorted alphabetically. An empty
 // prefix yields no results — the dropdown only opens once the user has
 // typed at least one letter.
-export function filterFunctions(names: ReadonlyArray<string>, prefix: string, limit = 8): string[] {
+export function filterFunctions(names: readonly string[], prefix: string, limit = 8): string[] {
     if (prefix === '') return []
     const upper = prefix.toUpperCase()
     const matches: string[] = []

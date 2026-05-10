@@ -16,7 +16,10 @@ export function blankWorkbookBlob(): Blob {
     // Slice into a fresh ArrayBuffer to keep TS happy under strict
     // SharedArrayBuffer narrowing — Blob's lib.dom typing rejects
     // Uint8Array<ArrayBufferLike> directly.
-    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    const ab = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength
+    ) as ArrayBuffer
     return new Blob([ab], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     })
@@ -32,7 +35,9 @@ function decodeBase64ToBytes(b64: string): Uint8Array {
         return bytes
     }
     // Native fallback (Node-style Buffer is provided in dev builds).
-    type BufferLike = { from: (data: string, enc: string) => { length: number; readUInt8: (i: number) => number } }
+    type BufferLike = {
+        from: (data: string, enc: string) => { length: number; readUInt8: (i: number) => number }
+    }
     const g = globalThis as unknown as { Buffer?: BufferLike }
     if (g.Buffer) {
         const buf = g.Buffer.from(b64, 'base64')

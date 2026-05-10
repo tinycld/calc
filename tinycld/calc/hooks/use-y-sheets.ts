@@ -2,9 +2,9 @@ import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type * as Y from 'yjs'
 import {
     type ColWidths,
+    type RowHeights,
     readColWidthsFromMeta,
     readRowHeightsFromMeta,
-    type RowHeights,
 } from '../lib/dimensions'
 import { SHEETS_MAP, type YSheetMeta, ydocSheetIds } from '../lib/y-doc-bootstrap'
 
@@ -38,7 +38,7 @@ export function useYSheets(doc: Y.Doc | null): SheetWithId[] {
         if (doc == null) return snapshotRef.current
         const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
         const ids = ydocSheetIds(doc)
-        const next: SheetWithId[] = ids.map((id) => {
+        const next: SheetWithId[] = ids.map(id => {
             const meta = sheetsMap.get(id)
             return {
                 id,

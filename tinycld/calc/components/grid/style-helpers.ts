@@ -1,6 +1,10 @@
+import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import type * as Y from 'yjs'
+import type { CellRange } from '../../hooks/grid-store'
 import { setYCellStyle, type useYCell } from '../../hooks/use-y-cell'
 import { firstColAtOffset, firstRowAtOffset } from '../../lib/dimensions'
+import { forEachCellInRange } from '../../lib/selection-range'
+import type { CellStyle } from '../../lib/workbook-types'
 import { formatCell } from '../../lib/workbook-types'
 import { yCellKey } from '../../lib/y-cell-key'
 import { CELLS_MAP, readStyleFromYMap } from '../../lib/y-doc-bootstrap'
@@ -37,27 +41,62 @@ export function readCellStyle(doc: Y.Doc | null, sheetId: string, row: number, c
     return readStyleFromYMap(cell)
 }
 
-// toggleCellFontAttr flips one boolean font attribute (bold or italic)
-// on the cell at (row, col). Reads the current style, computes the
-// negated value (treating missing as false — so an unstyled cell goes
-// to true on first toggle), and writes the patch.
+type FontToggleAttr = 'bold' | 'italic' | 'strike' | 'underline'
+
+// toggleCellFontAttrInRange flips one boolean font attribute (bold,
+// italic, strike, or underline) on every cell inside `range`. Mixed-
+// state semantics: if any cell in the range has the attribute OFF,
+// turn ALL cells to ON; otherwise (all cells ON), turn ALL to OFF.
+// Mirrors how Google Sheets / Excel toggle a multi-cell selection —
+// any unset cell wins, so a single click "promotes" the whole range
+// to bold rather than leaving it half-formatted.
 //
-// One helper keeps the toolbar's bold/italic buttons and the cell
-// context menu's bold/italic items in lockstep. Without it the two
-// surfaces had identical 4-line bodies that drifted easily — e.g. one
-// callsite once used `=== false` instead of `!== true`, which behaves
-// differently on a missing attribute.
-export function toggleCellFontAttr(
+// The write loop runs inside a single doc.transact (via
+// applyStyleToRange) so undo treats it as one step and observers
+// fire once per cell rather than receiving per-attribute splits.
+//
+// The READ pass deliberately runs outside that transaction. Yjs is
+// single-threaded JS, so no local mutation can interleave; a
+// concurrent peer's applyUpdate landing between the read and the
+// write would race against the local user's "any-off → all-on"
+// decision and use stale state. We accept this — it matches the
+// optimistic-CRDT behavior in Sheets/Excel under contention. Moving
+// the read inside doc.transact wouldn't help: yjs doesn't isolate
+// transactions from remote updates, and the JS-level captured value
+// would still be stale.
+export function toggleCellFontAttrInRange(
     doc: Y.Doc | null,
     sheetId: string,
-    row: number,
-    col: number,
-    attr: 'bold' | 'italic'
+    range: CellRange,
+    attr: FontToggleAttr
 ): void {
     if (doc == null) return
-    const current = readCellStyle(doc, sheetId, row, col)
-    const next = current?.font?.[attr] !== true
-    setYCellStyle(doc, sheetId, row, col, { font: { [attr]: next } })
+    let anyOff = false
+    forEachCellInRange(range, (row, col) => {
+        const style = readCellStyle(doc, sheetId, row, col)
+        if (style?.font?.[attr] !== true) anyOff = true
+    })
+    const next = anyOff
+    applyStyleToRange(doc, sheetId, range, { font: { [attr]: next } })
+}
+
+// applyStyleToRange applies the same partial CellStyle patch to every
+// cell inside `range` in a single yjs transaction. Used by the
+// toolbar font/fill/border/alignment/number-format setters so a
+// range-write is one undo step and one observer notification per
+// cell, not N transactions.
+export function applyStyleToRange(
+    doc: Y.Doc | null,
+    sheetId: string,
+    range: CellRange,
+    patch: CellStyle
+): void {
+    if (doc == null) return
+    doc.transact(() => {
+        forEachCellInRange(range, (row, col) => {
+            setYCellStyle(doc, sheetId, row, col, patch)
+        })
+    }, LOCAL_ORIGIN)
 }
 
 // locateCellAtGridCoord maps an (x, y) inside the grid body to the

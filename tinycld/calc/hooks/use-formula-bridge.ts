@@ -16,14 +16,14 @@ export function useFormulaBridge(doc: Y.Doc | null): void {
         let bridge: FormulaBridge | null = null
         let cancelled = false
         createFormulaBridge(doc).then(
-            (b) => {
+            b => {
                 if (cancelled) {
                     b.stop()
                     return
                 }
                 bridge = b
             },
-            (err) => {
+            err => {
                 captureException('useFormulaBridge: failed to start', err)
             }
         )

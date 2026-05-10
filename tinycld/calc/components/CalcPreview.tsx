@@ -23,7 +23,8 @@ export function CalcPreview({ source }: PreviewProps) {
         error,
     } = useQuery<WorkbookModel>({
         queryKey: ['calc', 'preview', source.recordId],
-        queryFn: () => pb.send<WorkbookModel>(`/api/calc/preview/${source.recordId}`, { method: 'GET' }),
+        queryFn: () =>
+            pb.send<WorkbookModel>(`/api/calc/preview/${source.recordId}`, { method: 'GET' }),
     })
 
     if (isLoading) {
@@ -37,7 +38,9 @@ export function CalcPreview({ source }: PreviewProps) {
     if (error) {
         return (
             <View className="flex-1 items-center justify-center px-4">
-                <Text className="text-sm text-muted-foreground">Could not open spreadsheet: {error.message}</Text>
+                <Text className="text-sm text-muted-foreground">
+                    Could not open spreadsheet: {error.message}
+                </Text>
             </View>
         )
     }

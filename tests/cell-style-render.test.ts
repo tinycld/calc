@@ -39,6 +39,16 @@ describe('cellStyleToRenderProps — font', () => {
         expect(out.textStyle.textDecorationLine).toBe('underline')
     })
 
+    it('strike maps to textDecorationLine: line-through', () => {
+        const out = cellStyleToRenderProps({ font: { strike: true } })
+        expect(out.textStyle.textDecorationLine).toBe('line-through')
+    })
+
+    it('underline + strike combine into "underline line-through"', () => {
+        const out = cellStyleToRenderProps({ font: { underline: true, strike: true } })
+        expect(out.textStyle.textDecorationLine).toBe('underline line-through')
+    })
+
     it('size maps to fontSize', () => {
         const out = cellStyleToRenderProps({ font: { size: 16 } })
         expect(out.textStyle.fontSize).toBe(16)
@@ -85,6 +95,35 @@ describe('cellStyleToRenderProps — fill', () => {
     it('empty color string is ignored', () => {
         const out = cellStyleToRenderProps({ fill: { fgColor: '' } })
         expect(out.viewStyle.backgroundColor).toBeUndefined()
+    })
+})
+
+describe('cellStyleToRenderProps — borders', () => {
+    it('all four edges produce border widths and colors', () => {
+        const out = cellStyleToRenderProps({
+            borders: { top: true, right: true, bottom: true, left: true },
+        })
+        expect(out.viewStyle.borderTopWidth).toBe(1)
+        expect(out.viewStyle.borderRightWidth).toBe(1)
+        expect(out.viewStyle.borderBottomWidth).toBe(1)
+        expect(out.viewStyle.borderLeftWidth).toBe(1)
+        expect(out.viewStyle.borderTopColor).toBe('#000000')
+    })
+
+    it('only the truthy edges are painted', () => {
+        const out = cellStyleToRenderProps({
+            borders: { top: true, right: false, bottom: true, left: false },
+        })
+        expect(out.viewStyle.borderTopWidth).toBe(1)
+        expect(out.viewStyle.borderBottomWidth).toBe(1)
+        expect(out.viewStyle.borderRightWidth).toBeUndefined()
+        expect(out.viewStyle.borderLeftWidth).toBeUndefined()
+    })
+
+    it('an empty borders object adds no border props', () => {
+        const out = cellStyleToRenderProps({ borders: {} })
+        expect(out.viewStyle.borderTopWidth).toBeUndefined()
+        expect(out.viewStyle.borderBottomWidth).toBeUndefined()
     })
 })
 

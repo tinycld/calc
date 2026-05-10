@@ -29,7 +29,7 @@ registerPreviewAction('calc.open', () => {
         id: 'calc.open',
         icon: ExternalLink,
         label: 'Open in Calc',
-        isApplicable: (source) => source.mimeType === XLSX_MIME_TYPE,
+        isApplicable: source => source.mimeType === XLSX_MIME_TYPE,
         onPress: (source, ctx) => {
             router.push(orgHref('calc/[id]', { id: source.recordId }))
             // Dismiss the preview modal — otherwise it sits open

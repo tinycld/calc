@@ -15,7 +15,13 @@ export interface WorkbookProviderProps extends WorkbookContextValue {
     children: ReactNode
 }
 
-export function WorkbookProvider({ doc, awareness, isReady, isConnected, children }: WorkbookProviderProps) {
+export function WorkbookProvider({
+    doc,
+    awareness,
+    isReady,
+    isConnected,
+    children,
+}: WorkbookProviderProps) {
     const value: WorkbookContextValue = { doc, awareness, isReady, isConnected }
     return <WorkbookContext.Provider value={value}>{children}</WorkbookContext.Provider>
 }

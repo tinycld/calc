@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react'
+import { memo, useCallback, useRef } from 'react'
 import {
     type GestureResponderEvent,
     type NativeSyntheticEvent,
@@ -61,6 +61,15 @@ export const Cell = memo(function Cell({
     // checks, so they don't re-render. This is the keystroke-perf
     // contract: 1 cell renders per keystroke, not N visible cells.
     const isSelected = useGridStore(s => s.selected?.row === row && s.selected?.col === col)
+    // True when this cell sits inside a multi-cell selection range
+    // but isn't the anchor — used to render the range tint underneath
+    // the anchor's brighter outline. The selector still returns a
+    // boolean so cells outside the range short-circuit on equality.
+    const isInRange = useGridStore(s => {
+        const r = s.selectionRange
+        if (r == null) return false
+        return row >= r.startRow && row <= r.endRow && col >= r.startCol && col <= r.endCol
+    })
     const isEditing = useGridStore(s => s.editSession?.row === row && s.editSession?.col === col)
     const isAnyEditing = useGridStore(s => s.editSession != null)
 
@@ -81,6 +90,72 @@ export const Cell = memo(function Cell({
         cellValue?.kind === 'formula' && cellValue.formula ? cellValue.formula : display
 
     const remoteDraft = remoteEditor?.editing?.draft
+
+    // useRef + useCallback must come before the early return for
+    // the editing CellEditor branch — hooks rules require
+    // unconditional ordering.
+    const webDragRef = useRef<{
+        startX: number
+        startY: number
+        startRect: { left: number; top: number }
+        dragging: boolean
+    } | null>(null)
+    // Set in onMouseDown when we already handled the gesture
+    // (shift-extend, drag-extend); consumed by onPress to skip the
+    // single-cell selectCell that would otherwise collapse the
+    // range. preventDefault on mousedown does NOT suppress the
+    // browser's subsequent click event, so this gate is required.
+    const skipNextPressRef = useRef(false)
+
+    // Web drag-select via document-level pointer listeners.
+    // Defined inline as a useCallback closure so it captures the
+    // current cell's (row, col, left, top) and the live offset
+    // arrays. See the longer comment near the JSX for the rationale
+    // (Pressable + Pointer events don't compose cleanly on RN-Web).
+    const webDragStart = useCallback(
+        (clientX: number, clientY: number, rect: { left: number; top: number }) => {
+            if (Platform.OS !== 'web' || readOnly) return
+            if (typeof document === 'undefined') return
+            if (isAnyEditing) return
+            webDragRef.current = {
+                startX: clientX,
+                startY: clientY,
+                startRect: rect,
+                dragging: false,
+            }
+            const onMove = (ev: PointerEvent) => {
+                const drag = webDragRef.current
+                if (drag == null) return
+                const dx = ev.clientX - drag.startX
+                const dy = ev.clientY - drag.startY
+                if (!drag.dragging) {
+                    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+                    drag.dragging = true
+                    // The synthetic click that fires after mouseup
+                    // would otherwise hit Pressable's onPress and
+                    // re-select the start cell, collapsing the range
+                    // we're about to build. Suppress that click.
+                    skipNextPressRef.current = true
+                    store.getState().selectCell({ row, col })
+                }
+                const gridX = left + (ev.clientX - drag.startRect.left)
+                const gridY = top + (ev.clientY - drag.startRect.top)
+                const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
+                if (target == null) return
+                store.getState().extendSelectionTo(target)
+            }
+            const cleanup = () => {
+                document.removeEventListener('pointermove', onMove)
+                document.removeEventListener('pointerup', cleanup)
+                document.removeEventListener('pointercancel', cleanup)
+                webDragRef.current = null
+            }
+            document.addEventListener('pointermove', onMove)
+            document.addEventListener('pointerup', cleanup)
+            document.addEventListener('pointercancel', cleanup)
+        },
+        [store, row, col, left, top, colOffsets, rowOffsets, readOnly, isAnyEditing]
+    )
 
     if (isEditing) {
         return (
@@ -103,6 +178,13 @@ export const Cell = memo(function Cell({
     // ref-acceptable position, falling through to the normal select/
     // edit gesture.
     const onPress = () => {
+        // mousedown already handled the gesture (shift-extend or
+        // drag-extend) — don't double-act here and collapse the
+        // range. The flag is consumed exactly once per click.
+        if (skipNextPressRef.current) {
+            skipNextPressRef.current = false
+            return
+        }
         const state = store.getState()
         if (state.cellRefTap(row, col)) return
         if (isSelected) {
@@ -112,26 +194,56 @@ export const Cell = memo(function Cell({
         }
     }
 
-    // Pan handlers for drag-range insertion. The threshold lets simple
-    // taps fall through to onPress (which routes to ref insertion or
-    // select/edit). cellRefDragStart returns false when the cursor
-    // isn't in a ref-acceptable position; we still claim the gesture
-    // here, which is fine — the drag is a no-op without a session.
+    // Touch/native drag: PanResponder branches on whether an edit
+    // session is in flight at gesture-start time:
+    //
+    //   - During a formula edit → ref-drag: cellRefDragStart claims
+    //     the gesture (or returns false if the cursor isn't in a
+    //     ref-acceptable spot). Subsequent moves stretch the inserted
+    //     range; release re-focuses the input.
+    //   - Otherwise → selection-drag: anchor on the start cell, then
+    //     extend the selection rectangle to whichever cell the pointer
+    //     is over. The 3px move threshold still lets simple taps fall
+    //     through to onPress.
+    //
+    // Web uses native PointerEvents instead (see webPointerProps
+    // below) — RN-Web's PanResponder is unreliable for mouse-only
+    // gestures, mirroring the same dual-mode pattern used by
+    // useColumnResize.
+    let activeDragMode: 'ref' | 'select' | null = null
     const panHandlers = PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 3 || Math.abs(g.dy) > 3,
         onPanResponderGrant: () => {
-            store.getState().cellRefDragStart(row, col)
+            const state = store.getState()
+            if (state.editSession != null) {
+                activeDragMode = 'ref'
+                state.cellRefDragStart(row, col)
+            } else {
+                activeDragMode = 'select'
+                state.selectCell({ row, col })
+            }
         },
         onPanResponderMove: e => {
             const { locationX, locationY } = e.nativeEvent
             const gridX = left + locationX
             const gridY = top + locationY
             const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
-            if (target != null) store.getState().cellRefDragMove(target.row, target.col)
+            if (target == null) return
+            if (activeDragMode === 'ref') {
+                store.getState().cellRefDragMove(target.row, target.col)
+            } else if (activeDragMode === 'select') {
+                store.getState().extendSelectionTo(target)
+            }
         },
-        onPanResponderRelease: () => store.getState().cellRefDragEnd(),
-        onPanResponderTerminate: () => store.getState().cellRefDragEnd(),
+        onPanResponderRelease: () => {
+            if (activeDragMode === 'ref') store.getState().cellRefDragEnd()
+            activeDragMode = null
+        },
+        onPanResponderTerminate: () => {
+            if (activeDragMode === 'ref') store.getState().cellRefDragEnd()
+            activeDragMode = null
+        },
     }).panHandlers
 
     // Native long-press fires before any subsequent onPress is dispatched,
@@ -159,17 +271,78 @@ export const Cell = memo(function Cell({
               }
             : null
 
-    // While a formula edit is in progress, swallow the mousedown so
-    // the focused TextInput doesn't blur — blur would commit the
-    // half-typed formula (e.g. "=LEFT(") as a #ERROR! cell before
-    // onPress runs and our ref-tap handler can insert the address.
-    // Only applied on web; native taps don't blur the keyboard the
-    // same way and our Pressable/PanResponder handle the gesture
-    // before the input's onBlur fires.
+    // Web onMouseDown serves three purposes:
+    //
+    //   1. While a formula edit is in progress, swallow the mousedown
+    //      so the focused TextInput doesn't blur — blur would commit
+    //      the half-typed formula (e.g. "=LEFT(") as a #ERROR! cell
+    //      before onPress runs and our ref-tap handler can insert the
+    //      address.
+    //   2. Shift+click extends the current selection to this cell.
+    //      RN's GestureResponderEvent doesn't expose modifier keys, so
+    //      we have to peek at the underlying DOM event before the
+    //      Pressable's onPress fires (which would call selectCell and
+    //      collapse the range).
+    //   3. Bootstrap the document-level pointer-drag listeners that
+    //      power click-and-drag selection. mousedown fires before any
+    //      potential focus shift or onPress, so installing listeners
+    //      here means we catch the very first pointermove. Routing
+    //      through onPressIn (Pressable's RN-Web equivalent) instead
+    //      breaks the click-away-commits-edit flow, so we wire here.
+    //
+    // Native taps don't blur the keyboard the same way, and physical
+    // shift on mobile is rare — both paths are web-only.
     const webMouseDownProp =
-        Platform.OS === 'web' && isAnyEditing
+        Platform.OS === 'web'
             ? {
-                  onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault(),
+                  onMouseDown: (e: {
+                      preventDefault: () => void
+                      shiftKey?: boolean
+                      button?: number
+                      clientX?: number
+                      clientY?: number
+                      currentTarget?: {
+                          getBoundingClientRect?: () => { left: number; top: number }
+                      }
+                  }) => {
+                      // Right-click is handled by onContextMenu; don't
+                      // intercept here.
+                      if (e.button != null && e.button !== 0) return
+                      if (e.shiftKey && !isAnyEditing && !readOnly) {
+                          // Shift-extend: stretch the existing range
+                          // (or single-cell selection) to include this
+                          // cell. preventDefault on mousedown blocks
+                          // the focus shift but NOT the synthetic
+                          // click that fires after mouseup, so we
+                          // also flag skipNextPressRef so onPress
+                          // doesn't run selectCell and collapse the
+                          // range we just built.
+                          e.preventDefault()
+                          skipNextPressRef.current = true
+                          store.getState().extendSelectionTo({ row, col })
+                          return
+                      }
+                      if (isAnyEditing) {
+                          e.preventDefault()
+                          // Don't bootstrap drag listeners while the
+                          // formula bar / cell editor is active —
+                          // dragging during a formula edit belongs to
+                          // the ref-drag path on native, which has its
+                          // own gesture wiring.
+                          return
+                      }
+                      // Kick off potential drag-select. The first
+                      // pointermove past the threshold turns this into
+                      // an actual range-extend; pure clicks fall
+                      // through to onPress (single-cell select).
+                      const clientX = typeof e.clientX === 'number' ? e.clientX : 0
+                      const clientY = typeof e.clientY === 'number' ? e.clientY : 0
+                      const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
+                          left: 0,
+                          top: 0,
+                      }
+                      webDragStart(clientX, clientY, { left: rect.left, top: rect.top })
+                  },
               }
             : null
 
@@ -198,6 +371,15 @@ export const Cell = memo(function Cell({
           }
         : renderStyle.textStyle
 
+    // Cells inside a multi-cell range get a translucent tint so the
+    // user can see the full extent of the selection. The anchor cell
+    // is excluded — its outlined border (drawn by LocalSelectionOverlay
+    // and the PrimaryAnchorOverlay) is the visual cue for "this is
+    // where typing/formula bar is rooted". Drawn before the cell's own
+    // viewStyle so any user-set fill paints over the tint.
+    const rangeTintStyle =
+        isInRange && !isSelected ? { backgroundColor: 'rgba(34, 160, 107, 0.10)' } : null
+
     return (
         <Pressable
             onPress={onPress}
@@ -210,6 +392,7 @@ export const Cell = memo(function Cell({
                 top,
                 width,
                 height,
+                ...rangeTintStyle,
                 ...renderStyle.viewStyle,
             }}
             className="border-r border-b border-border bg-background justify-center px-1"

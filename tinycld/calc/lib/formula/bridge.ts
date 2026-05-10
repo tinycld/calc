@@ -1,4 +1,9 @@
-import type { ExportedCellChange, HyperFormula, RawCellContent, SimpleCellAddress } from 'hyperformula'
+import type {
+    ExportedCellChange,
+    HyperFormula,
+    RawCellContent,
+    SimpleCellAddress,
+} from 'hyperformula'
 import * as Y from 'yjs'
 import { setYCellFormulaResult } from '../../hooks/use-y-cell'
 import { parseYCellKey, yCellKey } from '../y-cell-key'
@@ -25,9 +30,13 @@ export class FormulaBridge {
     // so observers can translate without scanning.
     private readonly sheetIdToHf: Map<string, number> = new Map()
     private readonly hfToSheetId: Map<number, string> = new Map()
-    private cellsObserver: ((events: Y.YEvent<Y.AbstractType<unknown>>[], txn: Y.Transaction) => void) | null = null
-    private sheetsObserver: ((event: Y.YMapEvent<Y.Map<unknown>>, txn: Y.Transaction) => void) | null = null
-    private valuesUpdatedHandler: ((changes: ReadonlyArray<unknown>) => void) | null = null
+    private cellsObserver:
+        | ((events: Y.YEvent<Y.AbstractType<unknown>>[], txn: Y.Transaction) => void)
+        | null = null
+    private sheetsObserver:
+        | ((event: Y.YMapEvent<Y.Map<unknown>>, txn: Y.Transaction) => void)
+        | null = null
+    private valuesUpdatedHandler: ((changes: readonly unknown[]) => void) | null = null
 
     constructor(doc: Y.Doc, hf: HyperFormula) {
         this.doc = doc
@@ -78,7 +87,9 @@ export class FormulaBridge {
             // HF requires unique sheet names. If the doc has a name
             // collision (shouldn't happen via the UI, but guards against
             // old data), suffix with the sheetId.
-            const uniqueName = this.hf.doesSheetExist(sheetName) ? `${sheetName} (${sheetId})` : sheetName
+            const uniqueName = this.hf.doesSheetExist(sheetName)
+                ? `${sheetName} (${sheetId})`
+                : sheetName
             const added = this.hf.addSheet(uniqueName)
             const hfId = this.hf.getSheetId(added)
             if (hfId == null) continue
@@ -135,14 +146,14 @@ export class FormulaBridge {
     }
 
     private attachValuesUpdatedListener(): void {
-        const handler = (changes: ReadonlyArray<unknown>) => {
-            this.applyHfChanges(changes as ReadonlyArray<ExportedCellChange>)
+        const handler = (changes: readonly unknown[]) => {
+            this.applyHfChanges(changes as readonly ExportedCellChange[])
         }
         this.valuesUpdatedHandler = handler
         this.hf.on('valuesUpdated', handler as never)
     }
 
-    private applyHfChanges(changes: ReadonlyArray<ExportedCellChange>): void {
+    private applyHfChanges(changes: readonly ExportedCellChange[]): void {
         if (changes.length === 0) return
         for (const change of changes) {
             // ExportedNamedExpressionChange has no .address — skip
@@ -194,7 +205,9 @@ export class FormulaBridge {
                 if (meta == null || !(meta instanceof Y.Map)) continue
                 const name = meta.get('name')
                 const sheetName = typeof name === 'string' && name !== '' ? name : sheetId
-                const uniqueName = this.hf.doesSheetExist(sheetName) ? `${sheetName} (${sheetId})` : sheetName
+                const uniqueName = this.hf.doesSheetExist(sheetName)
+                    ? `${sheetName} (${sheetId})`
+                    : sheetName
                 const added = this.hf.addSheet(uniqueName)
                 const hfId = this.hf.getSheetId(added)
                 if (hfId == null) continue
@@ -223,7 +236,10 @@ export class FormulaBridge {
 // findTopLevelCellKey walks an observeDeep event's path back up to the
 // top-level CELLS_MAP key it belongs to. Returns null when the event
 // did not originate inside a tracked cell entry.
-function findTopLevelCellKey(evt: Y.YEvent<Y.AbstractType<unknown>>, cellsMap: Y.Map<Y.Map<unknown>>): string | null {
+function findTopLevelCellKey(
+    evt: Y.YEvent<Y.AbstractType<unknown>>,
+    cellsMap: Y.Map<Y.Map<unknown>>
+): string | null {
     // evt.path is an array from CELLS_MAP root down to the changed
     // type's parent (so [<cellKey>, ...]). For events on the cell
     // Y.Map itself (e.g. raw/display set), the path is [<cellKey>].

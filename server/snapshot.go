@@ -67,6 +67,7 @@ type CellStyle struct {
 	Font      *CellFont      `json:"font,omitempty"`
 	Fill      *CellFill      `json:"fill,omitempty"`
 	Alignment *CellAlignment `json:"alignment,omitempty"`
+	Borders   *CellBorders   `json:"borders,omitempty"`
 	NumFmt    *string        `json:"numFmt,omitempty"`
 }
 
@@ -74,6 +75,7 @@ type CellFont struct {
 	Bold      *bool    `json:"bold,omitempty"`
 	Italic    *bool    `json:"italic,omitempty"`
 	Underline *bool    `json:"underline,omitempty"`
+	Strike    *bool    `json:"strike,omitempty"`
 	Size      *float64 `json:"size,omitempty"`
 	Name      *string  `json:"name,omitempty"`
 	Color     *string  `json:"color,omitempty"`
@@ -90,4 +92,17 @@ type CellAlignment struct {
 	Horizontal *string `json:"horizontal,omitempty"`
 	Vertical   *string `json:"vertical,omitempty"`
 	WrapText   *bool   `json:"wrapText,omitempty"`
+}
+
+// CellBorders mirrors the doc-side schema: presence of each edge as a
+// boolean. excelize-side serialization (mapping to the workbook's
+// border XML) is intentionally not wired yet — the toolbar's borders
+// dropdown lands attributes here so they round-trip through Y.Doc and
+// snapshot JSON. xlsx round-trip will be added when per-edge color and
+// style pickers come online.
+type CellBorders struct {
+	Top    *bool `json:"top,omitempty"`
+	Right  *bool `json:"right,omitempty"`
+	Bottom *bool `json:"bottom,omitempty"`
+	Left   *bool `json:"left,omitempty"`
 }

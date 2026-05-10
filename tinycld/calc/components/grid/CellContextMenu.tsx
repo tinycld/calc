@@ -4,7 +4,8 @@ import { Platform, Pressable, StyleSheet, type View } from 'react-native'
 import type * as Y from 'yjs'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { setYCell } from '../../hooks/use-y-cell'
-import { readCellStyle, toggleCellFontAttr } from './style-helpers'
+import { effectiveRange, forEachCellInRange } from '../../lib/selection-range'
+import { readCellStyle, toggleCellFontAttrInRange } from './style-helpers'
 
 interface CellContextMenuProps {
     doc: Y.Doc | null
@@ -19,6 +20,13 @@ interface CellContextMenuProps {
 // by Menu.Content).
 export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     const target = useGridStore(s => s.contextTarget)
+    // Read the live selection so range-aware menu actions (clear,
+    // toggle bold/italic) cover every cell currently highlighted.
+    // openCellContextMenu has already collapsed the range to a single
+    // cell when the right-click landed outside any prior range, so
+    // this naturally reduces to single-cell when there's no range.
+    const selected = useGridStore(s => s.selected)
+    const selectionRange = useGridStore(s => s.selectionRange)
     const store = useGridStoreApi()
     const onClose = useCallback(() => store.getState().closeCellContextMenu(), [store])
     const contentRef = useRef<View | null>(null)
@@ -58,21 +66,29 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
         [onClose]
     )
 
+    const range = effectiveRange(selected, selectionRange)
+
     const onClear = useCallback(() => {
-        if (target == null || doc == null) return
-        setYCell(doc, sheetId, target.cell.row, target.cell.col, '')
-    }, [doc, sheetId, target])
+        if (range == null || doc == null) return
+        forEachCellInRange(range, (row, col) => {
+            setYCell(doc, sheetId, row, col, '')
+        })
+    }, [doc, sheetId, range])
 
     const onToggleBold = useCallback(() => {
-        if (target == null) return
-        toggleCellFontAttr(doc, sheetId, target.cell.row, target.cell.col, 'bold')
-    }, [doc, sheetId, target])
+        if (range == null) return
+        toggleCellFontAttrInRange(doc, sheetId, range, 'bold')
+    }, [doc, sheetId, range])
 
     const onToggleItalic = useCallback(() => {
-        if (target == null) return
-        toggleCellFontAttr(doc, sheetId, target.cell.row, target.cell.col, 'italic')
-    }, [doc, sheetId, target])
+        if (range == null) return
+        toggleCellFontAttrInRange(doc, sheetId, range, 'italic')
+    }, [doc, sheetId, range])
 
+    // Indicator labels reflect the anchor cell only — that's the cell
+    // the user sees outlined and is the natural reference point for
+    // "is this currently bold?". The mixed-toggle action will still
+    // promote the whole range when needed.
     const currentStyle = target
         ? readCellStyle(doc, sheetId, target.cell.row, target.cell.col)
         : undefined

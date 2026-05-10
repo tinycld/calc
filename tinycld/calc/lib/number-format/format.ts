@@ -78,7 +78,8 @@ function toFormatInput(kind: CellKind, raw: CellRaw | Date, formula?: string): u
             // No cached value yet — let defaultFormat surface the
             // formula text.
             if (raw == null) return formula != null ? undefined : undefined
-            if (typeof raw === 'number' || typeof raw === 'boolean' || typeof raw === 'string') return raw
+            if (typeof raw === 'number' || typeof raw === 'boolean' || typeof raw === 'string')
+                return raw
             return undefined
     }
 }
@@ -105,7 +106,9 @@ function dateRawToSerial(raw: CellRaw | Date): number | undefined {
             raw.getUTCSeconds() === 0 &&
             raw.getUTCMilliseconds() === 0
         ) {
-            return nullToUndefined(dateToSerial([raw.getUTCFullYear(), raw.getUTCMonth() + 1, raw.getUTCDate()]))
+            return nullToUndefined(
+                dateToSerial([raw.getUTCFullYear(), raw.getUTCMonth() + 1, raw.getUTCDate()])
+            )
         }
         return nullToUndefined(dateToSerial(raw))
     }

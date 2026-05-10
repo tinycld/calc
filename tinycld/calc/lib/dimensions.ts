@@ -269,7 +269,12 @@ export function clampRowHeight(height: number): number {
 // ROW_HIDE_SNAP_THRESHOLD). Writing DEFAULT_ROW_HEIGHT deletes the entry
 // instead of storing it — keeps the map sparse and lets the absence
 // of an entry mean "default" everywhere.
-export function setYRowHeight(doc: Y.Doc | null, sheetId: string, row: number, height: number): void {
+export function setYRowHeight(
+    doc: Y.Doc | null,
+    sheetId: string,
+    row: number,
+    height: number
+): void {
     if (doc == null) return
     const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
     const meta = sheetsMap.get(sheetId)

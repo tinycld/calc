@@ -15,10 +15,10 @@ export function useFormulaFunctionNames(): string[] {
     useEffect(() => {
         let cancelled = false
         loadFormulaFunctionNames().then(
-            (list) => {
+            list => {
                 if (!cancelled) setNames(list)
             },
-            (err) => {
+            err => {
                 captureException('useFormulaFunctionNames: failed to load', err)
             }
         )

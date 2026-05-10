@@ -17,8 +17,8 @@ import { type GestureResponderEvent, PanResponder, Platform } from 'react-native
 import {
     clampRowHeight,
     DEFAULT_ROW_HEIGHT,
-    readRowHeight,
     type RowHeights,
+    readRowHeight,
 } from '../lib/dimensions'
 
 // RowDragState describes the in-progress resize. `currentHeight` is the
@@ -162,7 +162,9 @@ export function useRowResize({
         [readOnly, beginDrag, updateDrag, endDrag, cancelDrag, onResetDefault, onRequestMenu]
     )
 
-    const panResponderCacheRef = useRef<Map<number, ReturnType<typeof PanResponder.create>>>(new Map())
+    const panResponderCacheRef = useRef<Map<number, ReturnType<typeof PanResponder.create>>>(
+        new Map()
+    )
 
     const makeNativeProps = useCallback(
         (row: number): Record<string, unknown> => {

@@ -95,7 +95,9 @@ describe('applyNumFmt — Date / Time / Datetime / Duration', () => {
     })
 
     it('Date preset on a JS Date renders m/d/yyyy', () => {
-        expect(applyNumFmt('date', new Date('2008-09-26T00:00:00.000Z'), 'm/d/yyyy')).toBe('9/26/2008')
+        expect(applyNumFmt('date', new Date('2008-09-26T00:00:00.000Z'), 'm/d/yyyy')).toBe(
+            '9/26/2008'
+        )
     })
 
     it('Datetime preset renders both portions', () => {

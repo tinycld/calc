@@ -1,5 +1,8 @@
 import { useAuth } from '@tinycld/core/lib/auth'
-import { type RealtimeRoomHandle, useRealtimeRoom } from '@tinycld/core/lib/realtime/use-realtime-room'
+import {
+    type RealtimeRoomHandle,
+    useRealtimeRoom,
+} from '@tinycld/core/lib/realtime/use-realtime-room'
 
 export interface UseRealtimeOptions {
     // The drive_item.id used as the room identifier.

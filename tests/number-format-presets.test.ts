@@ -12,12 +12,12 @@ import {
 
 describe('NUMBER_FORMAT_PRESETS', () => {
     it('every preset has a unique id', () => {
-        const ids = NUMBER_FORMAT_PRESETS.map((p) => p.id)
+        const ids = NUMBER_FORMAT_PRESETS.map(p => p.id)
         expect(new Set(ids).size).toBe(ids.length)
     })
 
     it('contains the screenshot menu items', () => {
-        const ids = new Set(NUMBER_FORMAT_PRESETS.map((p) => p.id))
+        const ids = new Set(NUMBER_FORMAT_PRESETS.map(p => p.id))
         for (const expected of [
             'automatic',
             'plain',

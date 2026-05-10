@@ -38,7 +38,11 @@ export default function CalcIndex() {
         <ScrollView className="flex-1 bg-background">
             <View className="p-6 gap-4">
                 <View className="flex-row items-center justify-between">
-                    <Text accessibilityRole="header" aria-level={2} className="text-2xl font-semibold text-foreground">
+                    <Text
+                        accessibilityRole="header"
+                        aria-level={2}
+                        className="text-2xl font-semibold text-foreground"
+                    >
                         Calc
                     </Text>
                     <Pressable
@@ -58,7 +62,7 @@ export default function CalcIndex() {
                 <EmptyState isVisible={isEmpty && !create.isPending} />
 
                 <View className="gap-1">
-                    {items.map((item) => (
+                    {items.map(item => (
                         <WorkbookRow key={item.id} item={item} />
                     ))}
                 </View>

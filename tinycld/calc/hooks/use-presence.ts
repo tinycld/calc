@@ -1,4 +1,7 @@
-import { type RemoteAwarenessEntry, useRemoteAwareness } from '@tinycld/core/lib/realtime/use-remote-awareness'
+import {
+    type RemoteAwarenessEntry,
+    useRemoteAwareness,
+} from '@tinycld/core/lib/realtime/use-remote-awareness'
 import { useMemo } from 'react'
 import type { Awareness } from 'y-protocols/awareness'
 
@@ -43,7 +46,7 @@ export function usePresence(awareness: Awareness | null): RemotePresence[] {
 
     // Flatten {clientID, state} into the historic flat shape so existing
     // Grid call sites read presence.user, presence.selection, etc.
-    return useMemo(() => entries.map((e) => ({ clientID: e.clientID, ...e.state })), [entries])
+    return useMemo(() => entries.map(e => ({ clientID: e.clientID, ...e.state })), [entries])
 }
 
 function parsePresence(raw: unknown): PresenceState | null {
@@ -76,7 +79,11 @@ function parseSelection(raw: unknown): PresenceSelection | null {
 function parseEditing(raw: unknown): PresenceEditing | null {
     if (raw == null || typeof raw !== 'object') return null
     const obj = raw as Record<string, unknown>
-    if (typeof obj.row !== 'number' || typeof obj.col !== 'number' || typeof obj.draft !== 'string') {
+    if (
+        typeof obj.row !== 'number' ||
+        typeof obj.col !== 'number' ||
+        typeof obj.draft !== 'string'
+    ) {
         return null
     }
     return { row: obj.row, col: obj.col, draft: obj.draft }

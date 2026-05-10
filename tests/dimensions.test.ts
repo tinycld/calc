@@ -17,12 +17,12 @@ import {
     MAX_COL_WIDTH,
     MAX_ROW_HEIGHT,
     measureWidestDisplay,
+    ROW_HEIGHTS_KEY,
+    ROW_HIDE_SNAP_THRESHOLD,
     readColWidth,
     readColWidthsFromMeta,
     readRowHeight,
     readRowHeightsFromMeta,
-    ROW_HEIGHTS_KEY,
-    ROW_HIDE_SNAP_THRESHOLD,
     setYColWidth,
     setYRowHeight,
 } from '../tinycld/calc/lib/dimensions'
@@ -199,7 +199,7 @@ describe('measureWidestDisplay', () => {
     it('returns 0 for a column with no cells', () => {
         const doc = new Y.Doc()
         bootstrapSheet(doc)
-        expect(measureWidestDisplay(doc, 'sheet1', 1, (s) => s.length)).toBe(0)
+        expect(measureWidestDisplay(doc, 'sheet1', 1, s => s.length)).toBe(0)
     })
 
     it('returns the maximum measured width across cells in the column', () => {
@@ -217,7 +217,7 @@ describe('measureWidestDisplay', () => {
         other.set('display', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
         cells.set(yCellKey('sheet1', 1, 2), other)
 
-        const widest = measureWidestDisplay(doc, 'sheet1', 1, (s) => s.length)
+        const widest = measureWidestDisplay(doc, 'sheet1', 1, s => s.length)
         expect(widest).toBe('a much longer string'.length)
     })
 })

@@ -26,6 +26,13 @@ function readItalic(doc: Y.Doc, sheetId: string, row: number, col: number): bool
     return readStyleFromYMap(cell)?.font?.italic === true
 }
 
+function readStrike(doc: Y.Doc, sheetId: string, row: number, col: number): boolean {
+    const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+    const cell = cellsMap.get(yCellKey(sheetId, row, col))
+    if (cell == null) return false
+    return readStyleFromYMap(cell)?.font?.strike === true
+}
+
 describe('toolbar bold/italic toggle sequence', () => {
     it('first bold toggle on an empty cell writes bold=true', () => {
         const doc = new Y.Doc()
@@ -68,5 +75,27 @@ describe('toolbar bold/italic toggle sequence', () => {
 
         expect(readBold(doc, 'sheet1', 1, 1)).toBe(true)
         expect(readItalic(doc, 'sheet1', 1, 1)).toBe(false)
+    })
+
+    it('first strike toggle on an empty cell writes strike=true', () => {
+        const doc = new Y.Doc()
+        expect(readStrike(doc, 'sheet1', 1, 1)).toBe(false)
+
+        const next = readStrike(doc, 'sheet1', 1, 1) !== true
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { strike: next } })
+
+        expect(readStrike(doc, 'sheet1', 1, 1)).toBe(true)
+    })
+
+    it('strike is independent of bold/italic', () => {
+        const doc = new Y.Doc()
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { bold: true, italic: true } })
+
+        const next = readStrike(doc, 'sheet1', 1, 1) !== true
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { strike: next } })
+
+        expect(readBold(doc, 'sheet1', 1, 1)).toBe(true)
+        expect(readItalic(doc, 'sheet1', 1, 1)).toBe(true)
+        expect(readStrike(doc, 'sheet1', 1, 1)).toBe(true)
     })
 })

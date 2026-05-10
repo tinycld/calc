@@ -19,6 +19,7 @@ import {
     RemoteOverlays,
     ResizePreviewLine,
     RowResizePreviewLine,
+    SelectionHandleOverlay,
 } from './overlays'
 
 interface BodyProps {
@@ -136,6 +137,11 @@ export function Body({
                         rowOffsets={rowOffsets}
                     />
                     <LocalSelectionOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
+                    <SelectionHandleOverlay
+                        colOffsets={colOffsets}
+                        rowOffsets={rowOffsets}
+                        readOnly={readOnly}
+                    />
                     <RefDragOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <ResizePreviewLine
                         dragState={colDragState}
