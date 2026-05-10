@@ -1674,6 +1674,59 @@ func TestSerializerPersistsRowStyle(t *testing.T) {
 	}
 }
 
+// TestSerializerRowStylesNilLeavesExistingAlone: a snapshot whose
+// SheetMeta.RowStyles is nil must not blow away pre-existing row-level
+// styles in the workbook. Mirrors the T8/T9 sentinel discipline: even
+// though Go's range-over-nil is a no-op today, a future refactor that
+// adds an explicit nil-check or different iteration helper could
+// silently regress, and the sentinel pins the contract.
+func TestSerializerRowStylesNilLeavesExistingAlone(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	// Pre-stamp row 7 with a yellow row-level fill.
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	id, err := f.NewStyle(&excelize.Style{
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFFF00"}},
+	})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetRowStyle("People", 7, 7, id); err != nil {
+		t.Fatalf("seed SetRowStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+	if _, _, colors := readRowStyleFill(t, seeded, "People", 7); len(colors) == 0 || colors[0] != "FFFF00" {
+		t.Fatalf("seed: want row 7 fill FFFF00, got %v", colors)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0}, // RowStyles nil
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	_, _, colors := readRowStyleFill(t, out, "People", 7)
+	if len(colors) == 0 || colors[0] != "FFFF00" {
+		t.Errorf("row 7 fill changed despite nil RowStyles: want FFFF00 preserved, got %v", colors)
+	}
+}
+
 // TestSerializerStyleClearsFill: snapshot FgColor = "" on a cell that
 // already has a red fill must clear the foreground color. The trailing-
 // empty trimmer in the Fill override drops the now-empty color slot,

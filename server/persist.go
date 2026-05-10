@@ -225,6 +225,13 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 				return nil, fmt.Errorf("set col width %s!%s: %w", name, colName, err)
 			}
 		}
+		// Row styles are written as full-overwrite, not read-then-overlay
+		// (unlike applyCellStyle below). The Y.Doc is the source of truth
+		// for row-level styling once a workbook is in collaborative use,
+		// so any pre-existing xlsx row-style from an external editor is
+		// superseded on the first save. Per-cell styles applied in the
+		// cells pass below still layer on top in Excel's render model,
+		// so this destructive write is scoped to the row's own style.
 		for row, style := range meta.RowStyles {
 			if row < 1 || style == nil {
 				continue
