@@ -33,7 +33,7 @@ describe('inferCellInput', () => {
             expect(inferCellInput("'=A1+B1")).toEqual({ kind: 'string', raw: '=A1+B1', display: '=A1+B1' })
         })
 
-        it("two leading apostrophes only strip one (the second is preserved as a literal char)", () => {
+        it('two leading apostrophes only strip one (the second is preserved as a literal char)', () => {
             // Excel's convention: only the first ' acts as a marker.
             expect(inferCellInput("''hi")).toEqual({ kind: 'string', raw: "'hi", display: "'hi" })
         })

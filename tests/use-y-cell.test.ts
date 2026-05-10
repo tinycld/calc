@@ -294,7 +294,12 @@ describe('setYCellTyped + inferred commit path', () => {
     it('switching kind on an existing cell updates kind and clears stale formula', () => {
         const doc = new Y.Doc()
         setYCell(doc, 'sheet1', 1, 1, '=A1+B1')
-        expect(doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1))?.get('formula')).toBe('=A1+B1')
+        expect(
+            doc
+                .getMap<Y.Map<unknown>>(CELLS_MAP)
+                .get(yCellKey('sheet1', 1, 1))
+                ?.get('formula')
+        ).toBe('=A1+B1')
 
         setYCell(doc, 'sheet1', 1, 1, '42')
         const cell = doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1))

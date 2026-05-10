@@ -16,7 +16,10 @@ function startBridge(doc: Y.Doc): FormulaBridge {
 }
 
 function readRaw(doc: Y.Doc, sheetId: string, row: number, col: number): unknown {
-    return doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey(sheetId, row, col))?.get('raw')
+    return doc
+        .getMap<Y.Map<unknown>>(CELLS_MAP)
+        .get(yCellKey(sheetId, row, col))
+        ?.get('raw')
 }
 
 function setupAB(doc: Y.Doc, a: number, b: number): void {

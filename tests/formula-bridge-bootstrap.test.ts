@@ -15,7 +15,10 @@ function startBridge(doc: Y.Doc): { bridge: FormulaBridge; hf: HyperFormula } {
 }
 
 function readRaw(doc: Y.Doc, sheetId: string, row: number, col: number): unknown {
-    return doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey(sheetId, row, col))?.get('raw')
+    return doc
+        .getMap<Y.Map<unknown>>(CELLS_MAP)
+        .get(yCellKey(sheetId, row, col))
+        ?.get('raw')
 }
 
 describe('FormulaBridge bootstrap', () => {

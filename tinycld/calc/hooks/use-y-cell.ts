@@ -4,7 +4,7 @@ import * as Y from 'yjs'
 import type { InferredCellInput } from '../lib/cell-input'
 import { inferCellInput } from '../lib/cell-input'
 import { FORMULA_ORIGIN } from '../lib/formula/origins'
-import { type CellRaw, formatCell, type CellStyle } from '../lib/workbook-types'
+import { type CellRaw, type CellStyle, formatCell } from '../lib/workbook-types'
 import { yCellKey } from '../lib/y-cell-key'
 import { buildStyleYMap, CELLS_MAP, readYCell, STYLE_KEY, type YCellValue } from '../lib/y-doc-bootstrap'
 
@@ -137,13 +137,7 @@ export function setYCell(doc: Y.Doc, sheetId: string, row: number, col: number, 
 // callers (tests, paste-special handlers, future bulk-edit paths) skip
 // the inference step and hand the typed shape directly. The editor
 // commit path goes through setYCell, which calls inferCellInput first.
-export function setYCellTyped(
-    doc: Y.Doc,
-    sheetId: string,
-    row: number,
-    col: number,
-    input: InferredCellInput
-): void {
+export function setYCellTyped(doc: Y.Doc, sheetId: string, row: number, col: number, input: InferredCellInput): void {
     const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
     const key = yCellKey(sheetId, row, col)
     doc.transact(() => {
@@ -187,13 +181,7 @@ export function setYCellTyped(
 // is missing or has a different kind, the call is a no-op (a writeback
 // arriving against a cell whose formula was just deleted shouldn't
 // resurrect it).
-export function setYCellFormulaResult(
-    doc: Y.Doc,
-    sheetId: string,
-    row: number,
-    col: number,
-    raw: CellRaw
-): void {
+export function setYCellFormulaResult(doc: Y.Doc, sheetId: string, row: number, col: number, raw: CellRaw): void {
     const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
     const key = yCellKey(sheetId, row, col)
     const cell = cellsMap.get(key)

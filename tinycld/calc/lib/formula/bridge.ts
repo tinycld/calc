@@ -2,7 +2,7 @@ import type { ExportedCellChange, HyperFormula, RawCellContent, SimpleCellAddres
 import * as Y from 'yjs'
 import { setYCellFormulaResult } from '../../hooks/use-y-cell'
 import { parseYCellKey, yCellKey } from '../y-cell-key'
-import { CELLS_MAP, readYCell, SHEETS_MAP, ydocSheetIds, type YCellValue } from '../y-doc-bootstrap'
+import { CELLS_MAP, readYCell, SHEETS_MAP, type YCellValue, ydocSheetIds } from '../y-doc-bootstrap'
 import { HYPERFORMULA_LICENSE_KEY } from './hyperformula-license'
 import { hfInputForCell, normalizeHfValue } from './normalize'
 import { FORMULA_ORIGIN } from './origins'
@@ -223,10 +223,7 @@ export class FormulaBridge {
 // findTopLevelCellKey walks an observeDeep event's path back up to the
 // top-level CELLS_MAP key it belongs to. Returns null when the event
 // did not originate inside a tracked cell entry.
-function findTopLevelCellKey(
-    evt: Y.YEvent<Y.AbstractType<unknown>>,
-    cellsMap: Y.Map<Y.Map<unknown>>
-): string | null {
+function findTopLevelCellKey(evt: Y.YEvent<Y.AbstractType<unknown>>, cellsMap: Y.Map<Y.Map<unknown>>): string | null {
     // evt.path is an array from CELLS_MAP root down to the changed
     // type's parent (so [<cellKey>, ...]). For events on the cell
     // Y.Map itself (e.g. raw/display set), the path is [<cellKey>].
