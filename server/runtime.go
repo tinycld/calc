@@ -202,11 +202,13 @@ func collectSheets(sheetsMap *ycrdt.YMap) []SheetMeta {
 			name = sheetID
 		}
 		out = append(out, SheetMeta{
-			ID:       sheetID,
-			Name:     name,
-			Position: numberFromAny(meta.Get("position")),
-			RowCount: numberFromAny(meta.Get("rowCount")),
-			ColCount: numberFromAny(meta.Get("colCount")),
+			ID:         sheetID,
+			Name:       name,
+			Position:   numberFromAny(meta.Get("position")),
+			RowCount:   numberFromAny(meta.Get("rowCount")),
+			ColCount:   numberFromAny(meta.Get("colCount")),
+			RowHeights: decodeSparseIntMap(meta, "rowHeights"),
+			ColWidths:  decodeSparseIntMap(meta, "colWidths"),
 		})
 	})
 	// Stable sort by position (slice index is what the serializer
@@ -357,6 +359,30 @@ func numberFromAny(v any) int {
 		return int(n)
 	}
 	return 0
+}
+
+// decodeSparseIntMap pulls a nested Y.Map<string,int-like> off the
+// given parent meta map and returns it as a Go map[int]int. Keys that
+// fail to parse as a positive integer are skipped. Returns nil when
+// the nested map is absent or empty so callers can leave the
+// surrounding workbook attribute alone (sparse-by-default).
+func decodeSparseIntMap(meta *ycrdt.YMap, key string) map[int]int {
+	nested, ok := meta.Get(key).(*ycrdt.YMap)
+	if !ok || nested.GetSize() == 0 {
+		return nil
+	}
+	out := map[int]int{}
+	nested.ForEach(func(k string, v any, _ *ycrdt.YMap) {
+		n, err := strconv.Atoi(k)
+		if err != nil || n < 1 {
+			return
+		}
+		out[n] = numberFromAny(v)
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // parseCellKey splits "<sheetID>:<row>:<col>" into its three parts.

@@ -357,6 +357,46 @@ func TestRuntimeNewDocDuplicateRoom(t *testing.T) {
 	}
 }
 
+// TestCollectSheetsDecodesRowHeightsAndColWidths verifies that a
+// sheet meta carrying nested rowHeights/colWidths Y.Maps round-trips
+// through collectSheets into populated SheetMeta fields.
+func TestCollectSheetsDecodesRowHeightsAndColWidths(t *testing.T) {
+	doc := ycrdt.NewDoc("test", false, nil, nil, false)
+	sheetsMap, _ := doc.GetMap("sheets").(*ycrdt.YMap)
+
+	meta := ycrdt.NewYMap(nil)
+	meta.Set("name", "People")
+	meta.Set("position", 0)
+	meta.Set("rowCount", 50)
+	meta.Set("colCount", 10)
+
+	rowHeights := ycrdt.NewYMap(nil)
+	rowHeights.Set("2", 60)
+	rowHeights.Set("5", 100)
+	meta.Set("rowHeights", rowHeights)
+
+	colWidths := ycrdt.NewYMap(nil)
+	colWidths.Set("3", 200)
+	meta.Set("colWidths", colWidths)
+
+	sheetsMap.Set("sheet1", meta)
+
+	sheets := collectSheets(sheetsMap)
+	if len(sheets) != 1 {
+		t.Fatalf("collectSheets count: want 1, got %d", len(sheets))
+	}
+	s := sheets[0]
+	if s.RowCount != 50 || s.ColCount != 10 {
+		t.Errorf("RowCount/ColCount: want 50/10, got %d/%d", s.RowCount, s.ColCount)
+	}
+	if s.RowHeights[2] != 60 || s.RowHeights[5] != 100 {
+		t.Errorf("RowHeights: want {2:60, 5:100}, got %v", s.RowHeights)
+	}
+	if s.ColWidths[3] != 200 {
+		t.Errorf("ColWidths: want {3:200}, got %v", s.ColWidths)
+	}
+}
+
 // TestRuntimeApplyMalformedUpdateDoesNotCrash: y-crdt logs and
 // silently returns on bad bytes (it does not bubble decode errors up
 // to ApplyUpdate's caller). The runtime must at least not crash the

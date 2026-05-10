@@ -1422,6 +1422,97 @@ func TestSerializerDimensionUntouchedWhenSheetMetaIsZero(t *testing.T) {
 	}
 }
 
+// readRowHeight returns the row's height in Excel points.
+func readRowHeight(t *testing.T, xlsx []byte, sheetName string, row int) float64 {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	h, err := f.GetRowHeight(sheetName, row)
+	if err != nil {
+		t.Fatalf("get row height %s!%d: %v", sheetName, row, err)
+	}
+	return h
+}
+
+// readColWidth returns the column's width in Excel character units.
+func readColWidth(t *testing.T, xlsx []byte, sheetName string, col int) float64 {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	colName, err := excelize.ColumnNumberToName(col)
+	if err != nil {
+		t.Fatalf("col name %d: %v", col, err)
+	}
+	w, err := f.GetColWidth(sheetName, colName)
+	if err != nil {
+		t.Fatalf("get col width %s!%s: %v", sheetName, colName, err)
+	}
+	return w
+}
+
+// TestSerializerPersistsRowHeights: a snapshot with RowHeights{2: 60}
+// produces a sheet where row 2's height is 60px → 45pt.
+func TestSerializerPersistsRowHeights(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{
+				ID: "sheet1", Name: "People", Position: 0,
+				RowHeights: map[int]int{2: 60},
+			},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	if got := readRowHeight(t, out, "People", 2); got != 45.0 {
+		t.Errorf("row 2 height: want 45 (60px * 0.75), got %v", got)
+	}
+}
+
+// TestSerializerPersistsColWidths: a snapshot with ColWidths{3: 96}
+// produces a sheet where column C's width is the Excel-char
+// equivalent of 96px (i.e. (96-5)/7 ≈ 13).
+func TestSerializerPersistsColWidths(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{
+				ID: "sheet1", Name: "People", Position: 0,
+				ColWidths: map[int]int{3: 96},
+			},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	got := readColWidth(t, out, "People", 3)
+	want := 13.0 // (96-5)/7
+	if got < want-0.05 || got > want+0.05 {
+		t.Errorf("col C width: want ≈ %v (96px → chars), got %v", want, got)
+	}
+}
+
 // TestSerializerStyleClearsFill: snapshot FgColor = "" on a cell that
 // already has a red fill must clear the foreground color. The trailing-
 // empty trimmer in the Fill override drops the now-empty color slot,

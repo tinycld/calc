@@ -26,6 +26,17 @@ type SheetMeta struct {
 	// serializer leaves the workbook's existing <dimension> alone.
 	RowCount int
 	ColCount int
+
+	// RowHeights maps row number (1-based) -> pixel height for rows
+	// the user has resized away from the default. Sparse: rows at
+	// default height have no entry. Pixels are converted to Excel
+	// points (px * 0.75) at serialization time.
+	RowHeights map[int]int
+
+	// ColWidths maps column number (1-based) -> pixel width for
+	// resized columns. Sparse, as above. Converted to Excel
+	// character units at serialization time.
+	ColWidths map[int]int
 }
 
 // CellEntry is one cell value the doc has touched. SheetID matches a

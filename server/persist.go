@@ -166,36 +166,59 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 	}
 
 	// Second pass: now that every sheet has its final name, write
-	// dimensions for any sheet whose snapshot carries non-zero counts.
-	// Sheets with rowCount==0 / colCount==0 are left at the workbook's
-	// existing <dimension> — that mirrors the "absence means untracked"
-	// convention the cell loop also follows.
+	// dimensions for any sheet whose snapshot carries non-zero counts,
+	// and apply any row/column size customizations the user made.
+	//
+	// The heights/widths pass applies EVEN when RowCount/ColCount are
+	// zero (a user could resize a column without scrolling any rows), so
+	// we iterate all snapshot sheets and make the dimension write
+	// conditional on non-zero counts only.
 	for _, meta := range snap.Sheets {
-		if meta.RowCount <= 0 || meta.ColCount <= 0 {
-			continue
-		}
 		name, ok := sheetNameByID[meta.ID]
 		if !ok {
 			continue
 		}
-		// Union with the workbook's existing <dimension>: the Y.Doc may
-		// track a narrower extent than the imported file actually contains
-		// (e.g. when bootstrap sees only a scrolled-into region), and a
-		// contracting save would silently hide rows past meta.RowCount
-		// from readers that trust <dimension>. Always grow, never shrink.
-		existingRef, err := f.GetSheetDimension(name)
-		if err != nil {
-			return nil, fmt.Errorf("get existing dimension on %s: %w", name, err)
+		if meta.RowCount > 0 && meta.ColCount > 0 {
+			// Union with the workbook's existing <dimension>: the Y.Doc
+			// may track a narrower extent than the imported file actually
+			// contains (e.g. when bootstrap sees only a scrolled-into
+			// region), and a contracting save would silently hide rows
+			// past meta.RowCount from readers that trust <dimension>.
+			// Always grow, never shrink.
+			existingRef, err := f.GetSheetDimension(name)
+			if err != nil {
+				return nil, fmt.Errorf("get existing dimension on %s: %w", name, err)
+			}
+			existingCol, existingRow := parseDimensionRef(existingRef)
+			finalCol := max(meta.ColCount, existingCol)
+			finalRow := max(meta.RowCount, existingRow)
+			bottomRight, err := excelize.CoordinatesToCellName(finalCol, finalRow)
+			if err != nil {
+				return nil, fmt.Errorf("dimension coords (col=%d,row=%d): %w", finalCol, finalRow, err)
+			}
+			if err := f.SetSheetDimension(name, "A1:"+bottomRight); err != nil {
+				return nil, fmt.Errorf("set dimension on %s: %w", name, err)
+			}
 		}
-		existingCol, existingRow := parseDimensionRef(existingRef)
-		finalCol := max(meta.ColCount, existingCol)
-		finalRow := max(meta.RowCount, existingRow)
-		bottomRight, err := excelize.CoordinatesToCellName(finalCol, finalRow)
-		if err != nil {
-			return nil, fmt.Errorf("dimension coords (col=%d,row=%d): %w", finalCol, finalRow, err)
+		for row, px := range meta.RowHeights {
+			if row < 1 || px < 0 {
+				continue
+			}
+			if err := f.SetRowHeight(name, row, pxToExcelPoints(px)); err != nil {
+				return nil, fmt.Errorf("set row height %s!%d: %w", name, row, err)
+			}
 		}
-		if err := f.SetSheetDimension(name, "A1:"+bottomRight); err != nil {
-			return nil, fmt.Errorf("set dimension on %s: %w", name, err)
+		for col, px := range meta.ColWidths {
+			if col < 1 || px < 0 {
+				continue
+			}
+			colName, err := excelize.ColumnNumberToName(col)
+			if err != nil {
+				return nil, fmt.Errorf("col name for %d: %w", col, err)
+			}
+			if err := f.SetColWidth(name, colName, colName, pxToExcelCharWidth(px)); err != nil {
+				return nil, fmt.Errorf("set col width %s!%s: %w", name, colName, err)
+			}
 		}
 	}
 
@@ -399,6 +422,32 @@ func legacyCoerceCellValue(s string) any {
 		return n
 	}
 	return s
+}
+
+// pxToExcelPoints converts a CSS pixel value (the unit calc stores
+// in the Y.Doc) to Excel row-height points. 96 px / inch on screen,
+// 72 pt / inch in OOXML, so the ratio is 0.75.
+func pxToExcelPoints(px int) float64 {
+	return float64(px) * 0.75
+}
+
+// pxToExcelCharWidth converts a pixel value to Excel column-width
+// "character" units. The standard XLSX formula (mirroring Excel's
+// own UI math) is:
+//
+//	chars = (px - 5) / 7    when px > 12
+//	chars = px / 12         otherwise
+//
+// 7 is the average glyph width of the default 11pt Calibri; the 5px
+// constant is the column padding Excel reserves for cell gridlines.
+func pxToExcelCharWidth(px int) float64 {
+	if px <= 0 {
+		return 0
+	}
+	if px > 12 {
+		return float64(px-5) / 7.0
+	}
+	return float64(px) / 12.0
 }
 
 // parseDimensionRef extracts the bottom-right (col, row) from an
