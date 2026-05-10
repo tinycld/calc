@@ -110,6 +110,13 @@ func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string, loadC
 //     are appended via NewSheet.
 //   - Sheets present in the original workbook with a different name in
 //     the snapshot are renamed.
+//   - Per-sheet metadata applied after rename/create and before cells:
+//     RowCount/ColCount widen the workbook's <dimension> to the union
+//     of snapshot and existing extents (never shrink); RowHeights and
+//     ColWidths apply px-to-Excel-unit conversions onto SetRowHeight/
+//     SetColWidth (px=0 hides the row/column, mirroring the TS-side
+//     hide-snap thresholds); RowStyles overwrite the row's xlsx style
+//     with the Y.Doc state (per-cell styles still layer on top).
 //   - For each cell: if Formula is non-empty, write the formula via
 //     SetCellFormula; otherwise write the value (Raw, falling back to
 //     Display).

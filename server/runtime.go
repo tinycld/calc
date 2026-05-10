@@ -190,10 +190,12 @@ func (h *sheetsDocHandle) Snapshot() (YDocSnapshot, error) {
 
 // collectSheets walks the top-level "sheets" YMap and returns sheet
 // metadata sorted by position. Each value should itself be a YMap
-// holding name/position/rowCount/colCount (and optionally rowHeights/
-// colWidths/rowStyles, surfaced separately in later passes). Non-YMap
-// values are skipped — they would indicate a schema violation but
-// we'd rather ship a partial snapshot than fail the whole save.
+// holding name/position/rowCount/colCount and optionally the sparse
+// rowHeights/colWidths/rowStyles maps (decoded inline below).
+// Non-YMap values are skipped — they would indicate a schema violation
+// but we'd rather ship a partial snapshot than fail the whole save.
+// Style-decode failures bubble up as errors so the save can retry
+// rather than silently persist a partial snapshot.
 func collectSheets(sheetsMap *ycrdt.YMap) ([]SheetMeta, error) {
 	out := make([]SheetMeta, 0, sheetsMap.GetSize())
 	var collectErr error

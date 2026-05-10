@@ -119,11 +119,13 @@ type CellAlignment struct {
 }
 
 // CellBorders mirrors the doc-side schema: presence of each edge as a
-// boolean. excelize-side serialization (mapping to the workbook's
-// border XML) is intentionally not wired yet — the toolbar's borders
-// dropdown lands attributes here so they round-trip through Y.Doc and
-// snapshot JSON. xlsx round-trip will be added when per-edge color and
-// style pickers come online.
+// boolean. The "Borders" entry in styleOverlayOverrides maps each
+// non-nil edge onto an excelize.Border with Type="thin" and
+// Color="000000" — the uniform black-thin look the toolbar's borders
+// dropdown affords today. When per-edge color/style pickers come
+// online, grow these fields into objects (the deep-merge in
+// setYCellStyle on the TS side treats any object patch additively)
+// and extend the Borders override.
 type CellBorders struct {
 	Top    *bool `json:"top,omitempty"`
 	Right  *bool `json:"right,omitempty"`
