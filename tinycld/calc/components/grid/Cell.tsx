@@ -16,6 +16,7 @@ import { useYCell } from '../../hooks/use-y-cell'
 import { cellStyleToRenderProps } from '../../lib/cell-style-render'
 import { columnLabel, formatCell } from '../../lib/workbook-types'
 import type { FormulaSpecialKey } from '../FormulaBar'
+import { CommentIndicator } from './CommentIndicator'
 import { locateCellAtGridCoord } from './style-helpers'
 
 interface CellProps {
@@ -405,6 +406,7 @@ export const Cell = memo(function Cell({
             <Text className="text-xs" numberOfLines={renderStyle.numberOfLines} style={textStyle}>
                 {showRemoteDraft ? remoteDraft : display}
             </Text>
+            <CommentIndicator sheetId={sheetId} row={row} col={col} />
         </Pressable>
     )
 })

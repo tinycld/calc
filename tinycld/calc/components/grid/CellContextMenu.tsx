@@ -116,6 +116,16 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
         })
     }, [doc, sheetId, range])
 
+    const onComment = useCallback(() => {
+        if (target == null) return
+        store.getState().openCommentPopover(
+            target.cell.row,
+            target.cell.col,
+            target.cursor.x,
+            target.cursor.y
+        )
+    }, [target, store])
+
     const onToggleBold = useCallback(() => {
         if (range == null) return
         toggleCellFontAttrInRange(doc, sheetId, range, 'bold')
@@ -182,6 +192,10 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                     <Separator className="my-1 mx-2" />
                     <Menu.Item onPress={onClear}>
                         <Menu.ItemTitle>Clear contents</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Separator className="my-1 mx-2" />
+                    <Menu.Item onPress={onComment}>
+                        <Menu.ItemTitle>Comment</Menu.ItemTitle>
                     </Menu.Item>
                     <Separator className="my-1 mx-2" />
                     <Menu.Item onPress={onToggleBold}>

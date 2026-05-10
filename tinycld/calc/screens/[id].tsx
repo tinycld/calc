@@ -5,8 +5,10 @@ import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
+import { CommentsProvider } from '../components/grid/CommentsContext'
 import { Grid } from '../components/Grid'
 import { SheetTabs } from '../components/SheetTabs'
+import { useCellComments } from '../hooks/use-cell-comments'
 import { useFormulaBridge } from '../hooks/use-formula-bridge'
 import { useRealtime } from '../hooks/use-realtime'
 import { useUndoManager } from '../hooks/use-undo-manager'
@@ -65,6 +67,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     useFormulaBridge(doc)
     const sheets = useYSheets(doc)
     const orgHref = useOrgHref()
+    const comments = useCellComments(workbookId)
 
     // Resolve the active sheet from the URL query, falling back to the
     // first sheet when the param is missing or stale (peer-renamed,
@@ -85,16 +88,18 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     }
 
     return (
-        <View className="flex-1 bg-background">
-            <View className="px-4 py-2 border-b border-border flex-row items-center gap-3">
-                <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
-                    {itemName}
-                </Text>
-                <ConnectionStatus isConnected={isConnected} />
+        <CommentsProvider value={comments}>
+            <View className="flex-1 bg-background">
+                <View className="px-4 py-2 border-b border-border flex-row items-center gap-3">
+                    <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
+                        {itemName}
+                    </Text>
+                    <ConnectionStatus isConnected={isConnected} />
+                </View>
+                <Grid sheetId={activeSheet.id} driveItemId={workbookId} undoState={undoState} />
+                <SheetTabs sheets={sheets} activeSheetId={activeSheet.id} onSelect={onSelect} />
             </View>
-            <Grid sheetId={activeSheet.id} undoState={undoState} />
-            <SheetTabs sheets={sheets} activeSheetId={activeSheet.id} onSelect={onSelect} />
-        </View>
+        </CommentsProvider>
     )
 }
 

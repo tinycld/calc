@@ -92,6 +92,14 @@ export interface ContextTarget {
     cursor: { x: number; y: number }
 }
 
+// Anchor for the threaded-comment popover. cursor mirrors ContextTarget
+// — popover opens at the user's click point (right-click "Comment"
+// item) or the cell's screen rect (keyboard shortcut path).
+export interface CommentTarget {
+    cell: SelectedCell
+    cursor: { x: number; y: number }
+}
+
 export interface HandleMenuTarget {
     // Discriminator: column-handle menu (right-click on column resize
     // grip) vs. row-handle menu (right-click on row resize grip). Both
@@ -140,6 +148,7 @@ export interface GridState {
     dismissedDraft: string | null
     formulaBarRect: FormulaBarRect | null
     contextTarget: ContextTarget | null
+    commentTarget: CommentTarget | null
     handleMenu: HandleMenuTarget | null
 }
 
@@ -255,6 +264,8 @@ export interface GridActions {
     // Context menus.
     openCellContextMenu: (row: number, col: number, x: number, y: number) => void
     closeCellContextMenu: () => void
+    openCommentPopover: (row: number, col: number, x: number, y: number) => void
+    closeCommentPopover: () => void
     openHandleMenu: (axis: 'col' | 'row', index: number, x: number, y: number) => void
     closeHandleMenu: () => void
     // Structural mutations driven by the cell context menu. Derive
@@ -313,6 +324,7 @@ const initialState: GridState = {
     dismissedDraft: null,
     formulaBarRect: null,
     contextTarget: null,
+    commentTarget: null,
     handleMenu: null,
 }
 
@@ -341,12 +353,23 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             selectCell: cell => {
                 commitInflight(cell)
                 refs.lastRefSlice.current = null
+                // If a comment popover is open and the user picks a
+                // different cell, dismiss it — the popover is anchored
+                // to a single cell and the new selection means the user
+                // moved on. Same cell click is still a no-op for the
+                // popover.
+                const prevCommentTarget = get().commentTarget
+                const closeComment =
+                    prevCommentTarget != null &&
+                    (prevCommentTarget.cell.row !== cell.row ||
+                        prevCommentTarget.cell.col !== cell.col)
                 set({
                     selected: cell,
                     selectionRange: null,
                     selectionScope: 'cells',
                     editSession: null,
                     pendingSelection: null,
+                    commentTarget: closeComment ? null : prevCommentTarget,
                 })
             },
 
@@ -610,6 +633,20 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             },
 
             closeCellContextMenu: () => set({ contextTarget: null }),
+
+            openCommentPopover: (row, col, x, y) => {
+                commitInflight({ row, col })
+                set({
+                    selected: { row, col },
+                    selectionRange: null,
+                    selectionScope: 'cells',
+                    editSession: null,
+                    contextTarget: null,
+                    commentTarget: { cell: { row, col }, cursor: { x, y } },
+                })
+            },
+
+            closeCommentPopover: () => set({ commentTarget: null }),
 
             openHandleMenu: (axis, index, x, y) => {
                 if (deps.readOnly) return

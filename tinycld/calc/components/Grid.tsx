@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useMemo } from 'react'
 import { View } from 'react-native'
+import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { useGridColumnResize } from '../hooks/grid/use-grid-column-resize'
 import { useGridFormatControls } from '../hooks/grid/use-grid-format-controls'
 import { useGridFormulaBar } from '../hooks/grid/use-grid-formula-bar'
@@ -20,6 +21,7 @@ import { FormulaSuggestionList } from './FormulaSuggestionList'
 import { Body } from './grid/Body'
 import { CellContextMenu } from './grid/CellContextMenu'
 import { ColumnHeader } from './grid/ColumnHeader'
+import { CommentPopover } from './grid/CommentPopover'
 import { CornerCell } from './grid/CornerCell'
 import { MIN_COLS, MIN_ROWS } from './grid/constants'
 import { HandleContextMenu } from './grid/HandleContextMenu'
@@ -31,6 +33,10 @@ export type GridHandle = GridViewportHandle
 
 interface GridProps {
     sheetId: string
+    // Drive_items.id of the workbook. Threaded comments are scoped to a
+    // workbook (and within it, a cell on a sheet); the popover and
+    // mutation hooks need this to insert/update calc_comments rows.
+    driveItemId: string
     minRows?: number
     minCols?: number
     readOnly?: boolean
@@ -51,7 +57,7 @@ interface GridProps {
 // orchestration here is intentionally thin — Grid is composition,
 // not logic.
 export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
-    { sheetId, minRows = MIN_ROWS, minCols = MIN_COLS, readOnly = false, undoState },
+    { sheetId, driveItemId, minRows = MIN_ROWS, minCols = MIN_COLS, readOnly = false, undoState },
     ref
 ) {
     const { doc, awareness } = useWorkbook()
@@ -60,6 +66,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
         <GridStoreProvider store={instance.store}>
             <GridInner
                 sheetId={sheetId}
+                driveItemId={driveItemId}
                 minRows={minRows}
                 minCols={minCols}
                 readOnly={readOnly}
@@ -73,6 +80,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
 
 interface GridInnerProps {
     sheetId: string
+    driveItemId: string
     minRows: number
     minCols: number
     readOnly: boolean
@@ -83,6 +91,7 @@ interface GridInnerProps {
 
 function GridInner({
     sheetId,
+    driveItemId,
     minRows,
     minCols,
     readOnly,
@@ -145,6 +154,7 @@ function GridInner({
         scrollY: viewport.scrollY,
     })
     useRefDragExtender()
+    useCommentShortcut(instance.store, readOnly)
 
     // Inline arrows for the currency/percent/decimal preset shortcuts
     // would re-create on every render and force <Toolbar> to re-render
@@ -244,6 +254,7 @@ function GridInner({
                 />
             </View>
             <CellContextMenu doc={doc} sheetId={sheetId} />
+            <CommentPopover driveItemId={driveItemId} sheetId={sheetId} />
             <HandleContextMenu
                 onAutosizeCol={col => autosizeCol(doc, sheetId, col)}
                 onResetCol={(col, width) => commitColWidth(doc, sheetId, col, width)}
