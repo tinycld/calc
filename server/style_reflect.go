@@ -2,6 +2,7 @@ package calc
 
 import (
 	"reflect"
+	"slices"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -91,7 +92,7 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 			// Color is a []string with [foreground, background]. Preserve
 			// any existing entries on dst, only overwriting the slots the
 			// patch defines.
-			colors := append([]string(nil), dst.Fill.Color...)
+			colors := slices.Clone(dst.Fill.Color)
 			for len(colors) < 2 {
 				colors = append(colors, "")
 			}
