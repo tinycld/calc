@@ -200,6 +200,11 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 				return nil, fmt.Errorf("set dimension on %s: %w", name, err)
 			}
 		}
+		// px==0 is a deliberate value, not an absence: the TS side's
+		// snap-to-hide thresholds (ROW_HIDE_SNAP_THRESHOLD,
+		// HIDE_SNAP_THRESHOLD) round small drag widths to 0, and excelize
+		// hides the row/column when SetRowHeight/SetColWidth gets 0. The
+		// guards reject only negatives so the hide round-trip survives.
 		for row, px := range meta.RowHeights {
 			if row < 1 || px < 0 {
 				continue

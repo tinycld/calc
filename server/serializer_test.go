@@ -1513,6 +1513,94 @@ func TestSerializerPersistsColWidths(t *testing.T) {
 	}
 }
 
+// TestSerializerRowHeightsNilLeavesExistingAlone: a snapshot whose
+// SheetMeta.RowHeights is nil must not touch the workbook's existing
+// row heights. Mirrors the T8 sentinel-untouched discipline so a future
+// loop refactor (e.g. switching the range over nil for an explicit
+// nil-check) can't silently regress.
+func TestSerializerRowHeightsNilLeavesExistingAlone(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	// Pre-stamp row 2 with a non-default height so we can detect changes.
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := f.SetRowHeight("People", 2, 50); err != nil {
+		t.Fatalf("seed SetRowHeight: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+	if got := readRowHeight(t, seeded, "People", 2); got != 50 {
+		t.Fatalf("seed: want row 2 height=50, got %v", got)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0}, // RowHeights nil
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	if got := readRowHeight(t, out, "People", 2); got != 50 {
+		t.Errorf("row 2 height changed despite nil RowHeights: want 50 preserved, got %v", got)
+	}
+}
+
+// TestSerializerColWidthsNilLeavesExistingAlone: same sentinel as
+// above for the column-widths path.
+func TestSerializerColWidthsNilLeavesExistingAlone(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := f.SetColWidth("People", "C", "C", 25); err != nil {
+		t.Fatalf("seed SetColWidth: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+	seedW := readColWidth(t, seeded, "People", 3)
+	if seedW < 24.95 || seedW > 25.05 {
+		t.Fatalf("seed: want col C width≈25, got %v", seedW)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0}, // ColWidths nil
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	got := readColWidth(t, out, "People", 3)
+	if got < 24.95 || got > 25.05 {
+		t.Errorf("col C width changed despite nil ColWidths: want ≈25 preserved, got %v", got)
+	}
+}
+
 // TestSerializerStyleClearsFill: snapshot FgColor = "" on a cell that
 // already has a red fill must clear the foreground color. The trailing-
 // empty trimmer in the Fill override drops the now-empty color slot,
