@@ -266,6 +266,23 @@ function GridInner({
         applyFilter(doc, sheetId, { range, criteria: {} })
     }, [doc, sheetId, instance.store, filterView])
 
+    const onMergeAll = useCallback(
+        () => instance.store.getState().mergeSelection(),
+        [instance.store]
+    )
+    const onMergeHorizontal = useCallback(
+        () => instance.store.getState().mergeSelectionHorizontal(),
+        [instance.store]
+    )
+    const onMergeVertical = useCallback(
+        () => instance.store.getState().mergeSelectionVertical(),
+        [instance.store]
+    )
+    const onUnmerge = useCallback(
+        () => instance.store.getState().unmergeSelection(),
+        [instance.store]
+    )
+
     return (
         <View className="flex-1 bg-background web:select-none">
             <Toolbar
@@ -304,6 +321,10 @@ function GridInner({
                 onOpenSort={onOpenSort}
                 onToggleFilter={onToggleFilter}
                 isFilterActive={filterView != null}
+                onMergeAll={onMergeAll}
+                onMergeHorizontal={onMergeHorizontal}
+                onMergeVertical={onMergeVertical}
+                onUnmerge={onUnmerge}
             />
             <SortStatusBanner />
             <FormulaBar

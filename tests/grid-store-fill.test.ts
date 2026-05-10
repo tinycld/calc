@@ -26,6 +26,11 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
             focusActiveInput: () => {},
             applyStructuralMutation: () => {},
             applyFill,
+            resolveMergeAnchor: (row, col) => ({ row, col }),
+            expandRangeOverMerges: r => r,
+            findMergesInRange: () => [],
+            mergeRange: () => {},
+            unmergeAt: () => {},
         },
         applyFill,
     }

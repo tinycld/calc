@@ -14,6 +14,7 @@ import type { RemotePresence } from '../../hooks/use-presence'
 import { useWorkbook } from '../../hooks/use-workbook-context'
 import { useYCell } from '../../hooks/use-y-cell'
 import { cellStyleToRenderProps } from '../../lib/cell-style-render'
+import { findMergeContaining } from '../../lib/merge'
 import { columnLabel, formatCell } from '../../lib/workbook-types'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { CommentIndicator } from './CommentIndicator'
@@ -56,6 +57,24 @@ export const Cell = memo(function Cell({
     const { doc } = useWorkbook()
     const store = useGridStoreApi()
     const cellValue = useYCell(doc, sheetId, row, col)
+    // Merge handling is delegated here so Body's loop stays a simple
+    // (row, col) walk: covered cells return null, anchor cells extend
+    // their rendered footprint over the merge's span.
+    const merge = doc != null ? findMergeContaining(doc, sheetId, row, col) : null
+    const isMergedCovered =
+        merge != null && (merge.anchorRow !== row || merge.anchorCol !== col)
+    let renderWidth = width
+    let renderHeight = height
+    if (merge != null && !isMergedCovered) {
+        const lastCol = merge.anchorCol + merge.colSpan - 1
+        const lastRow = merge.anchorRow + merge.rowSpan - 1
+        if (lastCol < colOffsets.length) {
+            renderWidth = colOffsets[lastCol] - left
+        }
+        if (lastRow < rowOffsets.length) {
+            renderHeight = rowOffsets[lastRow] - top
+        }
+    }
 
     // Primitive selectors — non-editing/non-selected cells get back
     // false on every store update and short-circuit reference-equality
@@ -158,14 +177,16 @@ export const Cell = memo(function Cell({
         [store, row, col, left, top, colOffsets, rowOffsets, readOnly, isAnyEditing]
     )
 
+    if (isMergedCovered) return null
+
     if (isEditing) {
         return (
             <CellEditor
                 inputRef={cellEditorInputRef}
                 left={left}
                 top={top}
-                width={width}
-                height={height}
+                width={renderWidth}
+                height={renderHeight}
                 row={row}
                 col={col}
                 onSpecialKey={onSpecialKey}
@@ -391,8 +412,8 @@ export const Cell = memo(function Cell({
                 position: 'absolute',
                 left,
                 top,
-                width,
-                height,
+                width: renderWidth,
+                height: renderHeight,
                 ...rangeTintStyle,
                 ...renderStyle.viewStyle,
             }}

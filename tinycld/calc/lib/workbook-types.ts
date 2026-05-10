@@ -114,6 +114,17 @@ export interface WorksheetModel {
     // out of the public list while the sheet-management UI still sees
     // it via useAllYSheets.
     hidden?: boolean
+    // Optional list of merged cell rectangles. Imported from xlsx via
+    // excelize's GetMergeCells; persisted back via MergeCell. Absent on
+    // sheets without merges.
+    merges?: MergeRangeModel[]
+}
+
+export interface MergeRangeModel {
+    anchorRow: number
+    anchorCol: number
+    rowSpan: number
+    colSpan: number
 }
 
 export interface WorkbookModel {

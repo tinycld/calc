@@ -13,6 +13,11 @@ function makeDeps(): GridStoreDeps {
         focusActiveInput: () => {},
         applyStructuralMutation: () => {},
         applyFill: () => {},
+        resolveMergeAnchor: (row, col) => ({ row, col }),
+        expandRangeOverMerges: r => r,
+        findMergesInRange: () => [],
+        mergeRange: () => {},
+        unmergeAt: () => {},
     }
 }
 

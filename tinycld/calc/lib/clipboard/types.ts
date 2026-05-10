@@ -24,11 +24,22 @@ export interface ClipboardCell {
     style?: CellStyle
 }
 
+// MergedCellRange in a clipboard payload uses *relative* offsets from
+// the source range's top-left (0,0). The deserializer adds the
+// destination anchor to relocate each merge at the paste site.
+export interface ClipboardMerge {
+    rowOffset: number
+    colOffset: number
+    rowSpan: number
+    colSpan: number
+}
+
 export interface ClipboardPayload {
     rows: number
     cols: number
     cells: ClipboardCell[][]
     sourceAnchor: { row: number; col: number }
+    merges?: ClipboardMerge[]
 }
 
 // PasteMode selects which subset of a copied cell is written to the dest.

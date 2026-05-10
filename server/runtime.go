@@ -229,6 +229,7 @@ func collectSheets(sheetsMap *ycrdt.YMap) ([]SheetMeta, error) {
 			RowStyles:  rowStyles,
 			Color:      color,
 			Hidden:     hidden,
+			Merges:     decodeMerges(meta, "merges"),
 		})
 	})
 	if collectErr != nil {
@@ -401,6 +402,54 @@ func decodeSparseIntMap(meta *ycrdt.YMap, key string) map[int]int {
 			return
 		}
 		out[n] = numberFromAny(v)
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// decodeMerges pulls the nested merges Y.Map off the sheet meta and
+// returns the rectangles. Keys are "row:col" anchor coords; each value
+// is a small YMap with rowSpan and colSpan integer fields. Skips
+// malformed entries silently — a partial snapshot beats a failed save.
+func decodeMerges(meta *ycrdt.YMap, key string) []MergeRange {
+	nested, ok := meta.Get(key).(*ycrdt.YMap)
+	if !ok || nested.GetSize() == 0 {
+		return nil
+	}
+	out := make([]MergeRange, 0, nested.GetSize())
+	nested.ForEach(func(k string, v any, _ *ycrdt.YMap) {
+		parts := strings.SplitN(k, ":", 2)
+		if len(parts) != 2 {
+			return
+		}
+		row, err := strconv.Atoi(parts[0])
+		if err != nil || row < 1 {
+			return
+		}
+		col, err := strconv.Atoi(parts[1])
+		if err != nil || col < 1 {
+			return
+		}
+		entry, ok := v.(*ycrdt.YMap)
+		if !ok {
+			return
+		}
+		rowSpan := numberFromAny(entry.Get("rowSpan"))
+		colSpan := numberFromAny(entry.Get("colSpan"))
+		if rowSpan < 1 || colSpan < 1 {
+			return
+		}
+		if rowSpan == 1 && colSpan == 1 {
+			return
+		}
+		out = append(out, MergeRange{
+			AnchorRow: row,
+			AnchorCol: col,
+			RowSpan:   rowSpan,
+			ColSpan:   colSpan,
+		})
 	})
 	if len(out) == 0 {
 		return nil

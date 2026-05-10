@@ -270,6 +270,33 @@ export interface GridStoreDeps {
         destRange: CellRange
         direction: 'down' | 'right'
     }) => void
+    // Resolve a (row, col) to its merge anchor when the cell sits
+    // inside a merged rectangle, otherwise echo back the input. Lets
+    // selection actions snap a click on a covered cell to the anchor
+    // without giving the store a Y.Doc dependency.
+    resolveMergeAnchor: (row: number, col: number) => { row: number; col: number }
+    // Grow `range` so every merge it touches is fully contained.
+    // Returns the input range when no merges intersect.
+    expandRangeOverMerges: (range: CellRange) => CellRange
+    // List the merges that intersect the given range. Used by
+    // unmergeSelection to iterate merges in the range.
+    findMergesInRange: (range: CellRange) => MergeAnchor[]
+    // Merge / unmerge primitives that touch the Y.Doc. The store
+    // dispatches these from mergeSelection / unmergeSelection so it
+    // can stay yjs-free.
+    mergeRange: (range: CellRange) => void
+    unmergeAt: (anchorRow: number, anchorCol: number) => void
+}
+
+// MergeAnchor is the store-side view of one merged-cell rectangle.
+// Keeps the store free of any direct merge.ts import; the dep
+// implementation in use-grid-store-instance maps the lib's MergeRange
+// to this shape (which happens to be structurally identical).
+export interface MergeAnchor {
+    anchorRow: number
+    anchorCol: number
+    rowSpan: number
+    colSpan: number
 }
 
 export interface GridActions {
@@ -376,6 +403,19 @@ export interface GridActions {
     closeFilterDropdown: () => void
     // Status banner after a sort dissolved one or more merges.
     setSortStatus: (status: { mergesBroken: number } | null) => void
+    // Merge the current selection into a single merged cell. If the
+    // selection touches existing merges, the range first expands to
+    // fully contain them so the resulting merge is well-defined.
+    mergeSelection: () => void
+    // Variant that splits the selection into one horizontal merge per
+    // row (so a 3×3 selection becomes 3 horizontal merges of 3 cells
+    // each). No-op when the selection is a single column.
+    mergeSelectionHorizontal: () => void
+    // Variant that splits the selection into one vertical merge per
+    // column. No-op when the selection is a single row.
+    mergeSelectionVertical: () => void
+    // Unmerge every merge that touches the current selection.
+    unmergeSelection: () => void
 }
 
 export interface GridStore extends GridState, GridActions {}
@@ -457,11 +497,79 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             deps.writeCell(current.row, current.col, current.draft)
         }
 
+        // currentSelectionRange returns the active selection rectangle
+        // (range when set, otherwise the single anchor cell) or null
+        // when nothing is selected. Shared by mergeSelection variants
+        // and unmergeSelection so the "what's currently selected" rule
+        // lives in one place.
+        const currentSelectionRange = (): CellRange | null => {
+            const state = get()
+            if (state.selected == null) return null
+            if (state.selectionRange != null) return state.selectionRange
+            return {
+                startRow: state.selected.row,
+                endRow: state.selected.row,
+                startCol: state.selected.col,
+                endCol: state.selected.col,
+            }
+        }
+
+        // runMerge dispatches the three merge variants (all / per-row /
+        // per-col). 'all' commits the whole expanded rectangle; the
+        // per-axis variants iterate the perpendicular axis and emit one
+        // single-row or single-col merge per step.
+        const runMerge = (mode: 'all' | 'horizontal' | 'vertical') => {
+            if (deps.readOnly) return
+            const baseRange = currentSelectionRange()
+            if (baseRange == null) return
+            const expanded = deps.expandRangeOverMerges(baseRange)
+            if (mode === 'all') {
+                if (
+                    expanded.startRow === expanded.endRow &&
+                    expanded.startCol === expanded.endCol
+                ) {
+                    return
+                }
+                deps.mergeRange(expanded)
+            } else if (mode === 'horizontal') {
+                if (expanded.startCol === expanded.endCol) return
+                for (let r = expanded.startRow; r <= expanded.endRow; r++) {
+                    deps.mergeRange({
+                        startRow: r,
+                        endRow: r,
+                        startCol: expanded.startCol,
+                        endCol: expanded.endCol,
+                    })
+                }
+            } else {
+                if (expanded.startRow === expanded.endRow) return
+                for (let c = expanded.startCol; c <= expanded.endCol; c++) {
+                    deps.mergeRange({
+                        startRow: expanded.startRow,
+                        endRow: expanded.endRow,
+                        startCol: c,
+                        endCol: c,
+                    })
+                }
+            }
+            set({
+                selected: { row: expanded.startRow, col: expanded.startCol },
+                selectionRange: null,
+                selectionScope: 'cells',
+                contextTarget: null,
+            })
+        }
+
         return {
             ...initialState,
 
             selectCell: cell => {
-                commitInflight(cell)
+                // Snap to the merge anchor when the click landed on a
+                // covered cell — covered cells render nothing of their
+                // own and only the anchor is interactable.
+                const snapped = deps.resolveMergeAnchor(cell.row, cell.col)
+                const target: SelectedCell = { row: snapped.row, col: snapped.col }
+                commitInflight(target)
                 refs.lastRefSlice.current = null
                 // If a comment popover is open and the user picks a
                 // different cell, dismiss it — the popover is anchored
@@ -471,10 +579,10 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 const prevCommentTarget = get().commentTarget
                 const closeComment =
                     prevCommentTarget != null &&
-                    (prevCommentTarget.cell.row !== cell.row ||
-                        prevCommentTarget.cell.col !== cell.col)
+                    (prevCommentTarget.cell.row !== target.row ||
+                        prevCommentTarget.cell.col !== target.col)
                 set({
-                    selected: cell,
+                    selected: target,
                     selectionRange: null,
                     selectionScope: 'cells',
                     editSession: null,
@@ -524,12 +632,16 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     })
                     return
                 }
-                const range: CellRange = {
+                const naive: CellRange = {
                     startRow: Math.min(anchor.row, cell.row),
                     endRow: Math.max(anchor.row, cell.row),
                     startCol: Math.min(anchor.col, cell.col),
                     endCol: Math.max(anchor.col, cell.col),
                 }
+                // Grow over any merges the rectangle straddles so a
+                // shift-click into the middle of a merged cell still
+                // selects the full merge footprint.
+                const range = deps.expandRangeOverMerges(naive)
                 // Single-cell range collapses to null so the rest of the
                 // store stays in the canonical "no range" form.
                 const single = range.startRow === range.endRow && range.startCol === range.endCol
@@ -1205,6 +1317,28 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     selectionScope: 'cells',
                     fillDrag: null,
                 })
+            },
+
+            mergeSelection: () => {
+                runMerge('all')
+            },
+
+            mergeSelectionHorizontal: () => {
+                runMerge('horizontal')
+            },
+
+            mergeSelectionVertical: () => {
+                runMerge('vertical')
+            },
+
+            unmergeSelection: () => {
+                if (deps.readOnly) return
+                const baseRange = currentSelectionRange()
+                if (baseRange == null) return
+                for (const m of deps.findMergesInRange(baseRange)) {
+                    deps.unmergeAt(m.anchorRow, m.anchorCol)
+                }
+                set({ contextTarget: null })
             },
         }
     })

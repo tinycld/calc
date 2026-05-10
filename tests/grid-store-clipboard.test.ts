@@ -20,6 +20,11 @@ function makeStubDeps(): GridStoreDeps {
         focusActiveInput: () => {},
         applyStructuralMutation: (_op: StructuralOp) => {},
         applyFill: () => {},
+        resolveMergeAnchor: (row, col) => ({ row, col }),
+        expandRangeOverMerges: r => r,
+        findMergesInRange: () => [],
+        mergeRange: () => {},
+        unmergeAt: () => {},
     }
 }
 

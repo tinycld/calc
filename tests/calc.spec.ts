@@ -851,6 +851,48 @@ test.describe('Calc', () => {
         await expect(formulaBar).toHaveValue('=SUM(A1:A2)')
         await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('5')
     })
+
+    test.describe('Merge cells', () => {
+        test('Merge all then Unmerge round-trips selection across A1:C1', async ({ page }) => {
+            await navigateToPackage(page, 'calc')
+            await openNewSpreadsheet(page)
+
+            const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+            await typeIntoCell(page, formulaBar, 'A1', 'Title')
+
+            // Drag-select A1:C1 — same gesture as the multi-cell select test.
+            const a1 = page.getByLabel('Cell A1', { exact: true })
+            const c1 = page.getByLabel('Cell C1', { exact: true })
+            const a1Box = await a1.boundingBox()
+            const c1Box = await c1.boundingBox()
+            if (a1Box == null || c1Box == null) throw new Error('cell rects missing')
+            await page.mouse.move(a1Box.x + a1Box.width / 2, a1Box.y + a1Box.height / 2)
+            await page.mouse.down()
+            await page.mouse.move(c1Box.x + c1Box.width / 2, c1Box.y + c1Box.height / 2, {
+                steps: 8,
+            })
+            await page.mouse.up()
+
+            // Open the merge menu and click Merge all.
+            await page.getByRole('button', { name: 'Merge cells' }).click()
+            await page.getByText('Merge all', { exact: true }).click()
+
+            // B1 and C1 should no longer be selectable as their own cells.
+            await expect(page.getByLabel('Cell B1', { exact: true })).toHaveCount(0)
+            await expect(page.getByLabel('Cell C1', { exact: true })).toHaveCount(0)
+
+            // The merged anchor at A1 spans wider than two default columns.
+            const mergedBox = await page.getByLabel('Cell A1', { exact: true }).boundingBox()
+            if (mergedBox == null) throw new Error('merged cell box missing')
+            expect(mergedBox.width).toBeGreaterThan(96 * 2)
+
+            // Unmerge restores the individual cells.
+            await page.getByRole('button', { name: 'Merge cells' }).click()
+            await page.getByText('Unmerge', { exact: true }).click()
+            await expect(page.getByLabel('Cell B1', { exact: true })).toBeVisible()
+            await expect(page.getByLabel('Cell C1', { exact: true })).toBeVisible()
+        })
+    })
 })
 
 test.describe('Sort & Filter', () => {

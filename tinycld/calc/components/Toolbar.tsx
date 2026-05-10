@@ -24,6 +24,7 @@ import { DownloadMenu } from './toolbar/DownloadMenu'
 import { FillColorMenu } from './toolbar/FillColorMenu'
 import { FontSizeStepper } from './toolbar/FontSizeStepper'
 import { HorizontalAlignMenu } from './toolbar/HorizontalAlignMenu'
+import { MergeMenu } from './toolbar/MergeMenu'
 import { NumberFormatMenu } from './toolbar/NumberFormatMenu'
 import { TextColorMenu } from './toolbar/TextColorMenu'
 import { ToolbarButton, ToolbarDivider } from './toolbar/ToolbarButton'
@@ -80,6 +81,11 @@ export interface ToolbarProps {
     onOpenSort: () => void
     onToggleFilter: () => void
     isFilterActive: boolean
+
+    onMergeAll: () => void
+    onMergeHorizontal: () => void
+    onMergeVertical: () => void
+    onUnmerge: () => void
 }
 
 // memo'd so that selection-range churn during a drag (which only
@@ -127,6 +133,10 @@ function ToolbarImpl(props: ToolbarProps) {
         onOpenSort,
         onToggleFilter,
         isFilterActive,
+        onMergeAll,
+        onMergeHorizontal,
+        onMergeVertical,
+        onUnmerge,
     } = props
 
     return (
@@ -228,6 +238,13 @@ function ToolbarImpl(props: ToolbarProps) {
                 disabled={disabled}
                 onPress={onToggleFilter}
                 label={isFilterActive ? 'Remove filter' : 'Create filter'}
+            />
+            <MergeMenu
+                disabled={disabled}
+                onMergeAll={onMergeAll}
+                onMergeHorizontal={onMergeHorizontal}
+                onMergeVertical={onMergeVertical}
+                onUnmerge={onUnmerge}
             />
             <ToolbarDivider />
             <ToolbarButton icon={Search} onPress={onOpenFind} label="Find and replace" />

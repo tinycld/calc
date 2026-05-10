@@ -2,6 +2,7 @@ import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import type * as Y from 'yjs'
 import { deleteYCell, setYCellStyle, setYCellTyped } from '../../hooks/use-y-cell'
 import type { InferredCellInput } from '../cell-input'
+import { findMergeContaining, mergeCells } from '../merge'
 import { formatCell } from '../workbook-types'
 import { rewriteFormula } from './rewrite-formula'
 import type { ClipboardCell, ClipboardPayload, PasteMode, PasteOptions } from './types'
@@ -51,6 +52,46 @@ export function applyPayloadToDoc(
                 const destRow = opts.destAnchor.row + r
                 const destCol = opts.destAnchor.col + c
                 applyOneCell(doc, sheetId, destRow, destCol, cell, opts.mode, deltaRow, deltaCol)
+            }
+        }
+        // Apply captured merges at the destination. Skip 'format'-only
+        // pastes (style overlay, no structural change) and the
+        // transpose case (a transposed merge isn't well-defined under
+        // simple offsets — out of scope for v1). If applying a merge
+        // would land inside an existing destination merge, skip it
+        // rather than silently corrupt the layout.
+        if (
+            payload.merges != null &&
+            payload.merges.length > 0 &&
+            opts.mode !== 'format' &&
+            opts.mode !== 'transpose'
+        ) {
+            for (const m of payload.merges) {
+                const anchorRow = opts.destAnchor.row + m.rowOffset
+                const anchorCol = opts.destAnchor.col + m.colOffset
+                const endRow = anchorRow + m.rowSpan - 1
+                const endCol = anchorCol + m.colSpan - 1
+                let conflict = false
+                for (let rr = anchorRow; rr <= endRow && !conflict; rr++) {
+                    for (let cc = anchorCol; cc <= endCol && !conflict; cc++) {
+                        if (rr === anchorRow && cc === anchorCol) continue
+                        const existing = findMergeContaining(doc, sheetId, rr, cc)
+                        if (
+                            existing != null &&
+                            (existing.anchorRow !== anchorRow ||
+                                existing.anchorCol !== anchorCol)
+                        ) {
+                            conflict = true
+                        }
+                    }
+                }
+                if (conflict) continue
+                mergeCells(doc, sheetId, {
+                    startRow: anchorRow,
+                    endRow,
+                    startCol: anchorCol,
+                    endCol,
+                })
             }
         }
     }, LOCAL_ORIGIN)

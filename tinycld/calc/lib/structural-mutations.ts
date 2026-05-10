@@ -35,6 +35,7 @@ import {
     rewriteFormulaForMutation,
     type StructuralFormulaMutation,
 } from './formula/rewrite-on-structural-mutation'
+import { applyStructuralShiftToMerges } from './merge'
 import { ROW_STYLES_KEY } from './sheet-styles'
 import { parseYCellKey, yCellKey } from './y-cell-key'
 import { CELLS_MAP, cloneYMapDeep, SHEETS_MAP } from './y-doc-bootstrap'
@@ -246,6 +247,12 @@ export function insertRows(
             displayedRowCount + count
         )
         meta.set('rowCount', newRowCount)
+
+        applyStructuralShiftToMerges(doc, sheetId, {
+            kind: 'insertRows',
+            at: insertAt,
+            count,
+        })
     }, LOCAL_ORIGIN)
 }
 
@@ -292,6 +299,12 @@ export function insertColumns(
             displayedColCount + count
         )
         meta.set('colCount', newColCount)
+
+        applyStructuralShiftToMerges(doc, sheetId, {
+            kind: 'insertColumns',
+            at: insertAt,
+            count,
+        })
     }, LOCAL_ORIGIN)
 }
 
@@ -367,6 +380,12 @@ export function deleteRows(doc: Y.Doc, sheetId: string, fromRow: number, count: 
         })
 
         meta.set('rowCount', oldRowCount - clamped)
+
+        applyStructuralShiftToMerges(doc, sheetId, {
+            kind: 'deleteRows',
+            from: fromRow,
+            count: clamped,
+        })
     }, LOCAL_ORIGIN)
 }
 
@@ -424,5 +443,11 @@ export function deleteColumns(doc: Y.Doc, sheetId: string, fromCol: number, coun
         })
 
         meta.set('colCount', oldColCount - clamped)
+
+        applyStructuralShiftToMerges(doc, sheetId, {
+            kind: 'deleteColumns',
+            from: fromCol,
+            count: clamped,
+        })
     }, LOCAL_ORIGIN)
 }

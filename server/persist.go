@@ -232,6 +232,37 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 				return nil, fmt.Errorf("set col width %s!%s: %w", name, colName, err)
 			}
 		}
+		// Merges: unmerge anything that the workbook already has on this
+		// sheet (excelize has no "set merges" call — only Add/Remove),
+		// then re-merge from the snapshot. This makes the snapshot
+		// authoritative without requiring the caller to track diffs.
+		existingMerges, _ := f.GetMergeCells(name)
+		for _, mc := range existingMerges {
+			_ = f.UnmergeCell(name, mc.GetStartAxis(), mc.GetEndAxis())
+		}
+		for _, m := range meta.Merges {
+			if m.RowSpan < 1 || m.ColSpan < 1 {
+				continue
+			}
+			if m.RowSpan == 1 && m.ColSpan == 1 {
+				continue
+			}
+			fromCell, err := excelize.CoordinatesToCellName(m.AnchorCol, m.AnchorRow)
+			if err != nil {
+				return nil, fmt.Errorf("merge from coords (%d,%d): %w", m.AnchorCol, m.AnchorRow, err)
+			}
+			toCell, err := excelize.CoordinatesToCellName(
+				m.AnchorCol+m.ColSpan-1,
+				m.AnchorRow+m.RowSpan-1,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("merge to coords: %w", err)
+			}
+			if err := f.MergeCell(name, fromCell, toCell); err != nil {
+				return nil, fmt.Errorf("merge %s!%s:%s: %w", name, fromCell, toCell, err)
+			}
+		}
+
 		// Row styles are written as full-overwrite, not read-then-overlay
 		// (unlike applyCellStyle below). The Y.Doc is the source of truth
 		// for row-level styling once a workbook is in collaborative use,

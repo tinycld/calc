@@ -33,6 +33,18 @@ type WorksheetModel struct {
 	// see the data) but the client filters them from the default
 	// sheet list — see useYSheets.
 	Hidden bool `json:"hidden,omitempty"`
+	// Merges enumerates merged-cell rectangles imported from the
+	// source xlsx via excelize.GetMergeCells.
+	Merges []MergeRangeDTO `json:"merges,omitempty"`
+}
+
+// MergeRangeDTO mirrors the TS MergeRangeModel: a merged cell anchor
+// (top-left) plus span dimensions. Round-trips through excelize.
+type MergeRangeDTO struct {
+	AnchorRow int `json:"anchorRow"`
+	AnchorCol int `json:"anchorCol"`
+	RowSpan   int `json:"rowSpan"`
+	ColSpan   int `json:"colSpan"`
 }
 
 // CellValueDTO mirrors the TS CellValue. `raw` is one of
@@ -138,6 +150,7 @@ func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (Work
 	if colCount < 1 {
 		colCount = 1
 	}
+	merges, _ := readMerges(f, sheetName)
 	return WorksheetModel{
 		Name:     sheetName,
 		RowCount: rowCount,
@@ -145,7 +158,46 @@ func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (Work
 		Cells:    cells,
 		Color:    tabColor,
 		Hidden:   hidden,
+		Merges:   merges,
 	}, nil
+}
+
+// readMerges extracts the sheet's merged cell rectangles via
+// excelize.GetMergeCells and converts each to a MergeRangeDTO. Returns
+// nil (not error) on any individual parse failure so a malformed entry
+// doesn't poison the whole sheet load.
+func readMerges(f *excelize.File, sheetName string) ([]MergeRangeDTO, error) {
+	mergeCells, err := f.GetMergeCells(sheetName)
+	if err != nil {
+		return nil, err
+	}
+	if len(mergeCells) == 0 {
+		return nil, nil
+	}
+	out := make([]MergeRangeDTO, 0, len(mergeCells))
+	for _, mc := range mergeCells {
+		startCol, startRow, err := excelize.CellNameToCoordinates(mc.GetStartAxis())
+		if err != nil {
+			continue
+		}
+		endCol, endRow, err := excelize.CellNameToCoordinates(mc.GetEndAxis())
+		if err != nil {
+			continue
+		}
+		if endRow < startRow || endCol < startCol {
+			continue
+		}
+		out = append(out, MergeRangeDTO{
+			AnchorRow: startRow,
+			AnchorCol: startCol,
+			RowSpan:   endRow - startRow + 1,
+			ColSpan:   endCol - startCol + 1,
+		})
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // readWorkbookCell extracts a single cell into the typed CellValueDTO shape.
@@ -363,6 +415,27 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 				meta.Set("hidden", true)
 			}
 			sheetsMap.Set(sheetID, meta)
+
+			if len(sheet.Merges) > 0 {
+				mergesMap := ycrdt.NewYMap(nil)
+				wroteAny := false
+				for _, m := range sheet.Merges {
+					if m.RowSpan < 1 || m.ColSpan < 1 {
+						continue
+					}
+					if m.RowSpan == 1 && m.ColSpan == 1 {
+						continue
+					}
+					entry := ycrdt.NewYMap(nil)
+					entry.Set("rowSpan", m.RowSpan)
+					entry.Set("colSpan", m.ColSpan)
+					mergesMap.Set(fmt.Sprintf("%d:%d", m.AnchorRow, m.AnchorCol), entry)
+					wroteAny = true
+				}
+				if wroteAny {
+					meta.Set("merges", mergesMap)
+				}
+			}
 
 			for localKey, value := range sheet.Cells {
 				row, col, ok := parseLocalCellKey(localKey)

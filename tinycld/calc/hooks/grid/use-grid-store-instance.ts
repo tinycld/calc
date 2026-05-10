@@ -5,6 +5,14 @@ import type * as Y from 'yjs'
 import { subscribeAwarenessToStore } from '../../components/grid/subscribe-awareness'
 import { applyFill as applyFillToDoc } from '../../lib/fill/apply-fill'
 import {
+    expandRangeOverMerges,
+    getAllMerges,
+    mergeCells,
+    snapPointToMerge,
+    unmergeCells,
+} from '../../lib/merge'
+import type { CellRange } from '../grid-store'
+import {
     deleteColumns,
     deleteRows,
     insertColumns,
@@ -96,6 +104,28 @@ export function useGridStoreInstance({
             applyFill: ({ sourceRange, destRange, direction }) => {
                 if (readOnly) return
                 applyFillToDoc({ doc, sheetId, sourceRange, destRange, direction })
+            },
+            resolveMergeAnchor: (row, col) => snapPointToMerge(doc, sheetId, row, col),
+            expandRangeOverMerges: (range: CellRange) =>
+                expandRangeOverMerges(doc, sheetId, range),
+            findMergesInRange: (range: CellRange) =>
+                getAllMerges(doc, sheetId).filter(m => {
+                    const mEndRow = m.anchorRow + m.rowSpan - 1
+                    const mEndCol = m.anchorCol + m.colSpan - 1
+                    return !(
+                        mEndRow < range.startRow ||
+                        m.anchorRow > range.endRow ||
+                        mEndCol < range.startCol ||
+                        m.anchorCol > range.endCol
+                    )
+                }),
+            mergeRange: (range: CellRange) => {
+                if (readOnly) return
+                mergeCells(doc, sheetId, range)
+            },
+            unmergeAt: (anchorRow, anchorCol) => {
+                if (readOnly) return
+                unmergeCells(doc, sheetId, anchorRow, anchorCol)
             },
         }
         const api = createGridStore(deps)

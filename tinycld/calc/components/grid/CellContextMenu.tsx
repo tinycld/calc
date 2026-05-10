@@ -196,6 +196,9 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
         clearFilter(doc, sheetId)
     }, [doc, sheetId])
 
+    const onMergeAll = useCallback(() => store.getState().mergeSelection(), [store])
+    const onUnmergeMenuAction = useCallback(() => store.getState().unmergeSelection(), [store])
+
     // Indicator labels reflect the anchor cell only — that's the cell
     // the user sees outlined and is the natural reference point for
     // "is this currently bold?". The mixed-toggle action will still
@@ -315,6 +318,13 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                             <Menu.ItemTitle>Remove filter</Menu.ItemTitle>
                         </Menu.Item>
                     )}
+                    <Separator className="my-1 mx-2" />
+                    <Menu.Item onPress={onMergeAll}>
+                        <Menu.ItemTitle>Merge cells</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Menu.Item onPress={onUnmergeMenuAction}>
+                        <Menu.ItemTitle>Unmerge</Menu.ItemTitle>
+                    </Menu.Item>
                 </Menu.Content>
             </Menu.Portal>
         </Menu>

@@ -54,6 +54,23 @@ type SheetMeta struct {
 	// Excelize forbids hiding the only visible sheet — see the guard
 	// in persist.go.
 	Hidden bool
+
+	// Merges enumerates merged-cell rectangles on this sheet. Each
+	// entry is the top-left anchor coordinate plus span dimensions.
+	// Empty/nil when the sheet has no merges. Round-trips through
+	// excelize MergeCell on save.
+	Merges []MergeRange
+}
+
+// MergeRange is one merged-cell rectangle anchored at (AnchorRow,
+// AnchorCol) with the given span dimensions. Anchor coordinates are
+// 1-based; spans are inclusive (1×1 means no merge — the encoder
+// drops that case).
+type MergeRange struct {
+	AnchorRow int
+	AnchorCol int
+	RowSpan   int
+	ColSpan   int
 }
 
 // CellEntry is one cell value the doc has touched. SheetID matches a

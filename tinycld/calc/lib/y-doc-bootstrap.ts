@@ -1,4 +1,5 @@
 import * as Y from 'yjs'
+import { MERGES_KEY } from './merge'
 import type { CellKind, CellRaw, CellStyle, WorkbookModel } from './workbook-types'
 import { yCellKey } from './y-cell-key'
 
@@ -113,6 +114,21 @@ export function bootstrapYDocFromWorkbook(doc: Y.Doc, model: WorkbookModel): voi
                 meta.set(SHEET_HIDDEN_KEY, true)
             }
             sheetsMap.set(sheetId, meta)
+
+            if (sheet.merges != null && sheet.merges.length > 0) {
+                const mergesMap = new Y.Map<{ rowSpan: number; colSpan: number }>()
+                for (const m of sheet.merges) {
+                    if (m.rowSpan < 1 || m.colSpan < 1) continue
+                    if (m.rowSpan === 1 && m.colSpan === 1) continue
+                    mergesMap.set(`${m.anchorRow}:${m.anchorCol}`, {
+                        rowSpan: m.rowSpan,
+                        colSpan: m.colSpan,
+                    })
+                }
+                if (mergesMap.size > 0) {
+                    meta.set(MERGES_KEY, mergesMap)
+                }
+            }
 
             for (const [localKey, value] of Object.entries(sheet.cells)) {
                 const parts = localKey.split(':')
