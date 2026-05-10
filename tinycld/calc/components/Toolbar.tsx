@@ -7,6 +7,7 @@ import {
     Italic,
     Percent,
     Redo,
+    Search,
     Strikethrough,
     Underline,
     Undo,
@@ -64,6 +65,8 @@ export interface ToolbarProps {
 
     horizontalAlign: HorizontalAlign | undefined
     onSetHorizontalAlign: (align: HorizontalAlign) => void
+
+    onOpenFind: () => void
 }
 
 // memo'd so that selection-range churn during a drag (which only
@@ -104,6 +107,7 @@ function ToolbarImpl(props: ToolbarProps) {
         onSetBorders,
         horizontalAlign,
         onSetHorizontalAlign,
+        onOpenFind,
     } = props
 
     return (
@@ -191,6 +195,9 @@ function ToolbarImpl(props: ToolbarProps) {
                 disabled={disabled}
                 onSetAlign={onSetHorizontalAlign}
             />
+            <ToolbarDivider />
+
+            <ToolbarButton icon={Search} onPress={onOpenFind} label="Find and replace" />
         </View>
     )
 }

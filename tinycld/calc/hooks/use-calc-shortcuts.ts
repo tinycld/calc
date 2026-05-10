@@ -1,29 +1,9 @@
 import { type Shortcut, useRegisterShortcuts } from '@tinycld/core/lib/shortcuts'
 import { useMemo } from 'react'
+import type { FindActions } from './find/use-find-actions'
+import type { FindStoreApi } from './find/use-find-store'
 import type { GridStoreApi } from './grid-store'
 import type { ClipboardActions } from './use-clipboard'
-
-// Calc-grid keyboard shortcuts. Phase 3 wires Cmd+C / Cmd+X / Cmd+V
-// plus the four paste-special variants to the orchestrating
-// useClipboard hook.
-//
-// Scope choice: 'global' with a `when` callback that gates on "a cell
-// is selected and no cell editor is open". The shortcut system also
-// gates on `inInput` automatically — when the cell editor's TextInput
-// has focus, Cmd+V should paste *into the input* as ordinary text, not
-// run our cell-paste action. `allowInInputs: false` (the default)
-// gives us that behaviour for free.
-//
-// We don't introduce a `'grid'` scope to the global scope union because
-// (a) there's only one Grid mounted at a time on calc screens, (b) the
-// inInput + selected-gate combination already disambiguates calc from
-// other apps, and (c) adding scopes touches the core type and isn't
-// worth the churn for Phase 3.
-//
-// Cut (Cmd+X) is registered here but is wired up in Phase 4 when the
-// marching-ants visual + source-clear-on-paste machinery lands. For
-// Phase 3 it falls back to a plain copy so users don't see a no-op
-// keybinding.
 
 export interface CalcFormatShortcutCallbacks {
     toggleBold: () => void
@@ -36,6 +16,8 @@ export interface UseCalcShortcutsArgs {
     store: GridStoreApi
     clipboard: ClipboardActions
     format: CalcFormatShortcutCallbacks
+    find: FindActions
+    findStore: FindStoreApi
     readOnly?: boolean
 }
 
@@ -47,19 +29,21 @@ export function buildCalcShortcuts({
     store,
     clipboard,
     format,
+    find,
+    findStore,
     readOnly = false,
 }: UseCalcShortcutsArgs): Shortcut[] {
-    // A shortcut should fire only when:
-    //   - a cell is selected (otherwise there's nothing to copy
-    //     from or paste into), and
-    //   - no cell editor is active (handled by allowInInputs:false
-    //     against the TextInput, plus this explicit check for the
-    //     editor's draft state held in the store rather than DOM
-    //     focus).
+    // The find dialog is also a gate: while it's open, regular
+    // grid shortcuts (copy/cut/paste/format) suspend so the user
+    // can't accidentally trip them while typing in the find input.
+    // The find dialog's own shortcuts (next/prev match, close) run
+    // with allowInInputs:true so they keep firing.
     const when = () => {
         const s = store.getState()
+        if (findStore.getState().isOpen) return false
         return s.selected != null && s.editSession == null
     }
+    const whenFindOpen = () => findStore.getState().isOpen
 
     return [
         {
@@ -90,9 +74,6 @@ export function buildCalcShortcuts({
             scope: 'global',
             group: 'Calc',
             description: 'Cancel cut',
-            // Only fires when a cut is actually pending; otherwise
-            // Esc passes through to other handlers (cancel edit,
-            // close menu, etc.).
             when: () => store.getState().cutPending,
             run: () => {
                 store.getState().clearClipboardMarker()
@@ -200,6 +181,54 @@ export function buildCalcShortcuts({
                 format.toggleStrike()
             },
         },
+        {
+            id: 'calc.find.open',
+            keys: '$mod+f',
+            scope: 'global',
+            group: 'Calc',
+            description: 'Find',
+            allowInInputs: true,
+            when: () => store.getState().editSession == null,
+            run: () => {
+                find.openFind()
+            },
+        },
+        {
+            id: 'calc.find.openReplace',
+            keys: '$mod+Shift+h',
+            scope: 'global',
+            group: 'Calc',
+            description: 'Find and replace',
+            allowInInputs: true,
+            when: () => !readOnly && store.getState().editSession == null,
+            run: () => {
+                find.openReplace()
+            },
+        },
+        {
+            id: 'calc.find.next',
+            keys: '$mod+g',
+            scope: 'global',
+            group: 'Calc',
+            description: 'Next match',
+            allowInInputs: true,
+            when: whenFindOpen,
+            run: () => {
+                find.nextMatch()
+            },
+        },
+        {
+            id: 'calc.find.prev',
+            keys: '$mod+Shift+g',
+            scope: 'global',
+            group: 'Calc',
+            description: 'Previous match',
+            allowInInputs: true,
+            when: whenFindOpen,
+            run: () => {
+                find.prevMatch()
+            },
+        },
     ]
 }
 
@@ -207,11 +236,13 @@ export function useCalcShortcuts({
     store,
     clipboard,
     format,
+    find,
+    findStore,
     readOnly = false,
 }: UseCalcShortcutsArgs) {
     const shortcuts = useMemo<Shortcut[]>(
-        () => buildCalcShortcuts({ store, clipboard, format, readOnly }),
-        [store, clipboard, format, readOnly]
+        () => buildCalcShortcuts({ store, clipboard, format, find, findStore, readOnly }),
+        [store, clipboard, format, find, findStore, readOnly]
     )
 
     useRegisterShortcuts(shortcuts)

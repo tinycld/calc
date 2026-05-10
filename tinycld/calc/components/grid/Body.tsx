@@ -14,6 +14,7 @@ import type { SheetWithId } from '../../hooks/use-y-sheets'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { Cell } from './Cell'
 import { CutMarchingAntsOverlay } from './CutMarchingAntsOverlay'
+import { FindMatchOverlay } from './FindMatchOverlay'
 import {
     FillPreviewOverlay,
     LocalSelectionOverlay,
@@ -135,6 +136,11 @@ export function Body({
                     {cells}
                     <RemoteOverlays
                         presenceOnSheet={presenceOnSheet}
+                        colOffsets={colOffsets}
+                        rowOffsets={rowOffsets}
+                    />
+                    <FindMatchOverlay
+                        sheetId={sheetId}
                         colOffsets={colOffsets}
                         rowOffsets={rowOffsets}
                     />

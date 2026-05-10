@@ -1,5 +1,12 @@
 import { forwardRef, useCallback, useMemo } from 'react'
 import { View } from 'react-native'
+import { useFindActions } from '../hooks/find/use-find-actions'
+import { createFindStore } from '../hooks/find/use-find-store'
+import {
+    FindStoreProvider,
+    useFindStore,
+    useFindStoreApi,
+} from '../hooks/find/use-find-store-context'
 import { useGridColumnResize } from '../hooks/grid/use-grid-column-resize'
 import { useGridFormatControls } from '../hooks/grid/use-grid-format-controls'
 import { useGridFormulaBar } from '../hooks/grid/use-grid-formula-bar'
@@ -18,6 +25,7 @@ import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
 import { useYSheets } from '../hooks/use-y-sheets'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
+import { FindReplaceDialog } from './FindReplaceDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
 import { Body } from './grid/Body'
@@ -64,18 +72,23 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
 ) {
     const { doc, awareness } = useWorkbook()
     const instance = useGridStoreInstance({ doc, awareness, sheetId, readOnly })
+    // One find store per workbook — kept stable across sheet switches
+    // so the dialog (and any in-flight query) survives navigation.
+    const findStore = useMemo(() => createFindStore(), [])
     return (
         <GridStoreProvider store={instance.store}>
-            <GridInner
-                sheetId={sheetId}
-                driveItemId={driveItemId}
-                minRows={minRows}
-                minCols={minCols}
-                readOnly={readOnly}
-                undoState={undoState}
-                instance={instance}
-                gridRef={ref}
-            />
+            <FindStoreProvider store={findStore}>
+                <GridInner
+                    sheetId={sheetId}
+                    driveItemId={driveItemId}
+                    minRows={minRows}
+                    minCols={minCols}
+                    readOnly={readOnly}
+                    undoState={undoState}
+                    instance={instance}
+                    gridRef={ref}
+                />
+            </FindStoreProvider>
         </GridStoreProvider>
     )
 })
@@ -161,6 +174,9 @@ function GridInner({
     // the shortcuts live for the lifetime of the Grid mount. The
     // clipboard hook owns the actual copy/paste plumbing.
     const clipboard = useClipboard({ doc, sheetId, store: instance.store, readOnly })
+    const findStore = useFindStoreApi()
+    const findActions = useFindActions({ doc, sheetId, findStore, readOnly })
+    const onOpenFind = useCallback(() => findActions.openFind(), [findActions])
 
     // Inline arrows for the currency/percent/decimal preset shortcuts
     // would re-create on every render and force <Toolbar> to re-render
@@ -187,7 +203,14 @@ function GridInner({
             toolbar.onToggleStrike,
         ]
     )
-    useCalcShortcuts({ store: instance.store, clipboard, format: formatShortcuts, readOnly })
+    useCalcShortcuts({
+        store: instance.store,
+        clipboard,
+        format: formatShortcuts,
+        find: findActions,
+        findStore,
+        readOnly,
+    })
 
     return (
         <View className="flex-1 bg-background web:select-none">
@@ -221,6 +244,7 @@ function GridInner({
                 onSetBorders={format.setBorders}
                 horizontalAlign={format.horizontalAlign}
                 onSetHorizontalAlign={format.setHorizontalAlign}
+                onOpenFind={onOpenFind}
             />
             <FormulaBar
                 ref={instance.formulaBarInputRef}
@@ -297,6 +321,21 @@ function GridInner({
                 onSelect={suggestions.onSelect}
                 onHover={suggestions.onHover}
             />
+            <FindReplaceDialogGate actions={findActions} />
         </View>
     )
+}
+
+interface FindReplaceDialogGateProps {
+    actions: ReturnType<typeof useFindActions>
+}
+
+// Tiny wrapper so the dialog mount/unmount toggles based on the find
+// store's isOpen without forcing GridInner to re-render the whole
+// subtree on every keystroke into the dialog. Subscribing inside this
+// component keeps the churn local.
+function FindReplaceDialogGate({ actions }: FindReplaceDialogGateProps) {
+    const isOpen = useFindStore(s => s.isOpen)
+    if (!isOpen) return null
+    return <FindReplaceDialog actions={actions} />
 }

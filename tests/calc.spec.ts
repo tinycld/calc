@@ -873,6 +873,71 @@ async function readCellTextStyle(
     )
 }
 
+test.describe('Find & Replace', () => {
+    test.setTimeout(120_000)
+
+    test.beforeEach(async ({ page }) => {
+        await login(page)
+    })
+
+    test('Cmd+F opens dialog, finds matches, switches to replace, replaces all, undo restores', async ({
+        page,
+    }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        await typeIntoCell(page, formulaBar, 'A1', 'apple')
+        await typeIntoCell(page, formulaBar, 'A2', 'banana')
+        await typeIntoCell(page, formulaBar, 'A3', 'apple pie')
+
+        // Click into the body (not a cell editor) so Cmd+F is captured
+        // by the global handler with no editor in flight.
+        await page.getByLabel('Cell B1', { exact: true }).click()
+
+        const isMac = process.platform === 'darwin'
+        const mod = isMac ? 'Meta' : 'Control'
+        await page.keyboard.press(`${mod}+f`)
+
+        const queryInput = page.getByLabel('Find query')
+        await expect(queryInput).toBeVisible()
+
+        await queryInput.fill('apple')
+        const counter = page.getByLabel('Find match counter')
+        await expect(counter).toHaveText('1 of 2')
+
+        // Yellow overlay rectangles render — at least one element with
+        // accessibility label "Find current match" should exist.
+        await expect(page.getByLabel('Find current match')).toBeVisible()
+
+        // Enter steps to next match.
+        await queryInput.press('Enter')
+        await expect(counter).toHaveText('2 of 2')
+
+        // Switch to replace mode via Cmd+Shift+H.
+        await page.keyboard.press(`${mod}+Shift+H`)
+        const replaceInput = page.getByLabel('Replace value')
+        await expect(replaceInput).toBeVisible()
+
+        await replaceInput.fill('orange')
+        await page.getByRole('button', { name: 'Replace all' }).click()
+
+        // Close the dialog so the cell text is unobstructed.
+        await page.getByRole('button', { name: 'Close find' }).click()
+        await expect(queryInput).toHaveCount(0)
+
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('orange')
+        await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('banana')
+        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('orange pie')
+
+        // Cmd+Z reverts the entire replace-all in a single step.
+        await page.getByLabel('Cell B1', { exact: true }).click()
+        await page.keyboard.press(`${mod}+z`)
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('apple')
+        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('apple pie')
+    })
+})
+
 async function typeIntoCell(
     page: import('@playwright/test').Page,
     formulaBar: import('@playwright/test').Locator,
