@@ -1075,3 +1075,80 @@ func TestSerializerStyleSetsStrike(t *testing.T) {
 		t.Errorf("B2 should be strikethrough after style overlay")
 	}
 }
+
+// stampFill pre-applies a solid red fill on a cell and returns the new
+// xlsx bytes. Used to seed an "existing fill" that clearing tests can
+// then attempt to remove.
+func stampFill(t *testing.T, xlsx []byte, sheetName string, row, col int) []byte {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	id, err := f.NewStyle(&excelize.Style{
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FF0000"}},
+	})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetCellStyle(sheetName, ref, ref, id); err != nil {
+		t.Fatalf("SetCellStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// TestSerializerStyleClearsFill: snapshot FgColor = "" on a cell that
+// already has a red fill must clear the foreground color. The trailing-
+// empty trimmer in the Fill override drops the now-empty color slot,
+// producing an empty Color slice which excelize treats as no fill color.
+func TestSerializerStyleClearsFill(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	seeded := stampFill(t, original, "People", 2, 2)
+	seededColors := readCellFillColors(t, seeded, "People", 2, 2)
+	if len(seededColors) == 0 || seededColors[0] != "FF0000" {
+		t.Fatalf("seed: want fill color FF0000, got %v", seededColors)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1",
+				Row:     2,
+				Col:     2,
+				Style: &CellStyle{
+					Fill: &CellFill{
+						FgColor: stringPtr(""),
+					},
+				},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	colors := readCellFillColors(t, out, "People", 2, 2)
+	// An empty-string FgColor patch trims the color slot — the resulting
+	// Color slice is empty, which means no fill color is set.
+	if len(colors) > 0 && colors[0] == "FF0000" {
+		t.Errorf("B2 fill color: empty-string clear failed — got %v (existing red fill survived)", colors)
+	}
+}
