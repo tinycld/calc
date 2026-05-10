@@ -92,7 +92,7 @@ func TestSerializerSingleCellChange(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestSerializerAppendNewSheet(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestSerializerRenameExistingSheet(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestSerializerFormulaCell(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestSerializerEmptySnapshot(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestSerializerEmptySnapshot(t *testing.T) {
 // TestSerializerEmptyOriginal: zero-length input must error rather
 // than silently produce an empty workbook.
 func TestSerializerEmptyOriginal(t *testing.T) {
-	if _, err := serializeSnapshotToXLSX(nil, YDocSnapshot{}); err == nil {
+	if _, err := serializeSnapshotToXLSX(nil, YDocSnapshot{}, nil); err == nil {
 		t.Fatal("expected error for nil original bytes, got nil")
 	}
 }
@@ -415,7 +415,7 @@ func TestSerializerStyleSetsBold(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestSerializerStylePartialOverlay(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(withSize, snap)
+	out, err := serializeSnapshotToXLSX(withSize, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -492,7 +492,7 @@ func TestSerializerStyleAbsentLeavesCellAlone(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(withSize, snap)
+	out, err := serializeSnapshotToXLSX(withSize, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -528,11 +528,74 @@ func TestSerializerStyleSetsItalic(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
 	if !readCellItalic(t, out, "People", 2, 2) {
 		t.Errorf("B2 should be italic after style overlay")
+	}
+}
+
+// readCellStrike returns the font.strike flag for the given cell.
+func readCellStrike(t *testing.T, xlsx []byte, sheetName string, row, col int) bool {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	id, err := f.GetCellStyle(sheetName, ref)
+	if err != nil {
+		t.Fatalf("get style %s!%s: %v", sheetName, ref, err)
+	}
+	if id == 0 {
+		return false
+	}
+	style, err := f.GetStyle(id)
+	if err != nil {
+		t.Fatalf("read style %d: %v", id, err)
+	}
+	if style == nil || style.Font == nil {
+		return false
+	}
+	return style.Font.Strike
+}
+
+// TestSerializerStyleSetsStrike: snapshot font.strike = true lands as
+// strikethrough on the xlsx cell.
+func TestSerializerStyleSetsStrike(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
+				RawString: "from-save",
+				Display:   "from-save",
+				Style:     &CellStyle{Font: &CellFont{Strike: boolPtr(true)}},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if !readCellStrike(t, out, "People", 2, 2) {
+		t.Errorf("B2 should be strikethrough after style overlay")
 	}
 }
