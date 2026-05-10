@@ -115,12 +115,21 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 			}
 		}
 
-		// Reassemble in a deterministic order.
+		// Reassemble: known edges in deterministic order, then any
+		// edge types we don't model verbatim (diagonalUp, diagonalDown,
+		// or future excelize additions). Map iteration order is
+		// non-deterministic, but the schema edges always come first so the
+		// common case stays stable; preserving unknown-typed entries here
+		// avoids silently dropping diagonals from imported workbooks.
 		out := make([]excelize.Border, 0, len(existing))
 		for _, edge := range edges {
 			if b, ok := existing[edge.name]; ok {
 				out = append(out, b)
+				delete(existing, edge.name)
 			}
+		}
+		for _, b := range existing {
+			out = append(out, b)
 		}
 		dst.Border = out
 	},

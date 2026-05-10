@@ -1240,6 +1240,81 @@ func TestSerializerStyleClearsBorder(t *testing.T) {
 	}
 }
 
+// TestSerializerStyleBordersPreservesDiagonals: a Borders patch must
+// not drop diagonalUp / diagonalDown borders that exist in the base
+// xlsx. Our schema only models the four orthogonal edges; anything
+// else excelize understands has to round-trip verbatim. Today the
+// toolbar can't author diagonals, but workbooks imported from Excel
+// frequently contain them — losing them silently on save would
+// corrupt the user's data.
+func TestSerializerStyleBordersPreservesDiagonals(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	// Pre-stamp B2 with both a top border and a diagonalUp border.
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	id, err := f.NewStyle(&excelize.Style{
+		Border: []excelize.Border{
+			{Type: "top", Color: "000000", Style: 1},
+			{Type: "diagonalUp", Color: "FF0000", Style: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetCellStyle("People", "B2", "B2", id); err != nil {
+		t.Fatalf("SetCellStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+	if got := readCellBorder(t, seeded, "People", 2, 2, "diagonalUp"); got.Style != 1 {
+		t.Fatalf("seed: want diagonalUp style=1, got style=%d", got.Style)
+	}
+
+	// Patch the four orthogonal edges only — diagonals are not in
+	// our schema and must survive untouched.
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1",
+				Row:     2,
+				Col:     2,
+				Style:   &CellStyle{Borders: &CellBorders{Bottom: boolPtr(true)}},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+
+	if got := readCellBorder(t, out, "People", 2, 2, "diagonalUp"); got.Style != 1 {
+		t.Errorf("diagonalUp border was silently dropped: want style=1, got style=%d", got.Style)
+	}
+	// The patch's own bottom edge landed.
+	if got := readCellBorder(t, out, "People", 2, 2, "bottom"); got.Style != 1 {
+		t.Errorf("bottom border (in patch) lost: want style=1, got %d", got.Style)
+	}
+	// The seeded top edge survives (it's a schema edge not in the patch).
+	if got := readCellBorder(t, out, "People", 2, 2, "top"); got.Style != 1 {
+		t.Errorf("top border (preserved schema edge) lost: want style=1, got %d", got.Style)
+	}
+}
+
 // TestSerializerStyleClearsFill: snapshot FgColor = "" on a cell that
 // already has a red fill must clear the foreground color. The trailing-
 // empty trimmer in the Fill override drops the now-empty color slot,
