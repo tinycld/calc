@@ -16,10 +16,7 @@
         "./components/*": "./tinycld/calc/components/*.tsx"
     },
     "scripts": {
-        "lint": "biome check .",
-        "lint:fix": "biome check --write .",
-        "typecheck": "tsc --noEmit --skipLibCheck",
-        "checks": "bun run lint && bun run typecheck"
+        "typecheck": "tsc --noEmit --skipLibCheck"
     },
     "peerDependencies": {
         "react": ">=19",

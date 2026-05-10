@@ -37,11 +37,8 @@ jobs:
         working-directory: tinycld
         run: bun run packages:link ../sheets
 
-      - name: Expose tinycld's node_modules to sheets
-        run: ln -s ../tinycld/node_modules sheets/node_modules
-
-      - name: Lint sheets
-        working-directory: sheets
+      - name: Lint (biome runs from tinycld; scans linked sheets via app rules)
+        working-directory: tinycld
         run: bun run lint
 
       # Typecheck runs from inside tinycld so module resolution sees the
