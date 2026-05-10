@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { FindActions } from '../tinycld/calc/hooks/find/use-find-actions'
+import type { FindStoreApi } from '../tinycld/calc/hooks/find/use-find-store'
+import type { GridStoreApi } from '../tinycld/calc/hooks/grid-store'
 import {
     buildCalcShortcuts,
     type CalcFormatShortcutCallbacks,
 } from '../tinycld/calc/hooks/use-calc-shortcuts'
-import type { GridStoreApi } from '../tinycld/calc/hooks/grid-store'
 import type { ClipboardActions } from '../tinycld/calc/hooks/use-clipboard'
 
 // buildCalcShortcuts is the pure factory the React hook wraps. Tests
@@ -47,6 +49,28 @@ function makeFormatCallbacks(): CalcFormatShortcutCallbacks {
     }
 }
 
+// Find dialog stubs — the merged shortcut bundle requires a find/findStore
+// pair to wire Cmd+F / Cmd+Shift+H / Cmd+G. Format-shortcut tests don't
+// exercise those bindings; the stubs are present only to satisfy the
+// argument shape.
+function makeFind(): FindActions {
+    return {
+        openFind: vi.fn(),
+        openReplace: vi.fn(),
+        close: vi.fn(),
+        nextMatch: vi.fn(),
+        prevMatch: vi.fn(),
+        replaceCurrent: vi.fn(),
+        replaceAll: vi.fn(),
+    }
+}
+
+function makeFindStore(isOpen = false): FindStoreApi {
+    return {
+        getState: () => ({ isOpen }) as unknown as ReturnType<FindStoreApi['getState']>,
+    } as unknown as FindStoreApi
+}
+
 const FORMAT_IDS = [
     'calc.format.bold',
     'calc.format.italic',
@@ -60,6 +84,8 @@ describe('buildCalcShortcuts — format shortcuts', () => {
             store: makeStore(),
             clipboard: makeClipboard(),
             format: makeFormatCallbacks(),
+            find: makeFind(),
+            findStore: makeFindStore(),
         })
 
         const byId = new Map(list.map(s => [s.id, s]))
@@ -82,6 +108,8 @@ describe('buildCalcShortcuts — format shortcuts', () => {
             store: makeStore(),
             clipboard: makeClipboard(),
             format,
+            find: makeFind(),
+            findStore: makeFindStore(),
         })
         const bold = list.find(s => s.id === 'calc.format.bold')
         expect(bold).toBeDefined()
@@ -99,6 +127,8 @@ describe('buildCalcShortcuts — format shortcuts', () => {
             store: makeStore(),
             clipboard: makeClipboard(),
             format,
+            find: makeFind(),
+            findStore: makeFindStore(),
         })
         list.find(s => s.id === 'calc.format.italic')?.run({ keys: '$mod+i' })
         expect(format.toggleItalic).toHaveBeenCalledTimes(1)
@@ -110,6 +140,8 @@ describe('buildCalcShortcuts — format shortcuts', () => {
             store: makeStore(),
             clipboard: makeClipboard(),
             format,
+            find: makeFind(),
+            findStore: makeFindStore(),
         })
         list.find(s => s.id === 'calc.format.underline')?.run({ keys: '$mod+u' })
         expect(format.toggleUnderline).toHaveBeenCalledTimes(1)
@@ -121,6 +153,8 @@ describe('buildCalcShortcuts — format shortcuts', () => {
             store: makeStore(),
             clipboard: makeClipboard(),
             format,
+            find: makeFind(),
+            findStore: makeFindStore(),
         })
         list.find(s => s.id === 'calc.format.strike')?.run({ keys: '$mod+Shift+x' })
         expect(format.toggleStrike).toHaveBeenCalledTimes(1)
@@ -131,6 +165,8 @@ describe('buildCalcShortcuts — format shortcuts', () => {
             store: makeStore({ selected: null }),
             clipboard: makeClipboard(),
             format: makeFormatCallbacks(),
+            find: makeFind(),
+            findStore: makeFindStore(),
         })
         for (const id of FORMAT_IDS) {
             const when = list.find(s => s.id === id)?.when
@@ -143,6 +179,8 @@ describe('buildCalcShortcuts — format shortcuts', () => {
             store: makeStore({ editSession: { draft: 'hello' } }),
             clipboard: makeClipboard(),
             format: makeFormatCallbacks(),
+            find: makeFind(),
+            findStore: makeFindStore(),
         })
         for (const id of FORMAT_IDS) {
             const when = list.find(s => s.id === id)?.when
@@ -155,6 +193,8 @@ describe('buildCalcShortcuts — format shortcuts', () => {
             store: makeStore(),
             clipboard: makeClipboard(),
             format: makeFormatCallbacks(),
+            find: makeFind(),
+            findStore: makeFindStore(),
             readOnly: true,
         })
         for (const id of FORMAT_IDS) {
@@ -168,6 +208,8 @@ describe('buildCalcShortcuts — format shortcuts', () => {
             store: makeStore(),
             clipboard: makeClipboard(),
             format: makeFormatCallbacks(),
+            find: makeFind(),
+            findStore: makeFindStore(),
         })
         for (const id of FORMAT_IDS) {
             const when = list.find(s => s.id === id)?.when

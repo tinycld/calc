@@ -1,4 +1,5 @@
-import { type Shortcut, useRegisterShortcuts } from '@tinycld/core/lib/shortcuts'
+import type { Shortcut } from '@tinycld/core/lib/shortcuts/types'
+import { useRegisterShortcuts } from '@tinycld/core/lib/shortcuts/use-register'
 import { useMemo } from 'react'
 import type { FindActions } from './find/use-find-actions'
 import type { FindStoreApi } from './find/use-find-store'
