@@ -755,6 +755,65 @@ func TestSerializerStyleSetsFontName(t *testing.T) {
 	}
 }
 
+// TestSerializerStyleClearsFontName: snapshot font.name = "" on a
+// cell that already has a font family in the base xlsx — does the
+// serializer clear it, or does excelize silently drop empty-string
+// Family writes (the same trap that motivated TestSerializerStyleClearsUnderline)?
+//
+// If the YDoc never sends Name: stringPtr("") today the test simply
+// documents the assumption: failure here means a real silent-drop
+// gap that a future user action (clearing the font picker) could trip.
+func TestSerializerStyleClearsFontName(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	id, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Family: "Courier New"}})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetCellStyle("People", "B2", "B2", id); err != nil {
+		t.Fatalf("SetCellStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+	if got := readCellFontFamily(t, seeded, "People", 2, 2); got != "Courier New" {
+		t.Fatalf("seed: want family=Courier New, got %q", got)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1",
+				Row:     2,
+				Col:     2,
+				Style:   &CellStyle{Font: &CellFont{Name: stringPtr("")}},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	if got := readCellFontFamily(t, out, "People", 2, 2); got == "Courier New" {
+		t.Errorf("B2 font family: empty-string clear failed silently — got %q (existing family survived)", got)
+	}
+}
+
 // TestSerializerStyleSetsStrike: snapshot font.strike = true lands as
 // strikethrough on the xlsx cell.
 func TestSerializerStyleSetsStrike(t *testing.T) {
