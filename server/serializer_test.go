@@ -1315,6 +1315,47 @@ func TestSerializerStyleBordersPreservesDiagonals(t *testing.T) {
 	}
 }
 
+// readSheetDimension returns the <dimension ref="..."/> string for
+// the given sheet, or "" if the workbook doesn't have one.
+func readSheetDimension(t *testing.T, xlsx []byte, sheetName string) string {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	dim, err := f.GetSheetDimension(sheetName)
+	if err != nil {
+		t.Fatalf("get dimension %s: %v", sheetName, err)
+	}
+	return dim
+}
+
+// TestSerializerExpandsSheetDimension: a snapshot whose SheetMeta
+// declares RowCount=50, ColCount=10 widens the workbook's <dimension>
+// to A1:J50 even when no new cells are written.
+func TestSerializerExpandsSheetDimension(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0, RowCount: 50, ColCount: 10},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	if got := readSheetDimension(t, out, "People"); got != "A1:J50" {
+		t.Errorf("People dimension: want %q, got %q", "A1:J50", got)
+	}
+}
+
 // TestSerializerStyleClearsFill: snapshot FgColor = "" on a cell that
 // already has a red fill must clear the foreground color. The trailing-
 // empty trimmer in the Fill override drops the now-empty color slot,

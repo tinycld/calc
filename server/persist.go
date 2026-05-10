@@ -164,6 +164,28 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		}
 	}
 
+	// Second pass: now that every sheet has its final name, write
+	// dimensions for any sheet whose snapshot carries non-zero counts.
+	// Sheets with rowCount==0 / colCount==0 are left at the workbook's
+	// existing <dimension> — that mirrors the "absence means untracked"
+	// convention the cell loop also follows.
+	for _, meta := range snap.Sheets {
+		if meta.RowCount <= 0 || meta.ColCount <= 0 {
+			continue
+		}
+		name, ok := sheetNameByID[meta.ID]
+		if !ok {
+			continue
+		}
+		bottomRight, err := excelize.CoordinatesToCellName(meta.ColCount, meta.RowCount)
+		if err != nil {
+			return nil, fmt.Errorf("dimension coords (%d,%d): %w", meta.ColCount, meta.RowCount, err)
+		}
+		if err := f.SetSheetDimension(name, "A1:"+bottomRight); err != nil {
+			return nil, fmt.Errorf("set dimension on %s: %w", name, err)
+		}
+	}
+
 	for _, cell := range snap.Cells {
 		sheetName, ok := sheetNameByID[cell.SheetID]
 		if !ok {

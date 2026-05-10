@@ -19,6 +19,13 @@ type SheetMeta struct {
 	ID       string
 	Name     string
 	Position int
+
+	// RowCount and ColCount mirror the Y.Doc's per-sheet rowCount /
+	// colCount keys — the grid extent the user has scrolled / inserted
+	// into. Zero means "Y.Doc didn't track a count for this sheet"; the
+	// serializer leaves the workbook's existing <dimension> alone.
+	RowCount int
+	ColCount int
 }
 
 // CellEntry is one cell value the doc has touched. SheetID matches a

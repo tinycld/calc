@@ -186,10 +186,10 @@ func (h *sheetsDocHandle) Snapshot() (YDocSnapshot, error) {
 
 // collectSheets walks the top-level "sheets" YMap and returns sheet
 // metadata sorted by position. Each value should itself be a YMap
-// holding name/position (and rowCount/colCount, which we don't
-// surface). Non-YMap values are skipped — they would indicate a
-// schema violation but we'd rather ship a partial snapshot than fail
-// the whole save.
+// holding name/position/rowCount/colCount (and optionally rowHeights/
+// colWidths/rowStyles, surfaced separately in later passes). Non-YMap
+// values are skipped — they would indicate a schema violation but
+// we'd rather ship a partial snapshot than fail the whole save.
 func collectSheets(sheetsMap *ycrdt.YMap) []SheetMeta {
 	out := make([]SheetMeta, 0, sheetsMap.GetSize())
 	sheetsMap.ForEach(func(sheetID string, value any, _ *ycrdt.YMap) {
@@ -205,6 +205,8 @@ func collectSheets(sheetsMap *ycrdt.YMap) []SheetMeta {
 			ID:       sheetID,
 			Name:     name,
 			Position: numberFromAny(meta.Get("position")),
+			RowCount: numberFromAny(meta.Get("rowCount")),
+			ColCount: numberFromAny(meta.Get("colCount")),
 		})
 	})
 	// Stable sort by position (slice index is what the serializer
