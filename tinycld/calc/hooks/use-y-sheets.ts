@@ -1,5 +1,6 @@
+import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import { useCallback, useRef, useSyncExternalStore } from 'react'
-import type * as Y from 'yjs'
+import * as Y from 'yjs'
 import {
     type ColWidths,
     type RowHeights,
@@ -57,6 +58,44 @@ export function useYSheets(doc: Y.Doc | null): SheetWithId[] {
     }, [doc])
 
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+// addSheet creates a new sheet in the workbook with a unique id and a
+// sensible default name, then returns its id so callers can immediately
+// write into it (e.g. CSV import lands rows on the freshly-created
+// sheet). Position is the next free slot at the end of the existing
+// stack.
+//
+// Tagged LOCAL_ORIGIN so the realtime undo manager captures the sheet
+// creation as one undoable. Idempotency: callers must not pre-supply
+// the id; this function picks `sheet${N+1}` where N is the current
+// count and bumps until free, preserving the bootstrap convention.
+export function addSheet(doc: Y.Doc, options: { name?: string } = {}): string {
+    const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+    let nextIndex = sheetsMap.size + 1
+    while (sheetsMap.has(`sheet${nextIndex}`)) nextIndex++
+    const sheetId = `sheet${nextIndex}`
+    const name = options.name ?? defaultSheetName(sheetsMap)
+    doc.transact(() => {
+        const meta = new Y.Map<unknown>()
+        meta.set('name', name)
+        meta.set('position', sheetsMap.size)
+        meta.set('rowCount', 0)
+        meta.set('colCount', 0)
+        sheetsMap.set(sheetId, meta)
+    }, LOCAL_ORIGIN)
+    return sheetId
+}
+
+function defaultSheetName(sheetsMap: Y.Map<Y.Map<unknown>>): string {
+    const taken = new Set<string>()
+    sheetsMap.forEach(meta => {
+        const name = meta.get('name')
+        if (typeof name === 'string') taken.add(name)
+    })
+    let n = sheetsMap.size + 1
+    while (taken.has(`Sheet${n}`)) n++
+    return `Sheet${n}`
 }
 
 function sameSheets(a: SheetWithId[], b: SheetWithId[]): boolean {

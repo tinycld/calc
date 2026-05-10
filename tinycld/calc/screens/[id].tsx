@@ -3,8 +3,9 @@ import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
+import type * as Y from 'yjs'
 import { Grid } from '../components/Grid'
 import { CommentsProvider } from '../components/grid/CommentsContext'
 import { SheetTabs } from '../components/SheetTabs'
@@ -13,7 +14,9 @@ import { useFormulaBridge } from '../hooks/use-formula-bridge'
 import { useRealtime } from '../hooks/use-realtime'
 import { useUndoManager } from '../hooks/use-undo-manager'
 import { useWorkbook, WorkbookProvider } from '../hooks/use-workbook-context'
-import { useYSheets } from '../hooks/use-y-sheets'
+import { addSheet, useYSheets } from '../hooks/use-y-sheets'
+import { applyCsvToDoc } from '../lib/csv/apply-paste'
+import { useCsvImportStore } from '../lib/csv/import-store'
 
 export default function CalcDetail() {
     const { id, sheet: sheetParam } = useLocalSearchParams<{ id: string; sheet?: string }>()
@@ -68,6 +71,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     const sheets = useYSheets(doc)
     const orgHref = useOrgHref()
     const comments = useCellComments(workbookId)
+    usePendingCsvImport(doc, workbookId, sheets.length > 0)
 
     // Resolve the active sheet from the URL query, falling back to the
     // first sheet when the param is missing or stale (peer-renamed,
@@ -125,4 +129,26 @@ function ConnectionStatus({ isConnected }: { isConnected: boolean }) {
             <Text className="text-xs text-muted-foreground">Reconnecting…</Text>
         </View>
     )
+}
+
+// Drains the pending CSV import (if any) for this workbook once the doc
+// has at least one sheet — that's the signal that the realtime room
+// finished its initial bootstrap (xlsx → Y.Doc on the server). The
+// import lands on a freshly-added sheet so the existing blank Sheet1
+// stays untouched and the user sees their data in a separate tab.
+//
+// The ref guard prevents double-application: useEffect re-runs after
+// addSheet/applyCsvToDoc bump the sheets array (and hence the
+// hasSheets dep), but the store has already been drained by `take()`.
+function usePendingCsvImport(doc: Y.Doc, workbookId: string, hasSheets: boolean): void {
+    const take = useCsvImportStore(s => s.take)
+    const handled = useRef(false)
+    useEffect(() => {
+        if (!hasSheets || handled.current) return
+        const pending = take(workbookId)
+        if (pending == null) return
+        handled.current = true
+        const sheetId = addSheet(doc, { name: 'Imported' })
+        applyCsvToDoc(doc, sheetId, 1, 1, pending.rows)
+    }, [doc, workbookId, hasSheets, take])
 }

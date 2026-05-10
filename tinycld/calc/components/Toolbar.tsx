@@ -18,6 +18,7 @@ import type { HorizontalAlign } from '../hooks/grid/use-grid-format-controls'
 import type { BorderPresetId } from '../lib/border-presets'
 import type { CellBorders } from '../lib/workbook-types'
 import { BordersMenu } from './toolbar/BordersMenu'
+import { DownloadMenu } from './toolbar/DownloadMenu'
 import { FillColorMenu } from './toolbar/FillColorMenu'
 import { FontSizeStepper } from './toolbar/FontSizeStepper'
 import { HorizontalAlignMenu } from './toolbar/HorizontalAlignMenu'
@@ -67,6 +68,10 @@ export interface ToolbarProps {
     onSetHorizontalAlign: (align: HorizontalAlign) => void
 
     onOpenFind: () => void
+
+    onDownloadCsvCurrent: () => void
+    onDownloadCsvAll: () => void
+    onDownloadXlsx?: () => void
 }
 
 // memo'd so that selection-range churn during a drag (which only
@@ -108,6 +113,9 @@ function ToolbarImpl(props: ToolbarProps) {
         horizontalAlign,
         onSetHorizontalAlign,
         onOpenFind,
+        onDownloadCsvCurrent,
+        onDownloadCsvAll,
+        onDownloadXlsx,
     } = props
 
     return (
@@ -198,6 +206,11 @@ function ToolbarImpl(props: ToolbarProps) {
             <ToolbarDivider />
 
             <ToolbarButton icon={Search} onPress={onOpenFind} label="Find and replace" />
+            <DownloadMenu
+                onDownloadCsvCurrent={onDownloadCsvCurrent}
+                onDownloadCsvAll={onDownloadCsvAll}
+                onDownloadXlsx={onDownloadXlsx}
+            />
         </View>
     )
 }

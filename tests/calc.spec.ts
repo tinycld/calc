@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { login, navigateToPackage } from '../../../../tests/e2e/helpers'
 
@@ -998,3 +1001,63 @@ async function readHeaderRects(page: import('@playwright/test').Page): Promise<{
         return { A: find('A'), B: find('B') }
     })
 }
+
+test.describe('Calc CSV import/export', () => {
+    test.setTimeout(120_000)
+
+    test.beforeEach(async ({ page }) => {
+        await login(page)
+    })
+
+    test('Download as CSV (current sheet) writes the active grid', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        await typeIntoCell(page, formulaBar, 'A1', 'Name')
+        await typeIntoCell(page, formulaBar, 'B1', 'Score')
+        await typeIntoCell(page, formulaBar, 'A2', 'Alice')
+        await typeIntoCell(page, formulaBar, 'B2', '42')
+        await typeIntoCell(page, formulaBar, 'A3', 'Bob')
+        await typeIntoCell(page, formulaBar, 'B3', '37')
+
+        await page.getByRole('button', { name: 'Download' }).click()
+        const downloadPromise = page.waitForEvent('download')
+        await page.getByText('Download as CSV (current sheet)').click()
+        const download = await downloadPromise
+        expect(download.suggestedFilename()).toMatch(/\.csv$/)
+
+        const savedPath = join(tmpdir(), `calc-csv-${Date.now()}.csv`)
+        await download.saveAs(savedPath)
+        const contents = readFileSync(savedPath, 'utf-8')
+        expect(contents).toContain('Name,Score')
+        expect(contents).toContain('Alice,42')
+        expect(contents).toContain('Bob,37')
+    })
+
+    test('Import CSV creates a new spreadsheet from the file picker', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible({
+            timeout: 30_000,
+        })
+
+        const csv = 'Title,Count\r\nApples,12\r\nOranges,7'
+        const fileChooserPromise = page.waitForEvent('filechooser')
+        await page.getByRole('button', { name: 'Import CSV' }).click()
+        const chooser = await fileChooserPromise
+        await chooser.setFiles({
+            name: 'fruit.csv',
+            mimeType: 'text/csv',
+            buffer: Buffer.from(csv, 'utf-8'),
+        })
+
+        await page.getByRole('button', { name: 'Confirm CSV import' }).click()
+        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Title', {
+            timeout: 75_000,
+        })
+        await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Count')
+        await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('Apples')
+        await expect(page.getByLabel('Cell B2', { exact: true })).toHaveText('12')
+    })
+})

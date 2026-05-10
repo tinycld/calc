@@ -24,6 +24,8 @@ import { usePresence } from '../hooks/use-presence'
 import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
 import { useYSheets } from '../hooks/use-y-sheets'
+import { downloadCsv } from '../lib/csv/download'
+import { serializeSheetToCsv } from '../lib/csv/encode'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { FindReplaceDialog } from './FindReplaceDialog'
 import { FormulaBar } from './FormulaBar'
@@ -212,6 +214,22 @@ function GridInner({
         readOnly,
     })
 
+    const onDownloadCsvCurrent = useCallback(() => {
+        const csv = serializeSheetToCsv(doc, sheetId)
+        const filename = `${sanitizeFilename(sheet?.name ?? 'sheet')}.csv`
+        void downloadCsv(filename, csv)
+    }, [doc, sheetId, sheet?.name])
+
+    // v1: one download per sheet (multiple "Save As" prompts in browsers).
+    // TODO: zip all sheets into a single .zip download.
+    const onDownloadCsvAll = useCallback(() => {
+        for (const s of sheets) {
+            const csv = serializeSheetToCsv(doc, s.id)
+            const filename = `${sanitizeFilename(s.name)}.csv`
+            void downloadCsv(filename, csv)
+        }
+    }, [doc, sheets])
+
     return (
         <View className="flex-1 bg-background web:select-none">
             <Toolbar
@@ -245,6 +263,8 @@ function GridInner({
                 horizontalAlign={format.horizontalAlign}
                 onSetHorizontalAlign={format.setHorizontalAlign}
                 onOpenFind={onOpenFind}
+                onDownloadCsvCurrent={onDownloadCsvCurrent}
+                onDownloadCsvAll={onDownloadCsvAll}
             />
             <FormulaBar
                 ref={instance.formulaBarInputRef}
@@ -338,4 +358,13 @@ function FindReplaceDialogGate({ actions }: FindReplaceDialogGateProps) {
     const isOpen = useFindStore(s => s.isOpen)
     if (!isOpen) return null
     return <FindReplaceDialog actions={actions} />
+}
+
+// Filesystem-safe filename: replaces characters disallowed by macOS /
+// Windows / Linux with underscore, collapses runs, and trims edge
+// underscores. Browser download dialogs already coerce some of these
+// but the native (expo-file-system) write path needs it cleaned first.
+function sanitizeFilename(name: string): string {
+    const cleaned = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
+    return cleaned.replace(/_+/g, '_').replace(/^_|_$/g, '') || 'sheet'
 }
