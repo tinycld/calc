@@ -212,12 +212,12 @@ func TestSerializerFormulaCell(t *testing.T) {
 			// A1 is the row index column; F2 is the Age column.
 			// Put a formula somewhere unused: K1 = F2+F3.
 			{
-				SheetID: "sheet1",
-				Row:     1,
-				Col:     11,
+				SheetID:   "sheet1",
+				Row:       1,
+				Col:       11,
 				RawString: "57",
-				Display: "57",
-				Formula: "F2+F3",
+				Display:   "57",
+				Formula:   "F2+F3",
 			},
 		},
 	}
@@ -405,12 +405,12 @@ func TestSerializerStyleSetsBold(t *testing.T) {
 		},
 		Cells: []CellEntry{
 			{
-				SheetID: "sheet1",
-				Row:     2,
-				Col:     2,
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
 				RawString: "from-save",
-				Display: "from-save",
-				Style:   &CellStyle{Font: &CellFont{Bold: boolPtr(true)}},
+				Display:   "from-save",
+				Style:     &CellStyle{Font: &CellFont{Bold: boolPtr(true)}},
 			},
 		},
 	}
@@ -451,12 +451,12 @@ func TestSerializerStylePartialOverlay(t *testing.T) {
 		},
 		Cells: []CellEntry{
 			{
-				SheetID: "sheet1",
-				Row:     2,
-				Col:     2,
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
 				RawString: "from-save",
-				Display: "from-save",
-				Style:   &CellStyle{Font: &CellFont{Bold: boolPtr(true)}},
+				Display:   "from-save",
+				Style:     &CellStyle{Font: &CellFont{Bold: boolPtr(true)}},
 			},
 		},
 	}
@@ -940,106 +940,106 @@ func TestSerializerStyleClearsNumFmt(t *testing.T) {
 // border / numFmt readers added in later tasks. Returns nil if the
 // cell has no style.
 func getCellStyle(t *testing.T, xlsx []byte, sheetName string, row, col int) *excelize.Style {
-    t.Helper()
-    f, err := excelize.OpenReader(bytes.NewReader(xlsx))
-    if err != nil {
-        t.Fatalf("open xlsx: %v", err)
-    }
-    defer func() { _ = f.Close() }()
-    ref, err := excelize.CoordinatesToCellName(col, row)
-    if err != nil {
-        t.Fatalf("coords (%d,%d): %v", col, row, err)
-    }
-    id, err := f.GetCellStyle(sheetName, ref)
-    if err != nil {
-        t.Fatalf("get style %s!%s: %v", sheetName, ref, err)
-    }
-    if id == 0 {
-        return nil
-    }
-    style, err := f.GetStyle(id)
-    if err != nil {
-        t.Fatalf("read style %d: %v", id, err)
-    }
-    return style
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	id, err := f.GetCellStyle(sheetName, ref)
+	if err != nil {
+		t.Fatalf("get style %s!%s: %v", sheetName, ref, err)
+	}
+	if id == 0 {
+		return nil
+	}
+	style, err := f.GetStyle(id)
+	if err != nil {
+		t.Fatalf("read style %d: %v", id, err)
+	}
+	return style
 }
 
 // readCellFillType returns the cell's fill.type ("" / "pattern").
 func readCellFillType(t *testing.T, xlsx []byte, sheetName string, row, col int) string {
-    t.Helper()
-    style := getCellStyle(t, xlsx, sheetName, row, col)
-    if style == nil {
-        return ""
-    }
-    return style.Fill.Type
+	t.Helper()
+	style := getCellStyle(t, xlsx, sheetName, row, col)
+	if style == nil {
+		return ""
+	}
+	return style.Fill.Type
 }
 
 // readCellFillPattern returns the cell's fill.pattern enum index (0 = none, 1 = solid).
 func readCellFillPattern(t *testing.T, xlsx []byte, sheetName string, row, col int) int {
-    t.Helper()
-    style := getCellStyle(t, xlsx, sheetName, row, col)
-    if style == nil {
-        return 0
-    }
-    return style.Fill.Pattern
+	t.Helper()
+	style := getCellStyle(t, xlsx, sheetName, row, col)
+	if style == nil {
+		return 0
+	}
+	return style.Fill.Pattern
 }
 
 // readCellFillColors returns the fill.Color slice for the cell.
 func readCellFillColors(t *testing.T, xlsx []byte, sheetName string, row, col int) []string {
-    t.Helper()
-    style := getCellStyle(t, xlsx, sheetName, row, col)
-    if style == nil {
-        return nil
-    }
-    return style.Fill.Color
+	t.Helper()
+	style := getCellStyle(t, xlsx, sheetName, row, col)
+	if style == nil {
+		return nil
+	}
+	return style.Fill.Color
 }
 
 // TestSerializerStyleSetsFill: snapshot fill.type=pattern + pattern=solid
 // + fgColor=#FF0000 lands as a solid red fill on the xlsx cell.
 func TestSerializerStyleSetsFill(t *testing.T) {
-    original, err := os.ReadFile(tinyXlsxPath)
-    if err != nil {
-        t.Fatalf("read fixture: %v", err)
-    }
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
 
-    snap := YDocSnapshot{
-        Sheets: []SheetMeta{
-            {ID: "sheet1", Name: "People", Position: 0},
-            {ID: "sheet2", Name: "Incomes", Position: 1},
-        },
-        Cells: []CellEntry{
-            {
-                SheetID:   "sheet1",
-                Row:       2,
-                Col:       2,
-                RawString: "from-save",
-                Display:   "from-save",
-                Style: &CellStyle{
-                    Fill: &CellFill{
-                        Type:    stringPtr("pattern"),
-                        Pattern: stringPtr("solid"),
-                        FgColor: stringPtr("#FF0000"),
-                    },
-                },
-            },
-        },
-    }
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
+				RawString: "from-save",
+				Display:   "from-save",
+				Style: &CellStyle{
+					Fill: &CellFill{
+						Type:    stringPtr("pattern"),
+						Pattern: stringPtr("solid"),
+						FgColor: stringPtr("#FF0000"),
+					},
+				},
+			},
+		},
+	}
 
-    out, err := serializeSnapshotToXLSX(original, snap, nil)
-    if err != nil {
-        t.Fatalf("serializeSnapshotToXLSX: %v", err)
-    }
-    if got := readCellFillType(t, out, "People", 2, 2); got != "pattern" {
-        t.Errorf("B2 fill.type: want %q, got %q", "pattern", got)
-    }
-    if got := readCellFillPattern(t, out, "People", 2, 2); got != 1 {
-        t.Errorf("B2 fill.pattern: want 1 (solid), got %d", got)
-    }
-    colors := readCellFillColors(t, out, "People", 2, 2)
-    if len(colors) == 0 || colors[0] != "FF0000" {
-        // excelize strips the leading # on read-back.
-        t.Errorf("B2 fill.colors: want [\"FF0000\"...], got %v", colors)
-    }
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if got := readCellFillType(t, out, "People", 2, 2); got != "pattern" {
+		t.Errorf("B2 fill.type: want %q, got %q", "pattern", got)
+	}
+	if got := readCellFillPattern(t, out, "People", 2, 2); got != 1 {
+		t.Errorf("B2 fill.pattern: want 1 (solid), got %d", got)
+	}
+	colors := readCellFillColors(t, out, "People", 2, 2)
+	if len(colors) == 0 || colors[0] != "FF0000" {
+		// excelize strips the leading # on read-back.
+		t.Errorf("B2 fill.colors: want [\"FF0000\"...], got %v", colors)
+	}
 }
 
 // TestSerializerStyleSetsStrike: snapshot font.strike = true lands as
@@ -1147,8 +1147,8 @@ func TestSerializerStyleClearsFill(t *testing.T) {
 	}
 	colors := readCellFillColors(t, out, "People", 2, 2)
 	// An empty-string FgColor patch trims the color slot — the resulting
-	// Color slice is empty, which means no fill color is set.
-	if len(colors) > 0 && colors[0] == "FF0000" {
-		t.Errorf("B2 fill color: empty-string clear failed — got %v (existing red fill survived)", colors)
+	// Color slice should be empty, which means no fill color is set.
+	if len(colors) != 0 {
+		t.Errorf("B2 fill color: want empty slice after clear, got %v", colors)
 	}
 }
