@@ -57,7 +57,10 @@ export function readRowStylesFromMeta(meta: Y.Map<unknown> | undefined): RowStyl
 // readRowStyleFromMeta reads a single row's style without allocating
 // the full sparse Record. Used by per-cell selectors that only care
 // about their own row.
-export function readRowStyleFromMeta(meta: Y.Map<unknown> | undefined, row: number): CellStyle | undefined {
+export function readRowStyleFromMeta(
+    meta: Y.Map<unknown> | undefined,
+    row: number
+): CellStyle | undefined {
     if (meta == null) return undefined
     const styles = meta.get(ROW_STYLES_KEY)
     if (!(styles instanceof Y.Map)) return undefined
@@ -74,7 +77,12 @@ export function readRowStyleFromMeta(meta: Y.Map<unknown> | undefined, row: numb
 // manager captures the write (sheet-meta mutations land under
 // SHEETS_MAP, which the undo manager already scopes — see
 // use-undo-manager.ts).
-export function setYRowStyle(doc: Y.Doc | null, sheetId: string, row: number, patch: CellStyle): void {
+export function setYRowStyle(
+    doc: Y.Doc | null,
+    sheetId: string,
+    row: number,
+    patch: CellStyle
+): void {
     if (doc == null) return
     const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
     const meta = sheetsMap.get(sheetId)
@@ -105,7 +113,8 @@ export function setYRowStyle(doc: Y.Doc | null, sheetId: string, row: number, pa
                 continue
             }
             const existing = rowStyle.get(groupKey)
-            const groupMap: Y.Map<unknown> = existing instanceof Y.Map ? existing : new Y.Map<unknown>()
+            const groupMap: Y.Map<unknown> =
+                existing instanceof Y.Map ? existing : new Y.Map<unknown>()
             if (existing !== groupMap) rowStyle.set(groupKey, groupMap)
             for (const [k, v] of Object.entries(groupPatch)) {
                 if (v == null) continue

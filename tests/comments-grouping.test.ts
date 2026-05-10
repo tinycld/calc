@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
     buildThreads,
+    type CommentRow,
     cellHasUnresolvedThreads,
     cellKey,
-    type CommentRow,
     groupCommentsByCell,
 } from '../tinycld/calc/lib/comments'
 

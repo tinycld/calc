@@ -4,9 +4,9 @@ import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { useMemo } from 'react'
 import {
     buildThreads,
+    type CommentRow,
     cellHasUnresolvedThreads,
     cellKey,
-    type CommentRow,
     groupCommentsByCell,
     type Thread,
 } from '../lib/comments'

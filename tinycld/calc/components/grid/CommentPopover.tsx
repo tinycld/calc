@@ -1,7 +1,7 @@
+import { errorToString } from '@tinycld/core/lib/errors'
+import { useCurrentRole } from '@tinycld/core/lib/use-current-role'
 import { FormErrorSummary, TextAreaInput, useForm, z, zodResolver } from '@tinycld/core/ui/form'
 import { Menu } from '@tinycld/core/ui/menu'
-import { useCurrentRole } from '@tinycld/core/lib/use-current-role'
-import { errorToString } from '@tinycld/core/lib/errors'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useCommentMutations } from '../../hooks/use-comment-mutations'
@@ -76,8 +76,7 @@ export function CommentPopover({ driveItemId, sheetId }: CommentPopoverProps) {
         [onClose]
     )
 
-    const threads =
-        target && ctx ? ctx.getThreads(sheetId, target.cell.row, target.cell.col) : []
+    const threads = target && ctx ? ctx.getThreads(sheetId, target.cell.row, target.cell.col) : []
 
     return (
         <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
@@ -215,9 +214,7 @@ function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: Popov
                             key={thread.root.id}
                             thread={thread}
                             currentUserOrgId={userOrgId}
-                            onEdit={(id, body) =>
-                                editBody.mutate({ id, body })
-                            }
+                            onEdit={(id, body) => editBody.mutate({ id, body })}
                             onDelete={id => remove.mutate({ id })}
                         />
                     ))
@@ -241,9 +238,7 @@ function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: Popov
                         accessibilityLabel="Cancel comment"
                         className="px-3 py-1.5 rounded-md"
                     >
-                        <Text className="text-xs font-semibold text-muted-foreground">
-                            Cancel
-                        </Text>
+                        <Text className="text-xs font-semibold text-muted-foreground">Cancel</Text>
                     </Pressable>
                     <Pressable
                         onPress={onSubmit}
@@ -326,21 +321,14 @@ function CommentLine({ comment, isOwn, onEdit, onDelete }: CommentLineProps) {
     if (editing) {
         return (
             <View>
-                <TextAreaInput
-                    control={control}
-                    name="body"
-                    autoFocus
-                    numberOfLines={2}
-                />
+                <TextAreaInput control={control} name="body" autoFocus numberOfLines={2} />
                 <View className="flex-row justify-end gap-2">
                     <Pressable
                         onPress={onCancel}
                         accessibilityLabel="Cancel edit"
                         className="px-2 py-1"
                     >
-                        <Text className="text-xs font-semibold text-muted-foreground">
-                            Cancel
-                        </Text>
+                        <Text className="text-xs font-semibold text-muted-foreground">Cancel</Text>
                     </Pressable>
                     <Pressable
                         onPress={onSave}
@@ -357,9 +345,7 @@ function CommentLine({ comment, isOwn, onEdit, onDelete }: CommentLineProps) {
     return (
         <View>
             <View className="flex-row items-baseline gap-2">
-                <Text className="text-xs font-semibold text-foreground">
-                    {comment.author_name}
-                </Text>
+                <Text className="text-xs font-semibold text-foreground">{comment.author_name}</Text>
                 <Text className="text-xs text-muted-foreground">
                     {formatTimestamp(comment.created)}
                 </Text>

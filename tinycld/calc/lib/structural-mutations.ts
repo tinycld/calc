@@ -34,8 +34,8 @@ import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import * as Y from 'yjs'
 import { COL_WIDTHS_KEY, ROW_HEIGHTS_KEY } from './dimensions'
 import { ROW_STYLES_KEY } from './sheet-styles'
-import { CELLS_MAP, SHEETS_MAP } from './y-doc-bootstrap'
 import { parseYCellKey, yCellKey } from './y-cell-key'
+import { CELLS_MAP, SHEETS_MAP } from './y-doc-bootstrap'
 
 type RowInsertPosition = 'above' | 'below'
 type ColInsertPosition = 'left' | 'right'
@@ -253,12 +253,7 @@ export function insertColumns(
     }, LOCAL_ORIGIN)
 }
 
-export function deleteRows(
-    doc: Y.Doc,
-    sheetId: string,
-    fromRow: number,
-    count: number
-): void {
+export function deleteRows(doc: Y.Doc, sheetId: string, fromRow: number, count: number): void {
     if (count <= 0) return
     if (fromRow < 1) return
     const meta = getSheetMeta(doc, sheetId)
@@ -324,12 +319,7 @@ export function deleteRows(
     }, LOCAL_ORIGIN)
 }
 
-export function deleteColumns(
-    doc: Y.Doc,
-    sheetId: string,
-    fromCol: number,
-    count: number
-): void {
+export function deleteColumns(doc: Y.Doc, sheetId: string, fromCol: number, count: number): void {
     if (count <= 0) return
     if (fromCol < 1) return
     const meta = getSheetMeta(doc, sheetId)

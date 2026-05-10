@@ -70,9 +70,7 @@ export function buildThreads(rowsForCell: CommentRow[]): Thread[] {
         if (!t) continue
         t.replies.push(r)
     }
-    return Array.from(threads.values()).sort((a, b) =>
-        compareByCreated(a.root, b.root)
-    )
+    return Array.from(threads.values()).sort((a, b) => compareByCreated(a.root, b.root))
 }
 
 // cellHasUnresolvedThreads returns true iff at least one thread on the

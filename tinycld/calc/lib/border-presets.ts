@@ -55,12 +55,7 @@ export function resolveBorderPatch(
     if (isBottomRow) patch.bottom = true
     if (isLeftCol) patch.left = true
     if (isRightCol) patch.right = true
-    if (
-        patch.top == null &&
-        patch.bottom == null &&
-        patch.left == null &&
-        patch.right == null
-    ) {
+    if (patch.top == null && patch.bottom == null && patch.left == null && patch.right == null) {
         return null
     }
     return patch
