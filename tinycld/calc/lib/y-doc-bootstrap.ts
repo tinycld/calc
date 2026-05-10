@@ -46,6 +46,10 @@ export interface YSheetMeta {
     // Sparse per-row height overrides. Absent = render at
     // DEFAULT_ROW_HEIGHT. Read via `readRowHeight` in lib/dimensions.ts.
     rowHeights?: Record<number, number>
+    // Sparse per-row style overrides. Absent = no row-level style,
+    // cells render with their own + col/sheet layers only. Read via
+    // `readRowStylesFromMeta` in lib/sheet-styles.ts.
+    rowStyles?: Record<number, import('./workbook-types').CellStyle>
 }
 
 // YCellValue is the typed snapshot returned by useYCell. `kind` carries
@@ -232,13 +236,13 @@ export function buildStyleYMap(style: CellStyle): Y.Map<unknown> | null {
     return any ? out : null
 }
 
-// readStyleFromYMap is the inverse of buildStyleYMap — walks the
-// nested style Y.Map tree and produces a partial CellStyle. Returns
-// undefined if the cell has no style entry or the entry is empty.
-export function readStyleFromYMap(cell: Y.Map<unknown>): CellStyle | undefined {
-    const entry = cell.get(STYLE_KEY)
-    if (entry == null) return undefined
-    if (!(entry instanceof Y.Map)) return undefined
+// readStyleFromYMapEntry walks a nested style Y.Map tree (the same
+// shape buildStyleYMap produces) and returns a partial CellStyle.
+// Returns undefined if the entry is empty. Works for any caller that
+// already holds the style YMap directly — used by sheet-level row /
+// column / sheet-default style readers, which store the style YMap on
+// sheet metadata rather than inside a cell.
+export function readStyleFromYMapEntry(entry: Y.Map<unknown>): CellStyle | undefined {
     const out: Record<string, unknown> = {}
     let any = false
     entry.forEach((v, k) => {
@@ -262,6 +266,15 @@ export function readStyleFromYMap(cell: Y.Map<unknown>): CellStyle | undefined {
         }
     })
     return any ? (out as CellStyle) : undefined
+}
+
+// readStyleFromYMap is the inverse of buildStyleYMap — walks the
+// nested style Y.Map tree and produces a partial CellStyle. Returns
+// undefined if the cell has no style entry or the entry is empty.
+export function readStyleFromYMap(cell: Y.Map<unknown>): CellStyle | undefined {
+    const entry = cell.get(STYLE_KEY)
+    if (!(entry instanceof Y.Map)) return undefined
+    return readStyleFromYMapEntry(entry)
 }
 
 // ydocSheetIds returns the array of sheet ids in the doc's `sheets`

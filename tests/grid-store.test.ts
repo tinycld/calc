@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createGridStore, type GridStoreDeps } from '../tinycld/calc/hooks/grid-store'
+import {
+    createGridStore,
+    type GridStoreDeps,
+    type StructuralOp,
+} from '../tinycld/calc/hooks/grid-store'
 
 // The Grid's per-instance store carries selection, edit-session,
 // ref-drag, suggestion popover, and menu state. These tests pin the
@@ -14,11 +18,13 @@ import { createGridStore, type GridStoreDeps } from '../tinycld/calc/hooks/grid-
 interface StubDeps {
     deps: GridStoreDeps
     writeCalls: Array<{ row: number; col: number; value: string }>
+    structuralOps: StructuralOp[]
     focusCalls: number
 }
 
 function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
     const writeCalls: StubDeps['writeCalls'] = []
+    const structuralOps: StructuralOp[] = []
     let focusCalls = 0
     return {
         deps: {
@@ -27,8 +33,10 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
             focusActiveInput: () => {
                 focusCalls += 1
             },
+            applyStructuralMutation: op => structuralOps.push(op),
         },
         writeCalls,
+        structuralOps,
         get focusCalls() {
             return focusCalls
         },

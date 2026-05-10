@@ -1,5 +1,5 @@
-import { Platform, ScrollView, Text, View } from 'react-native'
-import { useGridStore } from '../../hooks/use-grid-store'
+import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
+import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import {
     NATIVE_ROW_HANDLE_HIT_SLOP,
     ROW_HANDLE_VISUAL_HEIGHT,
@@ -13,6 +13,11 @@ interface RowHeaderProps {
     rowOffsets: Float64Array
     firstRow: number
     lastRow: number
+    // Number of columns in the sheet — used by selectRow to size the
+    // selection range to span the whole row. Passed in (rather than
+    // read here) because the header is dimensions-agnostic; Grid
+    // already has the canonical value.
+    colCount: number
     makeHandleProps: (row: number) => Record<string, unknown>
     dragState: RowDragState | null
 }
@@ -23,13 +28,23 @@ export function RowHeader({
     rowOffsets,
     firstRow,
     lastRow,
+    colCount,
     makeHandleProps,
     dragState,
 }: RowHeaderProps) {
     const activeRow = useGridStore(s => s.selected?.row ?? null)
+    // Highlight the row label more strongly when the user has selected
+    // the WHOLE row (scope='row') vs. just clicking a body cell that
+    // happens to live in this row. Drives the bold/contrast styling
+    // below.
+    const rowScopeActive = useGridStore(
+        s => s.selectionScope === 'row' && s.selected?.row === activeRow
+    )
+    const store = useGridStoreApi()
     const cells: React.ReactNode[] = []
     for (let row = firstRow; row <= lastRow; row++) {
         const isActive = row === activeRow
+        const isRowScope = rowScopeActive && isActive
         const top = rowOffsets[row - 1]
         const height = rowOffsets[row] - top
         // Hidden rows (height 0 from a drag-to-zero) still need to
@@ -37,8 +52,10 @@ export function RowHeader({
         // than a W×0 view to keep the DOM lean.
         if (height > 0) {
             cells.push(
-                <View
+                <Pressable
                     key={`h-${row}`}
+                    onPress={() => store.getState().selectRow(row, colCount)}
+                    accessibilityLabel={`Select row ${row}`}
                     className={`border-r border-b border-border items-center justify-center ${
                         isActive ? 'bg-accent' : 'bg-surface-secondary'
                     }`}
@@ -53,11 +70,11 @@ export function RowHeader({
                 >
                     <Text
                         className={`text-xs ${isActive ? 'text-accent-foreground' : 'text-muted-foreground'}`}
-                        style={isActive ? { fontWeight: 'bold' } : undefined}
+                        style={isActive || isRowScope ? { fontWeight: 'bold' } : undefined}
                     >
                         {row}
                     </Text>
-                </View>
+                </Pressable>
             )
         }
         // Resize handle straddles the bottom boundary of row `row`.

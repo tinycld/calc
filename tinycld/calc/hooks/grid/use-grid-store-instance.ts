@@ -3,6 +3,12 @@ import type { TextInput } from 'react-native'
 import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
 import { subscribeAwarenessToStore } from '../../components/grid/subscribe-awareness'
+import {
+    deleteColumns,
+    deleteRows,
+    insertColumns,
+    insertRows,
+} from '../../lib/structural-mutations'
 import { createGridStore, type GridStoreApi, type GridStoreDeps } from '../grid-store'
 import { setYCell } from '../use-y-cell'
 
@@ -54,6 +60,37 @@ export function useGridStoreInstance({
                 const target =
                     surface === 'bar' ? formulaBarInputRef.current : cellEditorInputRef.current
                 target?.focus()
+            },
+            applyStructuralMutation: op => {
+                if (readOnly) return
+                switch (op.kind) {
+                    case 'insertRows':
+                        insertRows(
+                            doc,
+                            sheetId,
+                            op.atRow,
+                            op.count,
+                            op.position,
+                            op.displayedRowCount
+                        )
+                        break
+                    case 'insertColumns':
+                        insertColumns(
+                            doc,
+                            sheetId,
+                            op.atCol,
+                            op.count,
+                            op.position,
+                            op.displayedColCount
+                        )
+                        break
+                    case 'deleteRows':
+                        deleteRows(doc, sheetId, op.fromRow, op.count)
+                        break
+                    case 'deleteColumns':
+                        deleteColumns(doc, sheetId, op.fromCol, op.count)
+                        break
+                }
             },
         }
         const api = createGridStore(deps)

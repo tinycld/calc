@@ -219,6 +219,7 @@ function GridInner({
                     rowOffsets={rowOffsets}
                     firstRow={viewport.visible.firstRow}
                     lastRow={viewport.visible.lastRow}
+                    colCount={cols}
                     makeHandleProps={rowResize.makeHandleProps}
                     dragState={rowResize.dragState}
                 />
@@ -247,6 +248,10 @@ function GridInner({
                 onAutosizeCol={col => autosizeCol(doc, sheetId, col)}
                 onResetCol={(col, width) => commitColWidth(doc, sheetId, col, width)}
                 onResetRow={(row, height) => commitRowHeight(doc, sheetId, row, height)}
+                rowCount={sheet?.rowCount ?? 0}
+                colCount={sheet?.colCount ?? 0}
+                displayedRowCount={rows}
+                displayedColCount={cols}
             />
             <FormulaSuggestionList
                 items={suggestions.items}

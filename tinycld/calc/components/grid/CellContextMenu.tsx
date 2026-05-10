@@ -4,7 +4,10 @@ import { Platform, Pressable, StyleSheet, type View } from 'react-native'
 import type * as Y from 'yjs'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { setYCell } from '../../hooks/use-y-cell'
+import { useYSheets } from '../../hooks/use-y-sheets'
+import { pluralize } from '../../lib/pluralize'
 import { effectiveRange, forEachCellInRange } from '../../lib/selection-range'
+import { MIN_COLS, MIN_ROWS } from './constants'
 import { readCellStyle, toggleCellFontAttrInRange } from './style-helpers'
 
 interface CellContextMenuProps {
@@ -67,6 +70,44 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     )
 
     const range = effectiveRange(selected, selectionRange)
+    const rowSpan = range != null ? range.endRow - range.startRow + 1 : 1
+    const colSpan = range != null ? range.endCol - range.startCol + 1 : 1
+
+    const sheets = useYSheets(doc)
+    const sheet = sheets.find(s => s.id === sheetId)
+    const rowCount = sheet?.rowCount ?? 0
+    const colCount = sheet?.colCount ?? 0
+    // Grid.tsx clamps the displayed grid up to MIN_ROWS/MIN_COLS, so a
+    // fresh sheet shows 50×26 even with rowCount=colCount=0. Pass the
+    // displayed dims to insert actions so the post-insert sheet covers
+    // the rows/cols the user already saw.
+    const displayedRowCount = Math.max(rowCount, MIN_ROWS)
+    const displayedColCount = Math.max(colCount, MIN_COLS)
+
+    const onInsertRowAbove = useCallback(
+        () => store.getState().insertRowsAtSelection('above', displayedRowCount),
+        [store, displayedRowCount]
+    )
+    const onInsertRowBelow = useCallback(
+        () => store.getState().insertRowsAtSelection('below', displayedRowCount),
+        [store, displayedRowCount]
+    )
+    const onInsertColLeft = useCallback(
+        () => store.getState().insertColumnsAtSelection('left', displayedColCount),
+        [store, displayedColCount]
+    )
+    const onInsertColRight = useCallback(
+        () => store.getState().insertColumnsAtSelection('right', displayedColCount),
+        [store, displayedColCount]
+    )
+    const onDeleteRows = useCallback(
+        () => store.getState().deleteSelectedRows(rowCount),
+        [store, rowCount]
+    )
+    const onDeleteCols = useCallback(
+        () => store.getState().deleteSelectedColumns(colCount),
+        [store, colCount]
+    )
 
     const onClear = useCallback(() => {
         if (range == null || doc == null) return
@@ -102,6 +143,43 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                     <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
                 )}
                 <Menu.Content ref={contentRef} placement="bottom" align="start">
+                    <Menu.Sub>
+                        <Menu.SubTrigger>
+                            <Menu.ItemTitle>Insert</Menu.ItemTitle>
+                        </Menu.SubTrigger>
+                        <Menu.SubContent>
+                            <Menu.Item onPress={onInsertRowAbove}>
+                                <Menu.ItemTitle>{pluralize(rowSpan, 'row')} above</Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={onInsertRowBelow}>
+                                <Menu.ItemTitle>{pluralize(rowSpan, 'row')} below</Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={onInsertColLeft}>
+                                <Menu.ItemTitle>{pluralize(colSpan, 'column')} left</Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={onInsertColRight}>
+                                <Menu.ItemTitle>{pluralize(colSpan, 'column')} right</Menu.ItemTitle>
+                            </Menu.Item>
+                        </Menu.SubContent>
+                    </Menu.Sub>
+                    <Menu.Sub>
+                        <Menu.SubTrigger>
+                            <Menu.ItemTitle>Delete</Menu.ItemTitle>
+                        </Menu.SubTrigger>
+                        <Menu.SubContent>
+                            <Menu.Item onPress={onDeleteRows} isDisabled={rowCount <= 1}>
+                                <Menu.ItemTitle>
+                                    {rowSpan === 1 ? 'This row' : `These ${rowSpan} rows`}
+                                </Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={onDeleteCols} isDisabled={colCount <= 1}>
+                                <Menu.ItemTitle>
+                                    {colSpan === 1 ? 'This column' : `These ${colSpan} columns`}
+                                </Menu.ItemTitle>
+                            </Menu.Item>
+                        </Menu.SubContent>
+                    </Menu.Sub>
+                    <Separator className="my-1 mx-2" />
                     <Menu.Item onPress={onClear}>
                         <Menu.ItemTitle>Clear contents</Menu.ItemTitle>
                     </Menu.Item>

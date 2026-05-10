@@ -60,6 +60,15 @@ export interface EditSession {
 // anchoring (formula bar coords vs. editing-cell coords).
 export type ActiveSurface = 'bar' | 'cell'
 
+// SelectionScope discriminates how the active selection should be
+// interpreted by mutation paths. 'cells' is the default body selection
+// (a rectangle of cells). 'row' / 'column' / 'sheet' indicate the user
+// clicked a row/column header or the corner cell — toolbar setters
+// route writes to per-row/per-col/per-sheet style metadata instead of
+// iterating cells. selectionRange still describes the visible-tint
+// rectangle, but scope is the source of truth for routing.
+export type SelectionScope = 'cells' | 'row' | 'column' | 'sheet'
+
 // A ref drag in progress while a formula is being edited. anchor is
 // the first cell pressed; end tracks the cell currently under the
 // pointer/finger. lastSlice is the substring index range of the most
@@ -110,6 +119,13 @@ export interface GridState {
     // range is normalized (start ≤ end on both axes) and contains
     // `selected`.
     selectionRange: CellRange | null
+    // Discriminator for how the selection should be interpreted by
+    // mutation paths. 'cells' = body selection (per-cell writes).
+    // 'row'/'column'/'sheet' = lazy-style scope (writes to per-axis
+    // sheet metadata). Body interactions (selectCell, extendSelectionTo)
+    // reset to 'cells'. Header-click actions (selectRow/Column/Sheet)
+    // set the scope explicitly.
+    selectionScope: SelectionScope
     editSession: EditSession | null
     // Programmatic-insert override for the input's selection prop.
     // Cleared on the next onSelectionChange so subsequent typing
@@ -146,6 +162,37 @@ export interface GridRefs {
 // by the Grid component at create time. Keeping them injected (rather
 // than imported inside the store) means the store has no yjs/awareness
 // dependency and can be unit-tested with stubs.
+// StructuralOp describes a row/column insert or delete. The store
+// dispatches these to deps.applyStructuralMutation so the yjs writes
+// stay outside the store (mirrors writeCell). Position is implicit:
+// for insertRows, atRow is already the *insert position* (1-based row
+// index where the new rows go) — the store derives this from the
+// selection + 'above'/'below' so the dep just executes.
+// displayedRowCount / displayedColCount on insert ops carry the
+// rendered grid size (Grid.tsx clamps display dims up to MIN_ROWS /
+// MIN_COLS, so a fresh sheet shows 50×26 with stored counts of 0).
+// The structural mutation uses them to ensure the post-insert
+// row/colCount covers everything the user could see *plus* the
+// inserted rows/columns — otherwise inserting at a position past the
+// stored count leaves part of the visible grid outside the sheet.
+export type StructuralOp =
+    | {
+          kind: 'insertRows'
+          atRow: number
+          count: number
+          position: 'above' | 'below'
+          displayedRowCount: number
+      }
+    | {
+          kind: 'insertColumns'
+          atCol: number
+          count: number
+          position: 'left' | 'right'
+          displayedColCount: number
+      }
+    | { kind: 'deleteRows'; fromRow: number; count: number }
+    | { kind: 'deleteColumns'; fromCol: number; count: number }
+
 export interface GridStoreDeps {
     readOnly: boolean
     // Persist a cell's user-typed string to the Y.Doc. Empty string
@@ -157,6 +204,12 @@ export interface GridStoreDeps {
     // ref-drag end so the pan gesture doesn't leave the input blurred
     // (which would commit the half-typed formula).
     focusActiveInput: () => void
+    // Apply a structural row/column insert or delete to the Y.Doc.
+    // Provided by Grid (which holds the doc + sheetId). The store
+    // dispatches this from insert*/delete* actions and updates its
+    // selection state in the same set() so the highlight follows the
+    // shifted cells in one render.
+    applyStructuralMutation: (op: StructuralOp) => void
 }
 
 export interface GridActions {
@@ -167,6 +220,13 @@ export interface GridActions {
     // is no anchor yet, this is equivalent to selectCell. Used by
     // shift-click and drag-select.
     extendSelectionTo: (cell: SelectedCell) => void
+    // selectRow sets scope='row' with anchor=(row,1) and a range
+    // covering (row,1)..(row,colCount). Triggered by clicking a row
+    // header. Toolbar setters dispatch to per-row metadata writes
+    // instead of iterating cells. The caller passes colCount because
+    // the store has no Y.Doc dependency — Grid reads it from
+    // useYSheets.
+    selectRow: (row: number, colCount: number) => void
     editCell: (cell: SelectedCell, initialDraft?: string) => void
     setEditDraft: (row: number, col: number, draft: string) => void
     setEditSelection: (row: number, col: number, start: number, end: number) => void
@@ -197,6 +257,35 @@ export interface GridActions {
     closeCellContextMenu: () => void
     openHandleMenu: (axis: 'col' | 'row', index: number, x: number, y: number) => void
     closeHandleMenu: () => void
+    // Structural mutations driven by the cell context menu. Derive
+    // from/count from the active selection (collapsed to 1 row/col when
+    // there is no range). Selection state is updated in the same
+    // set() so the highlight follows the shifted cells. Insert actions
+    // take the *displayed* row/colCount (max of stored count and the
+    // grid's MIN_ROWS/MIN_COLS floor) so the post-insert sheet expands
+    // to cover everything the user can see — see StructuralOp comment.
+    insertRowsAtSelection: (position: 'above' | 'below', displayedRowCount: number) => void
+    insertColumnsAtSelection: (position: 'left' | 'right', displayedColCount: number) => void
+    // Delete actions need the *current* row/colCount so the post-delete
+    // anchor can be clamped into the new bounds. Caller passes it from
+    // useYSheets — mirrors selectRow/Column.
+    deleteSelectedRows: (currentRowCount: number) => void
+    deleteSelectedColumns: (currentColCount: number) => void
+    // Structural mutations driven by the row/column header context
+    // menu. The index is the row or column whose handle was clicked
+    // (resolved via state.handleMenu.index in the caller).
+    insertRowAtHandle: (
+        index: number,
+        position: 'above' | 'below',
+        displayedRowCount: number
+    ) => void
+    insertColumnAtHandle: (
+        index: number,
+        position: 'left' | 'right',
+        displayedColCount: number
+    ) => void
+    deleteRowAtHandle: (index: number, currentRowCount: number) => void
+    deleteColumnAtHandle: (index: number, currentColCount: number) => void
 }
 
 export interface GridStore extends GridState, GridActions {}
@@ -215,6 +304,7 @@ function rangeContainsCell(range: CellRange, row: number, col: number): boolean 
 const initialState: GridState = {
     selected: null,
     selectionRange: null,
+    selectionScope: 'cells',
     editSession: null,
     pendingSelection: null,
     activeSurface: 'cell',
@@ -254,6 +344,25 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 set({
                     selected: cell,
                     selectionRange: null,
+                    selectionScope: 'cells',
+                    editSession: null,
+                    pendingSelection: null,
+                })
+            },
+
+            selectRow: (row, colCount) => {
+                refs.lastRefSlice.current = null
+                const anchor = { row, col: 1 }
+                commitInflight(anchor)
+                set({
+                    selected: anchor,
+                    selectionRange: {
+                        startRow: row,
+                        endRow: row,
+                        startCol: 1,
+                        endCol: Math.max(1, colCount),
+                    },
+                    selectionScope: 'row',
                     editSession: null,
                     pendingSelection: null,
                 })
@@ -276,6 +385,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     set({
                         selected: cell,
                         selectionRange: null,
+                        selectionScope: 'cells',
                         editSession: null,
                         pendingSelection: null,
                     })
@@ -292,6 +402,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 const single = range.startRow === range.endRow && range.startCol === range.endCol
                 set({
                     selectionRange: single ? null : range,
+                    selectionScope: 'cells',
                     editSession: null,
                     pendingSelection: null,
                 })
@@ -305,6 +416,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 set({
                     selected: cell,
                     selectionRange: null,
+                    selectionScope: 'cells',
                     editSession: { row: cell.row, col: cell.col, draft: initialDraft },
                     pendingSelection: { start: cursor, end: cursor },
                     activeSurface: 'cell',
@@ -352,6 +464,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 set({
                     selected: { row, col },
                     selectionRange: null,
+                    selectionScope: 'cells',
                     editSession: null,
                     pendingSelection: null,
                 })
@@ -490,6 +603,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 set({
                     selected: insideRange ? state.selected : { row, col },
                     selectionRange: insideRange ? state.selectionRange : null,
+                    selectionScope: insideRange ? state.selectionScope : 'cells',
                     editSession: null,
                     contextTarget: { cell: { row, col }, cursor: { x, y } },
                 })
@@ -502,6 +616,254 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 set({ handleMenu: { axis, index, cursor: { x, y } } })
             },
             closeHandleMenu: () => set({ handleMenu: null }),
+
+            // Structural mutations. After an insert above row N,
+            // anything previously at row >= N now lives at row +count;
+            // shift the anchor and range to follow. After a delete
+            // starting at row F covering C rows: rows in [F, F+C) are
+            // gone, rows >= F+C shift down by C, and the anchor clamps
+            // into the new bounds.
+            insertRowsAtSelection: (position, displayedRowCount) => {
+                if (deps.readOnly) return
+                const state = get()
+                if (state.selected == null) return
+                const range = state.selectionRange
+                const startRow = range?.startRow ?? state.selected.row
+                const endRow = range?.endRow ?? state.selected.row
+                const atRow = position === 'above' ? startRow : endRow
+                const count = endRow - startRow + 1
+                const insertAt = position === 'above' ? atRow : atRow + 1
+                deps.applyStructuralMutation({
+                    kind: 'insertRows',
+                    atRow,
+                    count,
+                    position,
+                    displayedRowCount,
+                })
+
+                const shifted = (r: number) => (r >= insertAt ? r + count : r)
+                set({
+                    selected: { row: shifted(state.selected.row), col: state.selected.col },
+                    selectionRange:
+                        range != null
+                            ? {
+                                  startRow: shifted(range.startRow),
+                                  endRow: shifted(range.endRow),
+                                  startCol: range.startCol,
+                                  endCol: range.endCol,
+                              }
+                            : null,
+                    contextTarget: null,
+                })
+            },
+
+            insertColumnsAtSelection: (position, displayedColCount) => {
+                if (deps.readOnly) return
+                const state = get()
+                if (state.selected == null) return
+                const range = state.selectionRange
+                const startCol = range?.startCol ?? state.selected.col
+                const endCol = range?.endCol ?? state.selected.col
+                const atCol = position === 'left' ? startCol : endCol
+                const count = endCol - startCol + 1
+                const insertAt = position === 'left' ? atCol : atCol + 1
+                deps.applyStructuralMutation({
+                    kind: 'insertColumns',
+                    atCol,
+                    count,
+                    position,
+                    displayedColCount,
+                })
+
+                const shifted = (c: number) => (c >= insertAt ? c + count : c)
+                set({
+                    selected: { row: state.selected.row, col: shifted(state.selected.col) },
+                    selectionRange:
+                        range != null
+                            ? {
+                                  startRow: range.startRow,
+                                  endRow: range.endRow,
+                                  startCol: shifted(range.startCol),
+                                  endCol: shifted(range.endCol),
+                              }
+                            : null,
+                    contextTarget: null,
+                })
+            },
+
+            deleteSelectedRows: currentRowCount => {
+                if (deps.readOnly) return
+                const state = get()
+                if (state.selected == null) return
+                const range = state.selectionRange
+                const fromRow = range?.startRow ?? state.selected.row
+                const requestedCount = range != null ? range.endRow - range.startRow + 1 : 1
+                // Mirror the floor-at-1 logic in deleteRows so the
+                // selection update uses the same effective `count` the
+                // mutation will apply.
+                const maxDeletable = Math.max(0, currentRowCount - 1)
+                const count = Math.min(requestedCount, maxDeletable, currentRowCount - fromRow + 1)
+                if (count <= 0) {
+                    set({ contextTarget: null })
+                    return
+                }
+                deps.applyStructuralMutation({ kind: 'deleteRows', fromRow, count })
+
+                const newRowCount = Math.max(1, currentRowCount - count)
+                const clampRow = (r: number) => {
+                    if (r < fromRow) return r
+                    if (r >= fromRow + count) return r - count
+                    // Anchor was inside the deleted range: snap to the
+                    // first surviving row at the deletion site, clamped
+                    // into the new bounds.
+                    return Math.min(fromRow, newRowCount)
+                }
+                set({
+                    selected: { row: clampRow(state.selected.row), col: state.selected.col },
+                    selectionRange: null,
+                    selectionScope: 'cells',
+                    contextTarget: null,
+                })
+            },
+
+            deleteSelectedColumns: currentColCount => {
+                if (deps.readOnly) return
+                const state = get()
+                if (state.selected == null) return
+                const range = state.selectionRange
+                const fromCol = range?.startCol ?? state.selected.col
+                const requestedCount = range != null ? range.endCol - range.startCol + 1 : 1
+                const maxDeletable = Math.max(0, currentColCount - 1)
+                const count = Math.min(requestedCount, maxDeletable, currentColCount - fromCol + 1)
+                if (count <= 0) {
+                    set({ contextTarget: null })
+                    return
+                }
+                deps.applyStructuralMutation({ kind: 'deleteColumns', fromCol, count })
+
+                const newColCount = Math.max(1, currentColCount - count)
+                const clampCol = (c: number) => {
+                    if (c < fromCol) return c
+                    if (c >= fromCol + count) return c - count
+                    return Math.min(fromCol, newColCount)
+                }
+                set({
+                    selected: { row: state.selected.row, col: clampCol(state.selected.col) },
+                    selectionRange: null,
+                    selectionScope: 'cells',
+                    contextTarget: null,
+                })
+            },
+
+            insertRowAtHandle: (index, position, displayedRowCount) => {
+                if (deps.readOnly) return
+                deps.applyStructuralMutation({
+                    kind: 'insertRows',
+                    atRow: index,
+                    count: 1,
+                    position,
+                    displayedRowCount,
+                })
+                const insertAt = position === 'above' ? index : index + 1
+                const state = get()
+                const shifted = (r: number) => (r >= insertAt ? r + 1 : r)
+                set({
+                    selected:
+                        state.selected != null
+                            ? { row: shifted(state.selected.row), col: state.selected.col }
+                            : state.selected,
+                    selectionRange:
+                        state.selectionRange != null
+                            ? {
+                                  startRow: shifted(state.selectionRange.startRow),
+                                  endRow: shifted(state.selectionRange.endRow),
+                                  startCol: state.selectionRange.startCol,
+                                  endCol: state.selectionRange.endCol,
+                              }
+                            : null,
+                    handleMenu: null,
+                })
+            },
+
+            insertColumnAtHandle: (index, position, displayedColCount) => {
+                if (deps.readOnly) return
+                deps.applyStructuralMutation({
+                    kind: 'insertColumns',
+                    atCol: index,
+                    count: 1,
+                    position,
+                    displayedColCount,
+                })
+                const insertAt = position === 'left' ? index : index + 1
+                const state = get()
+                const shifted = (c: number) => (c >= insertAt ? c + 1 : c)
+                set({
+                    selected:
+                        state.selected != null
+                            ? { row: state.selected.row, col: shifted(state.selected.col) }
+                            : state.selected,
+                    selectionRange:
+                        state.selectionRange != null
+                            ? {
+                                  startRow: state.selectionRange.startRow,
+                                  endRow: state.selectionRange.endRow,
+                                  startCol: shifted(state.selectionRange.startCol),
+                                  endCol: shifted(state.selectionRange.endCol),
+                              }
+                            : null,
+                    handleMenu: null,
+                })
+            },
+
+            deleteRowAtHandle: (index, currentRowCount) => {
+                if (deps.readOnly) return
+                if (currentRowCount <= 1) {
+                    set({ handleMenu: null })
+                    return
+                }
+                deps.applyStructuralMutation({ kind: 'deleteRows', fromRow: index, count: 1 })
+                const newRowCount = currentRowCount - 1
+                const clampRow = (r: number) => {
+                    if (r < index) return r
+                    if (r > index) return r - 1
+                    return Math.min(index, newRowCount)
+                }
+                const state = get()
+                set({
+                    selected:
+                        state.selected != null
+                            ? { row: clampRow(state.selected.row), col: state.selected.col }
+                            : state.selected,
+                    selectionRange: null,
+                    selectionScope: 'cells',
+                    handleMenu: null,
+                })
+            },
+
+            deleteColumnAtHandle: (index, currentColCount) => {
+                if (deps.readOnly) return
+                if (currentColCount <= 1) {
+                    set({ handleMenu: null })
+                    return
+                }
+                deps.applyStructuralMutation({ kind: 'deleteColumns', fromCol: index, count: 1 })
+                const newColCount = currentColCount - 1
+                const clampCol = (c: number) => {
+                    if (c < index) return c
+                    if (c > index) return c - 1
+                    return Math.min(index, newColCount)
+                }
+                const state = get()
+                set({
+                    selected:
+                        state.selected != null
+                            ? { row: state.selected.row, col: clampCol(state.selected.col) }
+                            : state.selected,
+                    selectionRange: null,
+                    selectionScope: 'cells',
+                    handleMenu: null,
+                })
+            },
         }
     })
 
