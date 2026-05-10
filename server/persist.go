@@ -225,6 +225,20 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 				return nil, fmt.Errorf("set col width %s!%s: %w", name, colName, err)
 			}
 		}
+		for row, style := range meta.RowStyles {
+			if row < 1 || style == nil {
+				continue
+			}
+			base := &excelize.Style{}
+			overlayStyle(base, style)
+			styleID, err := f.NewStyle(base)
+			if err != nil {
+				return nil, fmt.Errorf("register row style %s!%d: %w", name, row, err)
+			}
+			if err := f.SetRowStyle(name, row, row, styleID); err != nil {
+				return nil, fmt.Errorf("set row style %s!%d: %w", name, row, err)
+			}
+		}
 	}
 
 	for _, cell := range snap.Cells {

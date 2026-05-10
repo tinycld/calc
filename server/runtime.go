@@ -172,7 +172,11 @@ func (h *sheetsDocHandle) Snapshot() (YDocSnapshot, error) {
 
 	snap := YDocSnapshot{}
 	if sheetsMap != nil {
-		snap.Sheets = collectSheets(sheetsMap)
+		sheets, err := collectSheets(sheetsMap)
+		if err != nil {
+			return YDocSnapshot{}, err
+		}
+		snap.Sheets = sheets
 	}
 	if cellsMap != nil {
 		cells, err := collectCells(cellsMap)
@@ -190,9 +194,13 @@ func (h *sheetsDocHandle) Snapshot() (YDocSnapshot, error) {
 // colWidths/rowStyles, surfaced separately in later passes). Non-YMap
 // values are skipped — they would indicate a schema violation but
 // we'd rather ship a partial snapshot than fail the whole save.
-func collectSheets(sheetsMap *ycrdt.YMap) []SheetMeta {
+func collectSheets(sheetsMap *ycrdt.YMap) ([]SheetMeta, error) {
 	out := make([]SheetMeta, 0, sheetsMap.GetSize())
+	var collectErr error
 	sheetsMap.ForEach(func(sheetID string, value any, _ *ycrdt.YMap) {
+		if collectErr != nil {
+			return
+		}
 		meta, ok := value.(*ycrdt.YMap)
 		if !ok {
 			return
@@ -200,6 +208,11 @@ func collectSheets(sheetsMap *ycrdt.YMap) []SheetMeta {
 		name, _ := meta.Get("name").(string)
 		if name == "" {
 			name = sheetID
+		}
+		rowStyles, err := decodeSparseStyleMap(meta, "rowStyles")
+		if err != nil {
+			collectErr = err
+			return
 		}
 		out = append(out, SheetMeta{
 			ID:         sheetID,
@@ -209,12 +222,16 @@ func collectSheets(sheetsMap *ycrdt.YMap) []SheetMeta {
 			ColCount:   numberFromAny(meta.Get("colCount")),
 			RowHeights: decodeSparseIntMap(meta, "rowHeights"),
 			ColWidths:  decodeSparseIntMap(meta, "colWidths"),
+			RowStyles:  rowStyles,
 		})
 	})
+	if collectErr != nil {
+		return nil, collectErr
+	}
 	// Stable sort by position (slice index is what the serializer
 	// uses to align with existing-sheet positions on disk).
 	sortSheetsByPosition(out)
-	return out
+	return out, nil
 }
 
 // collectCells walks the top-level "cells" YMap. Keys are
@@ -383,6 +400,48 @@ func decodeSparseIntMap(meta *ycrdt.YMap, key string) map[int]int {
 		return nil
 	}
 	return out
+}
+
+// decodeSparseStyleMap pulls a nested Y.Map<string, Y.Map> off the
+// given parent meta map and returns it as a map[int]*CellStyle.
+// Decodes each entry through decodeCellStyle to keep the shape
+// identical to per-cell styles. Returns nil for an absent or empty
+// nested map.
+func decodeSparseStyleMap(meta *ycrdt.YMap, key string) (map[int]*CellStyle, error) {
+	nested, ok := meta.Get(key).(*ycrdt.YMap)
+	if !ok || nested.GetSize() == 0 {
+		return nil, nil
+	}
+	out := map[int]*CellStyle{}
+	var decodeErr error
+	nested.ForEach(func(k string, v any, _ *ycrdt.YMap) {
+		if decodeErr != nil {
+			return
+		}
+		n, err := strconv.Atoi(k)
+		if err != nil || n < 1 {
+			return
+		}
+		styleMap, ok := v.(*ycrdt.YMap)
+		if !ok {
+			return
+		}
+		cs, err := decodeCellStyle(styleMap)
+		if err != nil {
+			decodeErr = fmt.Errorf("decode row style %d: %w", n, err)
+			return
+		}
+		if cs != nil {
+			out[n] = cs
+		}
+	})
+	if decodeErr != nil {
+		return nil, decodeErr
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // parseCellKey splits "<sheetID>:<row>:<col>" into its three parts.

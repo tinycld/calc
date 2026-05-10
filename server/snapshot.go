@@ -37,6 +37,12 @@ type SheetMeta struct {
 	// resized columns. Sparse, as above. Converted to Excel
 	// character units at serialization time.
 	ColWidths map[int]int
+
+	// RowStyles maps row number (1-based) -> partial style applied
+	// to the entire row. Per-cell styles still layer on top at
+	// render time; this is the "fill row 7 yellow" affordance.
+	// Sparse: rows without a row-level style have no entry.
+	RowStyles map[int]*CellStyle
 }
 
 // CellEntry is one cell value the doc has touched. SheetID matches a

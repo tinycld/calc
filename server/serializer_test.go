@@ -2,6 +2,7 @@ package calc
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"testing"
 
@@ -1598,6 +1599,78 @@ func TestSerializerColWidthsNilLeavesExistingAlone(t *testing.T) {
 	got := readColWidth(t, out, "People", 3)
 	if got < 24.95 || got > 25.05 {
 		t.Errorf("col C width changed despite nil ColWidths: want ≈25 preserved, got %v", got)
+	}
+}
+
+// readRowStyleFill returns the fill type/pattern/color of the row
+// style for the given row, if one is set.
+func readRowStyleFill(t *testing.T, xlsx []byte, sheetName string, row int) (string, int, []string) {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	// excelize reads row style from any cell on that row that has the
+	// row-style applied; we read from the first column (which
+	// SetRowStyle applies to even if the column is empty).
+	id, err := f.GetCellStyle(sheetName, fmt.Sprintf("A%d", row))
+	if err != nil {
+		t.Fatalf("get style A%d: %v", row, err)
+	}
+	if id == 0 {
+		return "", 0, nil
+	}
+	style, err := f.GetStyle(id)
+	if err != nil {
+		t.Fatalf("read style %d: %v", id, err)
+	}
+	if style == nil {
+		return "", 0, nil
+	}
+	return style.Fill.Type, style.Fill.Pattern, style.Fill.Color
+}
+
+// TestSerializerPersistsRowStyle: a snapshot whose SheetMeta.RowStyles
+// declares row 7 should be solid yellow lands as a row-level fill.
+func TestSerializerPersistsRowStyle(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{
+				ID: "sheet1", Name: "People", Position: 0,
+				RowStyles: map[int]*CellStyle{
+					7: {
+						Fill: &CellFill{
+							Type:    stringPtr("pattern"),
+							Pattern: stringPtr("solid"),
+							FgColor: stringPtr("#FFFF00"),
+						},
+					},
+				},
+			},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+
+	fillType, pattern, colors := readRowStyleFill(t, out, "People", 7)
+	if fillType != "pattern" {
+		t.Errorf("row 7 fill.type: want %q, got %q", "pattern", fillType)
+	}
+	if pattern != 1 {
+		t.Errorf("row 7 fill.pattern: want 1 (solid), got %d", pattern)
+	}
+	if len(colors) == 0 || colors[0] != "FFFF00" {
+		t.Errorf("row 7 fill.colors: want [\"FFFF00\"...], got %v", colors)
 	}
 }
 

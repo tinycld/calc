@@ -381,7 +381,10 @@ func TestCollectSheetsDecodesRowHeightsAndColWidths(t *testing.T) {
 
 	sheetsMap.Set("sheet1", meta)
 
-	sheets := collectSheets(sheetsMap)
+	sheets, err := collectSheets(sheetsMap)
+	if err != nil {
+		t.Fatalf("collectSheets: %v", err)
+	}
 	if len(sheets) != 1 {
 		t.Fatalf("collectSheets count: want 1, got %d", len(sheets))
 	}
@@ -394,6 +397,40 @@ func TestCollectSheetsDecodesRowHeightsAndColWidths(t *testing.T) {
 	}
 	if s.ColWidths[3] != 200 {
 		t.Errorf("ColWidths: want {3:200}, got %v", s.ColWidths)
+	}
+}
+
+// TestCollectSheetsDecodesRowStyles verifies that a sheet meta with
+// nested rowStyles (Y.Map<string, Y.Map>) round-trips through
+// collectSheets into populated SheetMeta.RowStyles entries.
+func TestCollectSheetsDecodesRowStyles(t *testing.T) {
+	doc := ycrdt.NewDoc("test", false, nil, nil, false)
+	sheetsMap, _ := doc.GetMap("sheets").(*ycrdt.YMap)
+
+	meta := ycrdt.NewYMap(nil)
+	meta.Set("name", "People")
+	meta.Set("position", 0)
+
+	rowStyles := ycrdt.NewYMap(nil)
+	rowStyle := ycrdt.NewYMap(nil)
+	fontGroup := ycrdt.NewYMap(nil)
+	fontGroup.Set("bold", true)
+	rowStyle.Set("font", fontGroup)
+	rowStyles.Set("7", rowStyle)
+	meta.Set("rowStyles", rowStyles)
+
+	sheetsMap.Set("sheet1", meta)
+
+	sheets, err := collectSheets(sheetsMap)
+	if err != nil {
+		t.Fatalf("collectSheets: %v", err)
+	}
+	if len(sheets) != 1 {
+		t.Fatalf("sheets count: want 1, got %d", len(sheets))
+	}
+	cs := sheets[0].RowStyles[7]
+	if cs == nil || cs.Font == nil || cs.Font.Bold == nil || !*cs.Font.Bold {
+		t.Errorf("row 7 style.font.bold: want true, got %+v", cs)
 	}
 }
 
