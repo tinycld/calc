@@ -1727,6 +1727,116 @@ func TestSerializerRowStylesNilLeavesExistingAlone(t *testing.T) {
 	}
 }
 
+// TestSerializerIntegratedRoundTrip stacks every persistable
+// attribute on one workbook in a single save and verifies each one
+// independently. Functions as both a smoke test for the cumulative
+// state of the serializer and a fast canary for cross-attribute
+// interactions (e.g. cell style + row style on the same row, dimension
+// expansion alongside row heights).
+func TestSerializerIntegratedRoundTrip(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{
+				ID: "sheet1", Name: "People", Position: 0,
+				RowCount: 50, ColCount: 10,
+				RowHeights: map[int]int{2: 60},
+				ColWidths:  map[int]int{3: 96},
+				RowStyles: map[int]*CellStyle{
+					7: {
+						Fill: &CellFill{
+							Type:    stringPtr("pattern"),
+							Pattern: stringPtr("solid"),
+							FgColor: stringPtr("#FFFF00"),
+						},
+					},
+				},
+			},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1", Row: 2, Col: 2,
+				RawString: "styled", Display: "styled",
+				Style: &CellStyle{
+					Font: &CellFont{
+						Bold:      boolPtr(true),
+						Italic:    boolPtr(true),
+						Underline: boolPtr(true),
+						Strike:    boolPtr(true),
+						Size:      func() *float64 { v := 14.0; return &v }(),
+						Name:      stringPtr("Courier New"),
+						Color:     stringPtr("#0000FF"),
+					},
+					Fill: &CellFill{
+						Type:    stringPtr("pattern"),
+						Pattern: stringPtr("solid"),
+						FgColor: stringPtr("#FF0000"),
+					},
+					Borders: &CellBorders{
+						Top:    boolPtr(true),
+						Bottom: boolPtr(true),
+					},
+					NumFmt: stringPtr("0.00%"),
+				},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+
+	// Cell-level
+	if !readCellBold(t, out, "People", 2, 2) {
+		t.Error("B2 bold lost")
+	}
+	if !readCellItalic(t, out, "People", 2, 2) {
+		t.Error("B2 italic lost")
+	}
+	if got := readCellUnderline(t, out, "People", 2, 2); got != "single" {
+		t.Errorf("B2 underline: want single, got %q", got)
+	}
+	if !readCellStrike(t, out, "People", 2, 2) {
+		t.Error("B2 strike lost")
+	}
+	if got := readCellFontSize(t, out, "People", 2, 2); got != 14 {
+		t.Errorf("B2 size: want 14, got %v", got)
+	}
+	if got := readCellFontFamily(t, out, "People", 2, 2); got != "Courier New" {
+		t.Errorf("B2 family: want Courier New, got %q", got)
+	}
+	if got := readCellFillPattern(t, out, "People", 2, 2); got != 1 {
+		t.Errorf("B2 fill.pattern: want 1, got %d", got)
+	}
+	if got := readCellNumFmt(t, out, "People", 2, 2); got != "0.00%" {
+		t.Errorf("B2 numFmt: want 0.00%%, got %q", got)
+	}
+	if readCellBorder(t, out, "People", 2, 2, "top").Style != 1 {
+		t.Error("B2 top border lost")
+	}
+
+	// Sheet-level
+	if got := readSheetDimension(t, out, "People"); got != "A1:J50" {
+		t.Errorf("dimension: want A1:J50, got %q", got)
+	}
+	if got := readRowHeight(t, out, "People", 2); got != 45 {
+		t.Errorf("row 2 height: want 45pt, got %v", got)
+	}
+	if got := readColWidth(t, out, "People", 3); got < 12.95 || got > 13.05 {
+		t.Errorf("col C width: want ≈ 13, got %v", got)
+	}
+	fillType, pattern, _ := readRowStyleFill(t, out, "People", 7)
+	if fillType != "pattern" || pattern != 1 {
+		t.Errorf("row 7 row-style fill: want pattern/1, got %s/%d", fillType, pattern)
+	}
+}
+
 // TestSerializerStyleClearsFill: snapshot FgColor = "" on a cell that
 // already has a red fill must clear the foreground color. The trailing-
 // empty trimmer in the Fill override drops the now-empty color slot,
