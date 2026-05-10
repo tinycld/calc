@@ -11,9 +11,11 @@ export interface GridToolbarToggles {
     hasSelection: boolean
     isBold: boolean
     isItalic: boolean
+    isUnderline: boolean
     isStrike: boolean
     onToggleBold: () => void
     onToggleItalic: () => void
+    onToggleUnderline: () => void
     onToggleStrike: () => void
     // Exposed for the FormulaBar value derivation. Subscribes to the
     // selected cell so the bar updates when the cell changes.
@@ -63,10 +65,11 @@ export function useGridToolbarToggles({
 
     const isBold = hasSelection && selectedCellValue?.style?.font?.bold === true
     const isItalic = hasSelection && selectedCellValue?.style?.font?.italic === true
+    const isUnderline = hasSelection && selectedCellValue?.style?.font?.underline === true
     const isStrike = hasSelection && selectedCellValue?.style?.font?.strike === true
 
     const toggleAttr = useCallback(
-        (attr: 'bold' | 'italic' | 'strike') => {
+        (attr: 'bold' | 'italic' | 'underline' | 'strike') => {
             if (readOnly || doc == null) return
             const state = store.getState()
             const anchor = state.selected
@@ -80,6 +83,7 @@ export function useGridToolbarToggles({
 
     const onToggleBold = useCallback(() => toggleAttr('bold'), [toggleAttr])
     const onToggleItalic = useCallback(() => toggleAttr('italic'), [toggleAttr])
+    const onToggleUnderline = useCallback(() => toggleAttr('underline'), [toggleAttr])
     const onToggleStrike = useCallback(() => toggleAttr('strike'), [toggleAttr])
 
     return {
@@ -88,9 +92,11 @@ export function useGridToolbarToggles({
         hasSelection,
         isBold,
         isItalic,
+        isUnderline,
         isStrike,
         onToggleBold,
         onToggleItalic,
+        onToggleUnderline,
         onToggleStrike,
         selectedCellValue,
     }

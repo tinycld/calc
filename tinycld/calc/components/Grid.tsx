@@ -161,7 +161,6 @@ function GridInner({
     // the shortcuts live for the lifetime of the Grid mount. The
     // clipboard hook owns the actual copy/paste plumbing.
     const clipboard = useClipboard({ doc, sheetId, store: instance.store, readOnly })
-    useCalcShortcuts({ store: instance.store, clipboard, readOnly })
 
     // Inline arrows for the currency/percent/decimal preset shortcuts
     // would re-create on every render and force <Toolbar> to re-render
@@ -171,6 +170,24 @@ function GridInner({
     const onApplyPercent = useCallback(() => format.applyPreset('percent'), [format.applyPreset])
     const onDecreaseDecimal = useCallback(() => format.stepDecimal(-1), [format.stepDecimal])
     const onIncreaseDecimal = useCallback(() => format.stepDecimal(1), [format.stepDecimal])
+
+    // Stable identity for the format-shortcut bundle so the shortcut
+    // registry doesn't churn on every render.
+    const formatShortcuts = useMemo(
+        () => ({
+            toggleBold: toolbar.onToggleBold,
+            toggleItalic: toolbar.onToggleItalic,
+            toggleUnderline: toolbar.onToggleUnderline,
+            toggleStrike: toolbar.onToggleStrike,
+        }),
+        [
+            toolbar.onToggleBold,
+            toolbar.onToggleItalic,
+            toolbar.onToggleUnderline,
+            toolbar.onToggleStrike,
+        ]
+    )
+    useCalcShortcuts({ store: instance.store, clipboard, format: formatShortcuts, readOnly })
 
     return (
         <View className="flex-1 bg-background web:select-none">
@@ -182,9 +199,11 @@ function GridInner({
                 onRedo={undoState.redo}
                 isBold={toolbar.isBold}
                 isItalic={toolbar.isItalic}
+                isUnderline={toolbar.isUnderline}
                 isStrike={toolbar.isStrike}
                 onToggleBold={toolbar.onToggleBold}
                 onToggleItalic={toolbar.onToggleItalic}
+                onToggleUnderline={toolbar.onToggleUnderline}
                 onToggleStrike={toolbar.onToggleStrike}
                 currentNumFmt={format.currentNumFmt}
                 onApplyPreset={format.applyPreset}

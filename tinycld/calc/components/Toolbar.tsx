@@ -8,6 +8,7 @@ import {
     Percent,
     Redo,
     Strikethrough,
+    Underline,
     Undo,
 } from 'lucide-react-native'
 import { memo } from 'react'
@@ -35,9 +36,11 @@ export interface ToolbarProps {
 
     isBold: boolean
     isItalic: boolean
+    isUnderline: boolean
     isStrike: boolean
     onToggleBold: () => void
     onToggleItalic: () => void
+    onToggleUnderline: () => void
     onToggleStrike: () => void
 
     currentNumFmt: string | undefined
@@ -79,9 +82,11 @@ function ToolbarImpl(props: ToolbarProps) {
         onRedo,
         isBold,
         isItalic,
+        isUnderline,
         isStrike,
         onToggleBold,
         onToggleItalic,
+        onToggleUnderline,
         onToggleStrike,
         currentNumFmt,
         onApplyPreset,
@@ -161,6 +166,13 @@ function ToolbarImpl(props: ToolbarProps) {
                 disabled={disabled}
                 onPress={onToggleItalic}
                 label="Italic"
+            />
+            <ToolbarButton
+                icon={Underline}
+                active={isUnderline}
+                disabled={disabled}
+                onPress={onToggleUnderline}
+                label="Underline"
             />
             <ToolbarButton
                 icon={Strikethrough}
