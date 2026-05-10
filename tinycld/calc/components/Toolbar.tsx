@@ -1,22 +1,41 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Bold, Italic } from 'lucide-react-native'
+import { Bold, Italic, Redo, Undo } from 'lucide-react-native'
 import type { ComponentType } from 'react'
 import { Pressable, View } from 'react-native'
 
 interface ToolbarProps {
+    // Selection-based disable for the formatting buttons. Undo/Redo
+    // ignore this — you can undo without a selected cell.
     disabled: boolean
     isBold: boolean
     isItalic: boolean
+    canUndo: boolean
+    canRedo: boolean
     onToggleBold: () => void
     onToggleItalic: () => void
+    onUndo: () => void
+    onRedo: () => void
 }
 
-export function Toolbar({ disabled, isBold, isItalic, onToggleBold, onToggleItalic }: ToolbarProps) {
+export function Toolbar({
+    disabled,
+    isBold,
+    isItalic,
+    canUndo,
+    canRedo,
+    onToggleBold,
+    onToggleItalic,
+    onUndo,
+    onRedo,
+}: ToolbarProps) {
     return (
         <View
             className="flex-row items-center bg-surface-secondary border-b border-border"
             style={{ height: 32, paddingHorizontal: 4 }}
         >
+            <ToolbarButton icon={Undo} active={false} disabled={!canUndo} onPress={onUndo} label="Undo" />
+            <ToolbarButton icon={Redo} active={false} disabled={!canRedo} onPress={onRedo} label="Redo" />
+            <ToolbarDivider />
             <ToolbarButton icon={Bold} active={isBold} disabled={disabled} onPress={onToggleBold} label="Bold" />
             <ToolbarButton
                 icon={Italic}
@@ -27,6 +46,10 @@ export function Toolbar({ disabled, isBold, isItalic, onToggleBold, onToggleItal
             />
         </View>
     )
+}
+
+function ToolbarDivider() {
+    return <View className="bg-border" style={{ width: 1, height: 16, marginHorizontal: 4 }} />
 }
 
 interface ToolbarButtonProps {

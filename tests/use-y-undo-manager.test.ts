@@ -1,4 +1,5 @@
 import { LOCAL_ORIGIN, REMOTE_ORIGIN, SYNC_ORIGIN } from '@tinycld/core/lib/realtime/client'
+import { computeNextSnapshot } from '@tinycld/core/lib/realtime/use-y-undo-manager'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { setYCell } from '../tinycld/calc/hooks/use-y-cell'
@@ -100,5 +101,82 @@ describe('useYUndoManager allowlist', () => {
 
         manager.redo()
         expect(cells.get(key)?.get('raw')).toBe('first')
+    })
+})
+
+// The toolbar buttons subscribe to canUndo/canRedo state via the hook's
+// useSyncExternalStore wiring, which subscribes to these four events on
+// the underlying Y.UndoManager. Locking the contract here protects the
+// subscribe function in use-y-undo-manager.ts from silently breaking
+// if upstream renames or removes any of them.
+describe('Y.UndoManager stack-event contract (subscription surface)', () => {
+    it("fires 'stack-item-added' when a tracked edit lands", () => {
+        const doc = new Y.Doc()
+        const manager = newManager(doc, 0)
+        let added = 0
+        manager.on('stack-item-added', () => {
+            added++
+        })
+        setYCell(doc, 'sheet1', 1, 1, 'x')
+        expect(added).toBeGreaterThan(0)
+    })
+
+    it("fires 'stack-item-popped' on undo and redo", () => {
+        const doc = new Y.Doc()
+        const manager = newManager(doc, 0)
+        setYCell(doc, 'sheet1', 1, 1, 'x')
+        let popped = 0
+        manager.on('stack-item-popped', () => {
+            popped++
+        })
+        manager.undo()
+        expect(popped).toBe(1)
+        manager.redo()
+        expect(popped).toBe(2)
+    })
+
+    it("fires 'stack-cleared' on manager.clear()", () => {
+        const doc = new Y.Doc()
+        const manager = newManager(doc, 0)
+        setYCell(doc, 'sheet1', 1, 1, 'x')
+        let cleared = 0
+        manager.on('stack-cleared', () => {
+            cleared++
+        })
+        manager.clear()
+        expect(cleared).toBe(1)
+    })
+})
+
+// computeNextSnapshot is the cached-snapshot helper inside
+// useYUndoManager. The snapshot getter passed to useSyncExternalStore
+// MUST return the same object reference when nothing changed —
+// otherwise React infinite-loops because every render observes a "new"
+// snapshot. These tests pin that contract.
+describe('computeNextSnapshot (useSyncExternalStore identity contract)', () => {
+    it('returns the same reference when neither boolean changed', () => {
+        const cached = { canUndo: false, canRedo: false }
+        const next = computeNextSnapshot(cached, false, false)
+        expect(next).toBe(cached)
+    })
+
+    it('returns the same reference when both booleans match cached values', () => {
+        const cached = { canUndo: true, canRedo: false }
+        const next = computeNextSnapshot(cached, true, false)
+        expect(next).toBe(cached)
+    })
+
+    it('returns a new object when canUndo flipped', () => {
+        const cached = { canUndo: false, canRedo: false }
+        const next = computeNextSnapshot(cached, true, false)
+        expect(next).not.toBe(cached)
+        expect(next).toEqual({ canUndo: true, canRedo: false })
+    })
+
+    it('returns a new object when canRedo flipped', () => {
+        const cached = { canUndo: true, canRedo: false }
+        const next = computeNextSnapshot(cached, true, true)
+        expect(next).not.toBe(cached)
+        expect(next).toEqual({ canUndo: true, canRedo: true })
     })
 })

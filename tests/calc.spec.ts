@@ -2,6 +2,13 @@ import { expect, test } from '@playwright/test'
 import { login, navigateToPackage } from '../../../../tests/e2e/helpers'
 
 test.describe('Calc', () => {
+    // Bump the test timeout: tests that hit "New spreadsheet" wait on a
+    // drive_items create round-trip plus a Y.Doc realtime handshake, and
+    // both can be slow under parallel-worker contention against a single
+    // dev backend. The default 30s leaves no headroom on top of helper-
+    // level URL/render waits.
+    test.setTimeout(90_000)
+
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
@@ -51,9 +58,7 @@ test.describe('Calc', () => {
 
     test('+ New spreadsheet creates and opens an empty sheet', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('New spreadsheet').click()
-
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
+        await openNewSpreadsheet(page)
         // Header columns are virtualized — only the ones in the viewport
         // render. A through E are always visible at default viewport width.
         await expect(page.getByText('A', { exact: true })).toBeVisible()
@@ -62,8 +67,7 @@ test.describe('Calc', () => {
 
     test('dragging a column-resize handle widens the column', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('New spreadsheet').click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
+        await openNewSpreadsheet(page)
 
         // Headers A and B are absolute-positioned. Capture their start
         // positions, drag the boundary handle ~100px right, then verify
@@ -96,8 +100,7 @@ test.describe('Calc', () => {
 
     test('double-clicking the column-resize handle autosizes to fit content', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('New spreadsheet').click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
+        await openNewSpreadsheet(page)
 
         const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
         await typeIntoCell(page, formulaBar, 'A1', 'a fairly long string that should autosize')
@@ -122,8 +125,7 @@ test.describe('Calc', () => {
 
     test('formula function autocomplete: typing =LE shows LEFT/LEN, Tab inserts', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('New spreadsheet').click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
+        await openNewSpreadsheet(page)
 
         const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
 
@@ -150,8 +152,7 @@ test.describe('Calc', () => {
 
     test('formula function autocomplete: ArrowDown moves highlight before Tab inserts', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('New spreadsheet').click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
+        await openNewSpreadsheet(page)
 
         const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
 
@@ -179,8 +180,7 @@ test.describe('Calc', () => {
 
     test('cell-ref insertion: clicking a cell mid-formula inserts its address', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('New spreadsheet').click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
+        await openNewSpreadsheet(page)
 
         const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
 
@@ -208,8 +208,7 @@ test.describe('Calc', () => {
 
     test('cell-ref insertion: works inside an open function call', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('New spreadsheet').click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
+        await openNewSpreadsheet(page)
 
         const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
 
@@ -243,10 +242,41 @@ test.describe('Calc', () => {
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('30')
     })
 
+    test('undo/redo toolbar buttons revert and reapply edits', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        const undoBtn = page.getByRole('button', { name: 'Undo' })
+        const redoBtn = page.getByRole('button', { name: 'Redo' })
+
+        // Fresh sheet: nothing to undo yet. The buttons should be
+        // disabled. RN-Web emits accessibilityState.disabled as
+        // aria-disabled on the rendered DOM node.
+        await expect(undoBtn).toHaveAttribute('aria-disabled', 'true')
+        await expect(redoBtn).toHaveAttribute('aria-disabled', 'true')
+
+        // Type something, then move selection away so re-clicking A1
+        // selects (rather than re-edits) when we want to verify text.
+        await typeIntoCell(page, formulaBar, 'A1', 'hello')
+        await page.getByLabel('Cell B1', { exact: true }).click()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('hello')
+
+        // Undo is now available; click it and the cell empties.
+        await expect(undoBtn).not.toHaveAttribute('aria-disabled', 'true')
+        await undoBtn.click()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('')
+
+        // After the undo, redo should be available; click and the
+        // value comes back.
+        await expect(redoBtn).not.toHaveAttribute('aria-disabled', 'true')
+        await redoBtn.click()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('hello')
+    })
+
     test('=SUM() over a range displays the computed total', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('New spreadsheet').click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 15_000 })
+        await openNewSpreadsheet(page)
 
         const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
 
@@ -278,6 +308,20 @@ async function typeIntoCell(
     await page.getByLabel(`Cell ${cellLabel}`, { exact: true }).click()
     await formulaBar.fill(value)
     await formulaBar.press('Enter')
+}
+
+// Click the "New spreadsheet" button on the calc index, wait for the
+// detail URL, and wait for the Grid (column A header) to render. The
+// detail screen flips through "Loading…" / "Opening…" placeholders
+// before mounting the Grid; tests that read DOM geometry or click
+// cells immediately after waitForURL race that mount.
+async function openNewSpreadsheet(page: import('@playwright/test').Page): Promise<void> {
+    await page.getByText('New spreadsheet').click()
+    // Both waits use generous timeouts because the create round-trip and
+    // the realtime open can be slow under parallel-worker contention
+    // against a single dev backend.
+    await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 60_000 })
+    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
 }
 
 // Reads the on-screen left/width of column-header cells A and B.

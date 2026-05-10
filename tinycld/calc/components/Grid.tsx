@@ -25,6 +25,7 @@ import {
 } from '../hooks/use-column-resize'
 import { useFormulaFunctionNames } from '../hooks/use-formula-function-names'
 import { type RemotePresence, usePresence } from '../hooks/use-presence'
+import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
 import { setYCell, setYCellStyle, useYCell } from '../hooks/use-y-cell'
 import { type SheetWithId, useYSheets } from '../hooks/use-y-sheets'
@@ -77,6 +78,10 @@ interface GridProps {
     minRows?: number
     minCols?: number
     readOnly?: boolean
+    // Comes from useUndoManager(doc) at the screen level so the
+    // toolbar buttons and the Cmd-Z keyboard shortcuts share one
+    // Y.UndoManager instance.
+    undoState: UndoManagerState
 }
 
 interface SelectedCell {
@@ -114,7 +119,7 @@ interface Viewport {
 }
 
 export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
-    { sheetId, minRows = MIN_ROWS, minCols = MIN_COLS, readOnly = false },
+    { sheetId, minRows = MIN_ROWS, minCols = MIN_COLS, readOnly = false, undoState },
     ref
 ) {
     const { doc, awareness } = useWorkbook()
@@ -285,9 +290,20 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
             // Manual typing supersedes any pending ref-tap insertion;
             // the slice memo would otherwise mis-replace user text.
             lastRefSliceRef.current = null
-            // Don't push a controlled selection — the input owns its
-            // own cursor during typing and reports the new position
-            // via onSelectionChange right after this callback.
+            // When this is the first draft change for a fresh edit
+            // session (no prior session, or session targeted a different
+            // cell), snap the cursor to the end of the draft. Without
+            // this the cursor ref carries the position from a previous
+            // edit and downstream consumers (autocomplete dropdown, cell-
+            // ref insertion) read a stale value before the browser's
+            // selectionchange event refreshes it. For mid-edit value
+            // changes we leave the ref alone — onEditSelectionChange
+            // will update it from the input's real selection.
+            const prevSession = editSessionRowColRef.current
+            const isFreshSession = prevSession == null || prevSession.row !== row || prevSession.col !== col
+            if (isFreshSession || editCursorRef.current.end > draft.length) {
+                editCursorRef.current = { start: draft.length, end: draft.length }
+            }
             setEditSession((prev) => {
                 if (prev != null && prev.row === row && prev.col === col && prev.draft === draft) return prev
                 return { row, col, draft }
@@ -733,8 +749,12 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                 disabled={readOnly || selected == null}
                 isBold={isBold}
                 isItalic={isItalic}
+                canUndo={undoState.canUndo}
+                canRedo={undoState.canRedo}
                 onToggleBold={onToggleBold}
                 onToggleItalic={onToggleItalic}
+                onUndo={undoState.undo}
+                onRedo={undoState.redo}
             />
             <FormulaBar
                 ref={formulaBarInputRef}
@@ -783,6 +803,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                     selected={selected}
                     editSession={editSession}
                     pendingSelection={pendingSelection}
+                    cellEditorAutoFocus={activeSurface === 'cell'}
                     cellEditorInputRef={cellEditorInputRef}
                     refDrag={refDrag}
                     presenceOnSheet={presenceOnSheet}
@@ -1035,6 +1056,7 @@ interface BodyProps {
     selected: SelectedCell | null
     editSession: EditSession | null
     pendingSelection: DraftSelection | null
+    cellEditorAutoFocus: boolean
     cellEditorInputRef: React.RefObject<TextInput | null>
     refDrag: RefDrag | null
     presenceOnSheet: RemotePresence[]
@@ -1070,6 +1092,7 @@ function Body({
     selected,
     editSession,
     pendingSelection,
+    cellEditorAutoFocus,
     cellEditorInputRef,
     refDrag,
     presenceOnSheet,
@@ -1138,6 +1161,7 @@ function Body({
                         isAnyEditing={editSession != null}
                         editingDraft={editingDraft}
                         editingSelection={editingSelection}
+                        cellEditorAutoFocus={cellEditorAutoFocus}
                         cellEditorInputRef={cellEditorInputRef}
                         remoteEditor={remoteEditor}
                         onSelect={onSelect}
@@ -1287,6 +1311,11 @@ interface CellProps {
     isAnyEditing: boolean
     editingDraft: string
     editingSelection: DraftSelection | undefined
+    // True when this cell's editor should grab focus on mount. False when
+    // editing was initiated from the formula bar — letting the editor
+    // autoFocus would steal focus back to the cell, blur the formula bar,
+    // and commit the half-typed value.
+    cellEditorAutoFocus: boolean
     cellEditorInputRef: React.RefObject<TextInput | null>
     remoteEditor: RemotePresence | null
     colOffsets: Float64Array
@@ -1318,6 +1347,7 @@ const Cell = memo(function Cell({
     isAnyEditing,
     editingDraft,
     editingSelection,
+    cellEditorAutoFocus,
     cellEditorInputRef,
     remoteEditor,
     colOffsets,
@@ -1362,6 +1392,7 @@ const Cell = memo(function Cell({
                 width={width}
                 value={editingDraft}
                 selection={editingSelection}
+                autoFocus={cellEditorAutoFocus}
                 onDraftChange={(draft) => onEditDraftChange(row, col, draft)}
                 onSelectionChange={(start, end) => onEditSelectionChange(row, col, start, end)}
                 onCommit={(value) => onCommitEdit(row, col, value)}
@@ -1508,6 +1539,7 @@ interface CellEditorProps {
     width: number
     value: string
     selection: DraftSelection | undefined
+    autoFocus: boolean
     onDraftChange: (draft: string) => void
     onSelectionChange: (start: number, end: number) => void
     onCommit: (value: string) => void
@@ -1522,6 +1554,7 @@ function CellEditor({
     top,
     width,
     value,
+    autoFocus,
     selection,
     onDraftChange,
     onSelectionChange,
@@ -1536,7 +1569,7 @@ function CellEditor({
     return (
         <TextInput
             ref={inputRef}
-            autoFocus
+            autoFocus={autoFocus}
             value={value}
             selection={selection}
             onChangeText={onDraftChange}

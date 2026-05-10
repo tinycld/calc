@@ -61,7 +61,7 @@ interface DetailContentProps {
 
 function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps) {
     const { doc, isConnected } = useWorkbook()
-    useUndoManager(doc)
+    const undoState = useUndoManager(doc)
     useFormulaBridge(doc)
     const sheets = useYSheets(doc)
     const orgHref = useOrgHref()
@@ -92,7 +92,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                 </Text>
                 <ConnectionStatus isConnected={isConnected} />
             </View>
-            <Grid sheetId={activeSheet.id} />
+            <Grid sheetId={activeSheet.id} undoState={undoState} />
             <SheetTabs sheets={sheets} activeSheetId={activeSheet.id} onSelect={onSelect} />
         </View>
     )
