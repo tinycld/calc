@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -177,9 +178,27 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		if !ok {
 			continue
 		}
-		bottomRight, err := excelize.CoordinatesToCellName(meta.ColCount, meta.RowCount)
+		// Union with the workbook's existing <dimension>: the Y.Doc may
+		// track a narrower extent than the imported file actually contains
+		// (e.g. when bootstrap sees only a scrolled-into region), and a
+		// contracting save would silently hide rows past meta.RowCount
+		// from readers that trust <dimension>. Always grow, never shrink.
+		existingRef, err := f.GetSheetDimension(name)
 		if err != nil {
-			return nil, fmt.Errorf("dimension coords (%d,%d): %w", meta.ColCount, meta.RowCount, err)
+			return nil, fmt.Errorf("get existing dimension on %s: %w", name, err)
+		}
+		existingCol, existingRow := parseDimensionRef(existingRef)
+		finalCol := meta.ColCount
+		if existingCol > finalCol {
+			finalCol = existingCol
+		}
+		finalRow := meta.RowCount
+		if existingRow > finalRow {
+			finalRow = existingRow
+		}
+		bottomRight, err := excelize.CoordinatesToCellName(finalCol, finalRow)
+		if err != nil {
+			return nil, fmt.Errorf("dimension coords (col=%d,row=%d): %w", finalCol, finalRow, err)
 		}
 		if err := f.SetSheetDimension(name, "A1:"+bottomRight); err != nil {
 			return nil, fmt.Errorf("set dimension on %s: %w", name, err)
@@ -386,6 +405,23 @@ func legacyCoerceCellValue(s string) any {
 		return n
 	}
 	return s
+}
+
+// parseDimensionRef extracts the bottom-right (col, row) from an
+// excelize <dimension> ref like "A1:H30". Returns (0,0) on a missing
+// or malformed ref so callers can treat it as "no existing extent"
+// and fall back to whatever the snapshot supplies.
+func parseDimensionRef(ref string) (col, row int) {
+	if ref == "" {
+		return 0, 0
+	}
+	parts := strings.SplitN(ref, ":", 2)
+	target := parts[len(parts)-1]
+	c, r, err := excelize.CellNameToCoordinates(target)
+	if err != nil {
+		return 0, 0
+	}
+	return c, r
 }
 
 // readDriveItemBytes returns the current `file` blob attached to

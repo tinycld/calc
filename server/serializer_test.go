@@ -1356,6 +1356,72 @@ func TestSerializerExpandsSheetDimension(t *testing.T) {
 	}
 }
 
+// TestSerializerDimensionDoesNotShrink: when the Y.Doc tracks a
+// narrower extent than the workbook's existing <dimension>, the save
+// must not truncate. Mirrors the discipline behind the clearing tests:
+// catches the silent-truncate failure mode where a Y.Doc that only
+// observed the scrolled-into region would shrink the saved file's
+// dimension below its actual data extent.
+func TestSerializerDimensionDoesNotShrink(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	// The fixture's natural dimension is wider than what we'll feed in
+	// through the snapshot. Confirm the seed first so the assertion
+	// below is meaningful.
+	seedDim := readSheetDimension(t, original, "People")
+	if seedDim == "" {
+		t.Fatalf("fixture has no dimension; cannot test shrink behavior")
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			// Deliberately tiny: 2 rows x 2 cols.
+			{ID: "sheet1", Name: "People", Position: 0, RowCount: 2, ColCount: 2},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+
+	got := readSheetDimension(t, out, "People")
+	if got != seedDim {
+		t.Errorf("dimension shrank: seeded %q, got %q (snapshot's tiny RowCount/ColCount truncated the existing extent)", seedDim, got)
+	}
+}
+
+// TestSerializerDimensionUntouchedWhenSheetMetaIsZero: a snapshot
+// whose SheetMeta carries RowCount=0/ColCount=0 must leave the
+// workbook's existing <dimension> alone. Pins the "zero is untracked"
+// sentinel.
+func TestSerializerDimensionUntouchedWhenSheetMetaIsZero(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	seedDim := readSheetDimension(t, original, "People")
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0}, // RowCount/ColCount default to 0
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+
+	if got := readSheetDimension(t, out, "People"); got != seedDim {
+		t.Errorf("dimension changed despite zero-count sentinel: seeded %q, got %q", seedDim, got)
+	}
+}
+
 // TestSerializerStyleClearsFill: snapshot FgColor = "" on a cell that
 // already has a red fill must clear the foreground color. The trailing-
 // empty trimmer in the Fill override drops the now-empty color slot,
