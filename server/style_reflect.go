@@ -72,6 +72,42 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 		}
 		dst.CustomNumFmt = &s
 	},
+	"Fill": func(dst *excelize.Style, srcPtr reflect.Value) {
+		src := srcPtr.Elem() // CellFill struct
+		if typ := src.FieldByName("Type"); !typ.IsNil() {
+			dst.Fill.Type = typ.Elem().String()
+		}
+		if p := src.FieldByName("Pattern"); !p.IsNil() {
+			switch p.Elem().String() {
+			case "solid":
+				dst.Fill.Pattern = 1
+			default:
+				dst.Fill.Pattern = 0
+			}
+		}
+		fg := src.FieldByName("FgColor")
+		bg := src.FieldByName("BgColor")
+		if !fg.IsNil() || !bg.IsNil() {
+			// Color is a []string with [foreground, background]. Preserve
+			// any existing entries on dst, only overwriting the slots the
+			// patch defines.
+			colors := append([]string(nil), dst.Fill.Color...)
+			for len(colors) < 2 {
+				colors = append(colors, "")
+			}
+			if !fg.IsNil() {
+				colors[0] = fg.Elem().String()
+			}
+			if !bg.IsNil() {
+				colors[1] = bg.Elem().String()
+			}
+			// Trim trailing empties so excelize doesn't write blank slots.
+			for len(colors) > 0 && colors[len(colors)-1] == "" {
+				colors = colors[:len(colors)-1]
+			}
+			dst.Fill.Color = colors
+		}
+	},
 }
 
 // overlayStyle copies every non-nil leaf in patch onto the matching
