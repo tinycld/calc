@@ -44,16 +44,16 @@ import (
 type styleOverlayOverride func(dst *excelize.Style, srcPtr reflect.Value)
 
 var styleOverlayOverrides = map[string]styleOverlayOverride{
-	// Future entries (when we add them):
-	//
-	// "NumFmt": func(dst *excelize.Style, src reflect.Value) {
-	//     s := src.Elem().String()
-	//     dst.CustomNumFmt = &s
-	// },
-	// "Font.Name": func(dst *excelize.Style, src reflect.Value) {
-	//     if dst.Font == nil { dst.Font = &excelize.Font{} }
-	//     dst.Font.Family = src.Elem().String()
-	// },
+	"Font.Underline": func(dst *excelize.Style, srcPtr reflect.Value) {
+		if dst.Font == nil {
+			dst.Font = &excelize.Font{}
+		}
+		if srcPtr.Elem().Bool() {
+			dst.Font.Underline = "single"
+		} else {
+			dst.Font.Underline = ""
+		}
+	},
 }
 
 // overlayStyle copies every non-nil leaf in patch onto the matching
