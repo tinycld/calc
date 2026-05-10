@@ -13,6 +13,7 @@ import type { RowDragState } from '../../hooks/use-row-resize'
 import type { SheetWithId } from '../../hooks/use-y-sheets'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { Cell } from './Cell'
+import { CutMarchingAntsOverlay } from './CutMarchingAntsOverlay'
 import {
     LocalSelectionOverlay,
     RefDragOverlay,
@@ -137,6 +138,7 @@ export function Body({
                         rowOffsets={rowOffsets}
                     />
                     <LocalSelectionOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
+                    <CutMarchingAntsOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <SelectionHandleOverlay
                         colOffsets={colOffsets}
                         rowOffsets={rowOffsets}

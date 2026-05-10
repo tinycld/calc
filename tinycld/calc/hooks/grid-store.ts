@@ -150,6 +150,17 @@ export interface GridState {
     contextTarget: ContextTarget | null
     commentTarget: CommentTarget | null
     handleMenu: HandleMenuTarget | null
+    // Clipboard state, populated by the orchestrating useClipboard
+    // hook on copy/cut. `clipboardMarker` is the in-memory fidelity-
+    // store key the OS clipboard's HTML <meta> tag carries; the
+    // source range is preserved for the marching-ants overlay so the
+    // user can see what they copied. `cutPending` distinguishes a cut
+    // (clear-source-on-paste) from a copy (leave source intact).
+    // All three clear together when a paste consumes the cut, when
+    // the user presses Esc, or after a 30-second timeout.
+    clipboardMarker: string | null
+    copySourceRange: CellRange | null
+    cutPending: boolean
 }
 
 // Live cursor position inside the editing input. Stored as a
@@ -297,6 +308,14 @@ export interface GridActions {
     ) => void
     deleteRowAtHandle: (index: number, currentRowCount: number) => void
     deleteColumnAtHandle: (index: number, currentColCount: number) => void
+    // Clipboard lifecycle. setClipboardMarker is called by useClipboard
+    // on copy (isCut=false) and cut (isCut=true); it schedules a 30s
+    // timeout that auto-clears the marker so an abandoned cut doesn't
+    // leak the marching-ants overlay forever. clearClipboardMarker is
+    // called on Esc, after a paste consumes a cut, when a 30s timeout
+    // fires, or when the source range is overwritten.
+    setClipboardMarker: (markerId: string, sourceRange: CellRange, isCut: boolean) => void
+    clearClipboardMarker: () => void
 }
 
 export interface GridStore extends GridState, GridActions {}
@@ -326,13 +345,27 @@ const initialState: GridState = {
     contextTarget: null,
     commentTarget: null,
     handleMenu: null,
+    clipboardMarker: null,
+    copySourceRange: null,
+    cutPending: false,
 }
+
+// Auto-clear an abandoned cut/copy marker after 30 seconds so the
+// marching-ants overlay doesn't outlive its usefulness. The timeout
+// closure lives at module level so each store can hold a single
+// outstanding timer and replace it on every fresh setClipboardMarker.
+const CLIPBOARD_MARKER_TTL_MS = 30_000
 
 export function createGridStore(deps: GridStoreDeps): GridStoreApi {
     const refs: GridRefs = {
         editCursor: { current: { start: 0, end: 0 } },
         lastRefSlice: { current: null },
     }
+
+    // Per-store timeout id for the auto-clear on abandoned cut/copy.
+    // Held in a closure so each store has its own and a fresh
+    // setClipboardMarker cancels the previous timer cleanly.
+    let clipboardTimeout: ReturnType<typeof setTimeout> | null = null
 
     const store = createVanillaStore<GridStore>()((set, get) => {
         // commitInflight: when something else needs to take focus
@@ -899,6 +932,35 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     selectionRange: null,
                     selectionScope: 'cells',
                     handleMenu: null,
+                })
+            },
+
+            setClipboardMarker: (markerId, sourceRange, isCut) => {
+                if (clipboardTimeout != null) clearTimeout(clipboardTimeout)
+                clipboardTimeout = setTimeout(() => {
+                    set({
+                        clipboardMarker: null,
+                        copySourceRange: null,
+                        cutPending: false,
+                    })
+                    clipboardTimeout = null
+                }, CLIPBOARD_MARKER_TTL_MS)
+                set({
+                    clipboardMarker: markerId,
+                    copySourceRange: sourceRange,
+                    cutPending: isCut,
+                })
+            },
+
+            clearClipboardMarker: () => {
+                if (clipboardTimeout != null) {
+                    clearTimeout(clipboardTimeout)
+                    clipboardTimeout = null
+                }
+                set({
+                    clipboardMarker: null,
+                    copySourceRange: null,
+                    cutPending: false,
                 })
             },
         }
