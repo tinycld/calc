@@ -54,6 +54,12 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 			dst.Font.Underline = "none"
 		}
 	},
+	"Font.Name": func(dst *excelize.Style, srcPtr reflect.Value) {
+		if dst.Font == nil {
+			dst.Font = &excelize.Font{}
+		}
+		dst.Font.Family = srcPtr.Elem().String()
+	},
 }
 
 // overlayStyle copies every non-nil leaf in patch onto the matching

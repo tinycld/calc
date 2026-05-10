@@ -689,6 +689,72 @@ func TestSerializerStyleClearsUnderline(t *testing.T) {
 	}
 }
 
+// readCellFontFamily returns the font.family (font name) for the given cell.
+func readCellFontFamily(t *testing.T, xlsx []byte, sheetName string, row, col int) string {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	id, err := f.GetCellStyle(sheetName, ref)
+	if err != nil {
+		t.Fatalf("get style %s!%s: %v", sheetName, ref, err)
+	}
+	if id == 0 {
+		return ""
+	}
+	style, err := f.GetStyle(id)
+	if err != nil {
+		t.Fatalf("read style %d: %v", id, err)
+	}
+	if style == nil || style.Font == nil {
+		return ""
+	}
+	return style.Font.Family
+}
+
+// stringPtr is a tiny convenience for building *string literals in tests.
+func stringPtr(s string) *string { return &s }
+
+// TestSerializerStyleSetsFontName: snapshot font.name = "Courier New"
+// lands as Font.Family on the resulting xlsx cell.
+func TestSerializerStyleSetsFontName(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
+				RawString: "from-save",
+				Display:   "from-save",
+				Style:     &CellStyle{Font: &CellFont{Name: stringPtr("Courier New")}},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if got := readCellFontFamily(t, out, "People", 2, 2); got != "Courier New" {
+		t.Errorf("B2 font family: want %q, got %q", "Courier New", got)
+	}
+}
+
 // TestSerializerStyleSetsStrike: snapshot font.strike = true lands as
 // strikethrough on the xlsx cell.
 func TestSerializerStyleSetsStrike(t *testing.T) {
