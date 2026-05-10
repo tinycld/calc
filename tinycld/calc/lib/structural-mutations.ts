@@ -23,16 +23,18 @@
 // in one transaction. Bounded but real for long-lived sessions; see
 // y-doc-bootstrap.ts:10-20 for the suggested mitigation paths.
 //
-// Formula non-rewriting: the `formula` string of a moved cell is moved
-// verbatim. =A5+1 shifted from row 5 to row 7 still reads =A5+1. The
-// formula bridge re-evaluates because observeDeep sees the deletes
-// AND the new sets — no manual recompute needed. Range-rewriting
-// (e.g. =SUM(A1:A10) -> =SUM(A1:A11) when inserting a row inside the
-// range) is a follow-up; mention in the PR.
+// Formula rewriting: every transact also rewrites refs in all formula
+// cells (across all sheets) via rewriteFormulaForMutation, so refs into
+// the mutated sheet shift / clamp / become #REF! atomically with the
+// cell move. See lib/formula/rewrite-on-structural-mutation.ts.
 
 import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import * as Y from 'yjs'
 import { COL_WIDTHS_KEY, ROW_HEIGHTS_KEY } from './dimensions'
+import {
+    rewriteFormulaForMutation,
+    type StructuralFormulaMutation,
+} from './formula/rewrite-on-structural-mutation'
 import { ROW_STYLES_KEY } from './sheet-styles'
 import { parseYCellKey, yCellKey } from './y-cell-key'
 import { CELLS_MAP, SHEETS_MAP } from './y-doc-bootstrap'
@@ -162,6 +164,44 @@ function readNumberField(meta: Y.Map<unknown>, key: string, fallback: number): n
     return typeof v === 'number' && Number.isFinite(v) ? v : fallback
 }
 
+function readSheetName(sheetsMap: Y.Map<Y.Map<unknown>>, sheetId: string): string | null {
+    const meta = sheetsMap.get(sheetId)
+    if (meta == null) return null
+    const name = meta.get('name')
+    return typeof name === 'string' && name !== '' ? name : null
+}
+
+// Resolve the user-visible name for the mutated sheet, with sheetId as
+// the fallback when name is missing (matches the formula bridge's
+// behaviour in lib/formula/bridge.ts:84-86). Called once per mutation
+// outside the transact so the lookup doesn't repeat per call site.
+function resolveMutatedSheetName(doc: Y.Doc, sheetId: string): string {
+    const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+    return readSheetName(sheetsMap, sheetId) ?? sheetId
+}
+
+// Walks every formula cell in the doc (across all sheets) and rewrites
+// its `formula` string to reflect the structural mutation. Must be
+// called inside the same doc.transact as the cell shift so the undo
+// manager and remote peers see one atomic update. Walking all sheets
+// matters: a formula on Sheet2 may reference Sheet1, and a row insert
+// on Sheet1 must rewrite that cross-sheet ref.
+function applyFormulaRewrite(doc: Y.Doc, mutation: StructuralFormulaMutation): void {
+    const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+    const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+    cellsMap.forEach((cell, key) => {
+        if (cell.get('kind') !== 'formula') return
+        const formula = cell.get('formula')
+        if (typeof formula !== 'string') return
+        const parsed = parseYCellKey(key)
+        if (parsed == null) return
+        const formulaCellSheetName = readSheetName(sheetsMap, parsed.sheetId) ?? parsed.sheetId
+        const next = rewriteFormulaForMutation(formula, formulaCellSheetName, mutation)
+        if (next == null) return
+        cell.set('formula', next)
+    })
+}
+
 export function insertRows(
     doc: Y.Doc,
     sheetId: string,
@@ -175,6 +215,8 @@ export function insertRows(
     if (meta == null) return
     const insertAt = position === 'above' ? atRow : atRow + 1
     if (insertAt < 1) return
+
+    const mutatedSheetName = resolveMutatedSheetName(doc, sheetId)
 
     doc.transact(() => {
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
@@ -194,6 +236,16 @@ export function insertRows(
         if (styles.map != null) {
             shiftSparseEntries(styles.map, styles.entries, count, 'descending')
         }
+
+        // Rewrite must happen after cell shift but before rowCount
+        // update so the new sheet bounds are committed atomically with
+        // the rewritten formula text.
+        applyFormulaRewrite(doc, {
+            kind: 'insertRows',
+            sheetName: mutatedSheetName,
+            insertAt,
+            count,
+        })
 
         // rowCount lags behind the *rendered* grid: Grid.tsx clamps the
         // displayed size up to MIN_ROWS, so a fresh sheet can show 50
@@ -230,6 +282,8 @@ export function insertColumns(
     const insertAt = position === 'left' ? atCol : atCol + 1
     if (insertAt < 1) return
 
+    const mutatedSheetName = resolveMutatedSheetName(doc, sheetId)
+
     doc.transact(() => {
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
         const cells = snapshotSheetCells(cellsMap, sheetId, (_row, col) => col >= insertAt).sort(
@@ -241,6 +295,13 @@ export function insertColumns(
         if (widths.map != null) {
             shiftSparseEntries(widths.map, widths.entries, count, 'descending')
         }
+
+        applyFormulaRewrite(doc, {
+            kind: 'insertColumns',
+            sheetName: mutatedSheetName,
+            insertAt,
+            count,
+        })
 
         // Same three-way max as insertRows — see comment there.
         const oldColCount = readNumberField(meta, 'colCount', 0)
@@ -265,6 +326,8 @@ export function deleteRows(doc: Y.Doc, sheetId: string, fromRow: number, count: 
     const maxDeletable = oldRowCount - 1
     const clamped = Math.min(count, maxDeletable, oldRowCount - fromRow + 1)
     if (clamped <= 0) return
+
+    const mutatedSheetName = resolveMutatedSheetName(doc, sheetId)
 
     doc.transact(() => {
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
@@ -315,6 +378,13 @@ export function deleteRows(doc: Y.Doc, sheetId: string, fromRow: number, count: 
             shiftSparseEntries(stylesBelow.map, stylesBelow.entries, -clamped, 'ascending')
         }
 
+        applyFormulaRewrite(doc, {
+            kind: 'deleteRows',
+            sheetName: mutatedSheetName,
+            fromRow,
+            count: clamped,
+        })
+
         meta.set('rowCount', oldRowCount - clamped)
     }, LOCAL_ORIGIN)
 }
@@ -330,6 +400,8 @@ export function deleteColumns(doc: Y.Doc, sheetId: string, fromCol: number, coun
     const maxDeletable = oldColCount - 1
     const clamped = Math.min(count, maxDeletable, oldColCount - fromCol + 1)
     if (clamped <= 0) return
+
+    const mutatedSheetName = resolveMutatedSheetName(doc, sheetId)
 
     doc.transact(() => {
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
@@ -362,6 +434,13 @@ export function deleteColumns(doc: Y.Doc, sheetId: string, fromCol: number, coun
         if (widthsRight.map != null) {
             shiftSparseEntries(widthsRight.map, widthsRight.entries, -clamped, 'ascending')
         }
+
+        applyFormulaRewrite(doc, {
+            kind: 'deleteColumns',
+            sheetName: mutatedSheetName,
+            fromCol,
+            count: clamped,
+        })
 
         meta.set('colCount', oldColCount - clamped)
     }, LOCAL_ORIGIN)
