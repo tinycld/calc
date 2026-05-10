@@ -34,14 +34,21 @@ import (
 // Done — no changes here.
 //
 // Adding a non-structural attribute: same plus one entry in
-// styleOverlayOverrides below.
+// styleOverlayOverrides below. Override the most specific path that
+// applies — e.g. "Font.Underline" rather than "Font" if only one
+// font field diverges.
 
 // styleOverlayOverride is the per-attribute escape hatch for fields
 // where CellStyle's Go shape doesn't line up 1:1 with excelize's
 // shape. Path is dotted Go field names rooted at CellStyle, e.g.
 // "Font.Name" or "NumFmt".
 //
-// v1 has no overrides (bold is structurally trivial).
+// Whole-group overrides (path == "Fill" or "Borders") short-circuit
+// the structural walk for that group: the override decides what
+// happens for every sub-field, including how to merge with existing
+// values on dst. Use a group override when the excelize shape
+// diverges in more than one place under the same group (e.g. Fill's
+// Pattern is an int enum AND its Color is a []string, not a struct).
 type styleOverlayOverride func(dst *excelize.Style, srcPtr reflect.Value)
 
 var styleOverlayOverrides = map[string]styleOverlayOverride{
@@ -72,6 +79,50 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 			return
 		}
 		dst.CustomNumFmt = &s
+	},
+	"Borders": func(dst *excelize.Style, srcPtr reflect.Value) {
+		src := srcPtr.Elem() // CellBorders struct
+		edges := []struct {
+			field string
+			name  string
+		}{
+			{"Top", "top"},
+			{"Right", "right"},
+			{"Bottom", "bottom"},
+			{"Left", "left"},
+		}
+
+		// Build a map of existing edges so we can overlay (non-mentioned
+		// edges survive verbatim).
+		existing := map[string]excelize.Border{}
+		for _, b := range dst.Border {
+			existing[b.Type] = b
+		}
+
+		for _, edge := range edges {
+			f := src.FieldByName(edge.field)
+			if f.IsNil() {
+				continue
+			}
+			if f.Elem().Bool() {
+				existing[edge.name] = excelize.Border{
+					Type:  edge.name,
+					Color: "000000",
+					Style: 1, // thin; matches the workbook-types.ts comment
+				}
+			} else {
+				delete(existing, edge.name)
+			}
+		}
+
+		// Reassemble in a deterministic order.
+		out := make([]excelize.Border, 0, len(existing))
+		for _, edge := range edges {
+			if b, ok := existing[edge.name]; ok {
+				out = append(out, b)
+			}
+		}
+		dst.Border = out
 	},
 	"Fill": func(dst *excelize.Style, srcPtr reflect.Value) {
 		src := srcPtr.Elem() // CellFill struct

@@ -1106,6 +1106,140 @@ func stampFill(t *testing.T, xlsx []byte, sheetName string, row, col int) []byte
 	return buf.Bytes()
 }
 
+// readCellBorder returns the excelize Border (Type matches edgeName,
+// e.g. "top"/"right"/"bottom"/"left") at the given cell, or a
+// zero-value Border if no such edge is set.
+func readCellBorder(t *testing.T, xlsx []byte, sheetName string, row, col int, edgeName string) excelize.Border {
+	t.Helper()
+	style := getCellStyle(t, xlsx, sheetName, row, col)
+	if style == nil {
+		return excelize.Border{}
+	}
+	for _, b := range style.Border {
+		if b.Type == edgeName {
+			return b
+		}
+	}
+	return excelize.Border{}
+}
+
+// TestSerializerStyleSetsBorders: snapshot borders.{top,bottom}=true
+// lands as thin black borders on the corresponding edges.
+// Uses K1 (row=1, col=11) which is outside the fixture's data range
+// and carries no pre-existing borders, so nil edges stay absent.
+func TestSerializerStyleSetsBorders(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       1,
+				Col:       11,
+				RawString: "from-save",
+				Display:   "from-save",
+				Style: &CellStyle{
+					Borders: &CellBorders{
+						Top:    boolPtr(true),
+						Bottom: boolPtr(true),
+					},
+				},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+
+	top := readCellBorder(t, out, "People", 1, 11, "top")
+	if top.Style != 1 {
+		t.Errorf("K1 top border style: want 1 (thin), got %d", top.Style)
+	}
+	bottom := readCellBorder(t, out, "People", 1, 11, "bottom")
+	if bottom.Style != 1 {
+		t.Errorf("K1 bottom border style: want 1 (thin), got %d", bottom.Style)
+	}
+	// Edges not in the patch must not be set.
+	left := readCellBorder(t, out, "People", 1, 11, "left")
+	if left.Style != 0 {
+		t.Errorf("K1 left border: want absent, got style=%d", left.Style)
+	}
+}
+
+// TestSerializerStyleClearsBorder: snapshot borders.top=false on a cell
+// that previously had a top border results in the top edge being
+// cleared. Verifies the false-clears-edge semantics matching the TS
+// `none` preset.
+func TestSerializerStyleClearsBorder(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	// Pre-stamp B2 with all four thin borders.
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	id, err := f.NewStyle(&excelize.Style{
+		Border: []excelize.Border{
+			{Type: "top", Color: "000000", Style: 1},
+			{Type: "right", Color: "000000", Style: 1},
+			{Type: "bottom", Color: "000000", Style: 1},
+			{Type: "left", Color: "000000", Style: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetCellStyle("People", "B2", "B2", id); err != nil {
+		t.Fatalf("SetCellStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1",
+				Row:     2,
+				Col:     2,
+				Style:   &CellStyle{Borders: &CellBorders{Top: boolPtr(false)}},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+
+	if got := readCellBorder(t, out, "People", 2, 2, "top"); got.Style != 0 {
+		t.Errorf("top border should be cleared (style=0), got style=%d", got.Style)
+	}
+	// Other edges must survive.
+	if got := readCellBorder(t, out, "People", 2, 2, "right"); got.Style != 1 {
+		t.Errorf("right border survived: want style=1, got %d", got.Style)
+	}
+}
+
 // TestSerializerStyleClearsFill: snapshot FgColor = "" on a cell that
 // already has a red fill must clear the foreground color. The trailing-
 // empty trimmer in the Fill override drops the now-empty color slot,
