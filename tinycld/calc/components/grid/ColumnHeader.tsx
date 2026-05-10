@@ -1,10 +1,12 @@
-import { Platform, ScrollView, Text, View } from 'react-native'
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
+import { ChevronDown } from 'lucide-react-native'
+import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import {
     type DragState,
     HANDLE_VISUAL_WIDTH,
     NATIVE_HANDLE_HIT_SLOP,
 } from '../../hooks/use-column-resize'
-import { useGridStore } from '../../hooks/use-grid-store'
+import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { columnLabel } from '../../lib/workbook-types'
 import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT } from './constants'
 
@@ -16,6 +18,12 @@ interface ColumnHeaderProps {
     lastCol: number
     makeHandleProps: (col: number) => Record<string, unknown>
     dragState: DragState | null
+    // Range covered by the active filter view (null when no filter is
+    // set). Columns inside this range render a filter chevron.
+    filterRange: { startCol: number; endCol: number } | null
+    // Set of column indexes that have an active criterion. Used to
+    // render the chevron in an accented state.
+    activeFilterCols: ReadonlySet<number>
 }
 
 export function ColumnHeader({
@@ -26,8 +34,13 @@ export function ColumnHeader({
     lastCol,
     makeHandleProps,
     dragState,
+    filterRange,
+    activeFilterCols,
 }: ColumnHeaderProps) {
     const activeCol = useGridStore(s => s.selected?.col ?? null)
+    const store = useGridStoreApi()
+    const muted = useThemeColor('muted-foreground')
+    const accent = useThemeColor('accent')
     const cells: React.ReactNode[] = []
     for (let col = firstCol; col <= lastCol; col++) {
         const isActive = col === activeCol
@@ -37,10 +50,13 @@ export function ColumnHeader({
         // occupy zero pixels of layout space — render nothing rather
         // than a 0×H view to keep the DOM lean.
         if (width > 0) {
+            const inFilterRange =
+                filterRange != null && col >= filterRange.startCol && col <= filterRange.endCol
+            const hasActiveCriterion = activeFilterCols.has(col)
             cells.push(
                 <View
                     key={`h-${col}`}
-                    className={`border-r border-b border-border items-center justify-center ${
+                    className={`border-r border-b border-border flex-row items-center justify-center ${
                         isActive ? 'bg-accent' : 'bg-surface-secondary'
                     }`}
                     style={{
@@ -58,6 +74,24 @@ export function ColumnHeader({
                     >
                         {columnLabel(col)}
                     </Text>
+                    {inFilterRange ? (
+                        <Pressable
+                            onPress={() => store.getState().openFilterDropdown(col)}
+                            accessibilityLabel={`Filter column ${columnLabel(col)}`}
+                            accessibilityRole="button"
+                            style={{
+                                marginLeft: 4,
+                                paddingHorizontal: 2,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}
+                        >
+                            <ChevronDown
+                                size={12}
+                                color={hasActiveCriterion ? accent : muted}
+                            />
+                        </Pressable>
+                    ) : null}
                 </View>
             )
         }

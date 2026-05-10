@@ -3,11 +3,14 @@ import { useCallback, useEffect, useRef } from 'react'
 import { Platform, Pressable, StyleSheet, type View } from 'react-native'
 import type * as Y from 'yjs'
 import { useClipboard } from '../../hooks/use-clipboard'
+import { useFilterView } from '../../hooks/use-filter-view'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { setYCell } from '../../hooks/use-y-cell'
 import { useYSheets } from '../../hooks/use-y-sheets'
+import { applyFilter, clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
 import { effectiveRange, forEachCellInRange } from '../../lib/selection-range'
+import { detectHeaderRow, sortRange } from '../../lib/sort'
 import { MIN_COLS, MIN_ROWS } from './constants'
 import { readCellStyle, toggleCellFontAttrInRange } from './style-helpers'
 
@@ -159,6 +162,40 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
         toggleCellFontAttrInRange(doc, sheetId, range, 'italic')
     }, [doc, sheetId, range])
 
+    const filterView = useFilterView(doc, sheetId)
+    const hasMultiCellRange = range != null && (rowSpan > 1 || colSpan > 1)
+
+    // Sort uses the active range's first column as the key. The
+    // hasHeader flag is detected automatically — a one-shot sort menu
+    // item shouldn't pop a dialog.
+    const onSortAsc = useCallback(() => {
+        if (doc == null || range == null) return
+        const hasHeader = detectHeaderRow(doc, sheetId, range)
+        const result = sortRange(doc, sheetId, range, range.startCol, 'asc', hasHeader)
+        if (result.ok && result.mergesBroken > 0) {
+            store.getState().setSortStatus({ mergesBroken: result.mergesBroken })
+        }
+    }, [doc, sheetId, range, store])
+
+    const onSortDesc = useCallback(() => {
+        if (doc == null || range == null) return
+        const hasHeader = detectHeaderRow(doc, sheetId, range)
+        const result = sortRange(doc, sheetId, range, range.startCol, 'desc', hasHeader)
+        if (result.ok && result.mergesBroken > 0) {
+            store.getState().setSortStatus({ mergesBroken: result.mergesBroken })
+        }
+    }, [doc, sheetId, range, store])
+
+    const onCreateFilter = useCallback(() => {
+        if (doc == null || range == null) return
+        applyFilter(doc, sheetId, { range, criteria: {} })
+    }, [doc, sheetId, range])
+
+    const onRemoveFilter = useCallback(() => {
+        if (doc == null) return
+        clearFilter(doc, sheetId)
+    }, [doc, sheetId])
+
     // Indicator labels reflect the anchor cell only — that's the cell
     // the user sees outlined and is the natural reference point for
     // "is this currently bold?". The mixed-toggle action will still
@@ -258,6 +295,26 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                     <Menu.Item onPress={onToggleItalic}>
                         <Menu.ItemTitle>{isItalic ? 'Remove italic' : 'Italic'}</Menu.ItemTitle>
                     </Menu.Item>
+                    <Separator className="my-1 mx-2" />
+                    {hasMultiCellRange ? (
+                        <>
+                            <Menu.Item onPress={onSortAsc}>
+                                <Menu.ItemTitle>Sort range A→Z</Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={onSortDesc}>
+                                <Menu.ItemTitle>Sort range Z→A</Menu.ItemTitle>
+                            </Menu.Item>
+                        </>
+                    ) : null}
+                    {filterView == null ? (
+                        <Menu.Item onPress={onCreateFilter} isDisabled={range == null}>
+                            <Menu.ItemTitle>Create filter</Menu.ItemTitle>
+                        </Menu.Item>
+                    ) : (
+                        <Menu.Item onPress={onRemoveFilter}>
+                            <Menu.ItemTitle>Remove filter</Menu.ItemTitle>
+                        </Menu.Item>
+                    )}
                 </Menu.Content>
             </Menu.Portal>
         </Menu>

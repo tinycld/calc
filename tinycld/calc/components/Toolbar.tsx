@@ -1,9 +1,11 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {
+    ArrowDownUp,
     ArrowLeft,
     ArrowRight,
     Bold,
     DollarSign,
+    Filter,
     Italic,
     Percent,
     Redo,
@@ -72,6 +74,12 @@ export interface ToolbarProps {
     onDownloadCsvCurrent: () => void
     onDownloadCsvAll: () => void
     onDownloadXlsx?: () => void
+
+    // Sort opens the modal SortDialog. Filter toggles the filter view
+    // on the active selection (creates if none, removes if present).
+    onOpenSort: () => void
+    onToggleFilter: () => void
+    isFilterActive: boolean
 }
 
 // memo'd so that selection-range churn during a drag (which only
@@ -116,6 +124,9 @@ function ToolbarImpl(props: ToolbarProps) {
         onDownloadCsvCurrent,
         onDownloadCsvAll,
         onDownloadXlsx,
+        onOpenSort,
+        onToggleFilter,
+        isFilterActive,
     } = props
 
     return (
@@ -205,6 +216,20 @@ function ToolbarImpl(props: ToolbarProps) {
             />
             <ToolbarDivider />
 
+            <ToolbarButton
+                icon={ArrowDownUp}
+                disabled={disabled}
+                onPress={onOpenSort}
+                label="Sort range"
+            />
+            <ToolbarButton
+                icon={Filter}
+                active={isFilterActive}
+                disabled={disabled}
+                onPress={onToggleFilter}
+                label={isFilterActive ? 'Remove filter' : 'Create filter'}
+            />
+            <ToolbarDivider />
             <ToolbarButton icon={Search} onPress={onOpenFind} label="Find and replace" />
             <DownloadMenu
                 onDownloadCsvCurrent={onDownloadCsvCurrent}

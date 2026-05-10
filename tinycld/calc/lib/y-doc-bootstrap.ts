@@ -50,6 +50,12 @@ export interface YSheetMeta {
     // cells render with their own + col/sheet layers only. Read via
     // `readRowStylesFromMeta` in lib/sheet-styles.ts.
     rowStyles?: Record<number, import('./workbook-types').CellStyle>
+    // Persistent filter view metadata when the user has set up a
+    // filter on this sheet. The Y.Map under the `filterView` key holds
+    // { range, criteria, savedHeights } — read/written via the helpers
+    // in lib/filter.ts. Bootstrap doesn't touch this field; it
+    // round-trips because we never strip unknown keys.
+    filterView?: unknown
 }
 
 // YCellValue is the typed snapshot returned by useYCell. `kind` carries

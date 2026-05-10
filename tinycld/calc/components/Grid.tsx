@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useMemo } from 'react'
 import { View } from 'react-native'
+import type * as Y from 'yjs'
 import { useFindActions } from '../hooks/find/use-find-actions'
 import { createFindStore } from '../hooks/find/use-find-store'
 import {
@@ -19,7 +20,8 @@ import { useRefDragExtender } from '../hooks/grid/use-ref-drag-extender'
 import { useCalcShortcuts } from '../hooks/use-calc-shortcuts'
 import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
-import { GridStoreProvider } from '../hooks/use-grid-store'
+import { useFilterView } from '../hooks/use-filter-view'
+import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
 import { usePresence } from '../hooks/use-presence'
 import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
@@ -27,6 +29,8 @@ import { useYSheets } from '../hooks/use-y-sheets'
 import { downloadCsv } from '../lib/csv/download'
 import { serializeSheetToCsv } from '../lib/csv/encode'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
+import { applyFilter, clearFilter } from '../lib/filter'
+import { effectiveRange } from '../lib/selection-range'
 import { FindReplaceDialog } from './FindReplaceDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
@@ -36,9 +40,12 @@ import { ColumnHeader } from './grid/ColumnHeader'
 import { CommentPopover } from './grid/CommentPopover'
 import { CornerCell } from './grid/CornerCell'
 import { MIN_COLS, MIN_ROWS } from './grid/constants'
+import { FilterDropdown } from './grid/FilterDropdown'
 import { HandleContextMenu } from './grid/HandleContextMenu'
 import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
+import { SortDialog } from './grid/SortDialog'
+import { SortStatusBanner } from './SortStatusBanner'
 import { Toolbar } from './Toolbar'
 
 export type GridHandle = GridViewportHandle
@@ -230,6 +237,35 @@ function GridInner({
         }
     }, [doc, sheets])
 
+    const filterView = useFilterView(doc, sheetId)
+    const filterRange = filterView?.range ?? null
+    const activeFilterCols = useMemo(() => {
+        const set = new Set<number>()
+        if (filterView != null) {
+            for (const key of Object.keys(filterView.criteria)) {
+                const c = Number(key)
+                if (Number.isFinite(c)) set.add(c)
+            }
+        }
+        return set
+    }, [filterView])
+
+    const onOpenSort = useCallback(
+        () => instance.store.getState().openSortDialog(),
+        [instance.store]
+    )
+    const onToggleFilter = useCallback(() => {
+        if (doc == null) return
+        const state = instance.store.getState()
+        if (filterView != null) {
+            clearFilter(doc, sheetId)
+            return
+        }
+        const range = effectiveRange(state.selected, state.selectionRange)
+        if (range == null) return
+        applyFilter(doc, sheetId, { range, criteria: {} })
+    }, [doc, sheetId, instance.store, filterView])
+
     return (
         <View className="flex-1 bg-background web:select-none">
             <Toolbar
@@ -265,7 +301,11 @@ function GridInner({
                 onOpenFind={onOpenFind}
                 onDownloadCsvCurrent={onDownloadCsvCurrent}
                 onDownloadCsvAll={onDownloadCsvAll}
+                onOpenSort={onOpenSort}
+                onToggleFilter={onToggleFilter}
+                isFilterActive={filterView != null}
             />
+            <SortStatusBanner />
             <FormulaBar
                 ref={instance.formulaBarInputRef}
                 cellLabel={formulaBar.cellLabel}
@@ -290,6 +330,8 @@ function GridInner({
                     lastCol={viewport.visible.lastCol}
                     makeHandleProps={colResize.makeHandleProps}
                     dragState={colResize.dragState}
+                    filterRange={filterRange}
+                    activeFilterCols={activeFilterCols}
                 />
             </View>
             <View className="flex-1 flex-row">
@@ -325,6 +367,13 @@ function GridInner({
             </View>
             <CellContextMenu doc={doc} sheetId={sheetId} />
             <CommentPopover driveItemId={driveItemId} sheetId={sheetId} />
+            <SortDialog doc={doc} sheetId={sheetId} />
+            <GridFilterDropdownAnchor
+                doc={doc}
+                sheetId={sheetId}
+                colOffsets={colOffsets}
+                scrollX={viewport.scrollX}
+            />
             <HandleContextMenu
                 onAutosizeCol={col => autosizeCol(doc, sheetId, col)}
                 onResetCol={(col, width) => commitColWidth(doc, sheetId, col, width)}
@@ -367,4 +416,44 @@ function FindReplaceDialogGate({ actions }: FindReplaceDialogGateProps) {
 function sanitizeFilename(name: string): string {
     const cleaned = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
     return cleaned.replace(/_+/g, '_').replace(/^_|_$/g, '') || 'sheet'
+}
+
+interface GridFilterDropdownAnchorProps {
+    doc: Y.Doc | null
+    sheetId: string
+    colOffsets: Float64Array
+    scrollX: number
+}
+
+// GridFilterDropdownAnchor measures the screen position of the column
+// header that owns the open filter dropdown so the popover anchors to
+// it. Lives in Grid because only Grid has the colOffsets and scrollX.
+function GridFilterDropdownAnchor({
+    doc,
+    sheetId,
+    colOffsets,
+    scrollX,
+}: GridFilterDropdownAnchorProps) {
+    const filterDropdownCol = useGridStore(s => s.filterDropdownCol)
+    if (filterDropdownCol == null)
+        return <FilterDropdown doc={doc} sheetId={sheetId} anchorRect={null} />
+    const left = colOffsets[filterDropdownCol - 1] ?? 0
+    const right = colOffsets[filterDropdownCol] ?? left
+    const width = right - left
+    // colOffsets is content-relative; subtract scrollX to land in the
+    // viewport coordinate space the dropdown's `position: absolute`
+    // expects. Header sits at top: TOOLBAR + FORMULA_BAR (~64px) — we
+    // approximate with a fixed offset since the dropdown doesn't need
+    // pixel-perfect anchoring (Body's grid flex layout pushes the
+    // headers down). Worst case the dropdown sits a hair below the
+    // visible header, which is the standard Sheets behaviour.
+    const screenLeft = left - scrollX + 40
+    const screenTop = 64
+    return (
+        <FilterDropdown
+            doc={doc}
+            sheetId={sheetId}
+            anchorRect={{ left: screenLeft, top: screenTop, width, height: 0 }}
+        />
+    )
 }

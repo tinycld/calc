@@ -182,6 +182,15 @@ export interface GridState {
     // to paint the green extension rectangle, and fillDragEnd reads it
     // to dispatch the commit through deps.applyFill.
     fillDrag: FillDrag | null
+    // Sort/Filter UI state. The persistent filter view definition
+    // lives on Y.Doc sheet metadata (lib/filter.ts FILTER_VIEW_KEY);
+    // these flags track only the transient dialog/dropdown visibility
+    // so a reload doesn't snap them open.
+    sortDialogOpen: boolean
+    filterDropdownCol: number | null
+    // Status banner shown after a sort dissolved merges. Cleared by
+    // the next user action via dismissSortStatus.
+    sortStatus: { mergesBroken: number } | null
 }
 
 // Live cursor position inside the editing input. Stored as a
@@ -357,6 +366,16 @@ export interface GridActions {
     fillDragStart: () => boolean
     fillDragMove: (target: { row: number; col: number }) => void
     fillDragEnd: () => void
+    // Sort dialog open/close. Pure UI state — the actual sort runs via
+    // a sort.ts call wired from the SortDialog's Apply button.
+    openSortDialog: () => void
+    closeSortDialog: () => void
+    // Filter dropdown anchored on a specific column header. Null when
+    // closed. Only one dropdown is open at a time.
+    openFilterDropdown: (col: number) => void
+    closeFilterDropdown: () => void
+    // Status banner after a sort dissolved one or more merges.
+    setSortStatus: (status: { mergesBroken: number } | null) => void
 }
 
 export interface GridStore extends GridState, GridActions {}
@@ -403,6 +422,9 @@ const initialState: GridState = {
     copySourceRange: null,
     cutPending: false,
     fillDrag: null,
+    sortDialogOpen: false,
+    filterDropdownCol: null,
+    sortStatus: null,
 }
 
 // Auto-clear an abandoned cut/copy marker after 30 seconds so the
@@ -1018,6 +1040,12 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     cutPending: false,
                 })
             },
+
+            openSortDialog: () => set({ sortDialogOpen: true, contextTarget: null }),
+            closeSortDialog: () => set({ sortDialogOpen: false }),
+            openFilterDropdown: col => set({ filterDropdownCol: col, contextTarget: null }),
+            closeFilterDropdown: () => set({ filterDropdownCol: null }),
+            setSortStatus: status => set({ sortStatus: status }),
 
             // Fill-handle drag actions. The interesting bit is the
             // *direction lock*: the dot can be dragged into either of

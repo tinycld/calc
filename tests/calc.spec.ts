@@ -853,6 +853,80 @@ test.describe('Calc', () => {
     })
 })
 
+test.describe('Sort & Filter', () => {
+    test.setTimeout(120_000)
+
+    test.beforeEach(async ({ page }) => {
+        await login(page)
+    })
+
+    test('sort range A→Z reorders the selection alphabetically', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        await typeIntoCell(page, formulaBar, 'A1', 'Banana')
+        await typeIntoCell(page, formulaBar, 'A2', 'Apple')
+        await typeIntoCell(page, formulaBar, 'A3', 'Cherry')
+        await typeIntoCell(page, formulaBar, 'A4', 'Date')
+
+        // Build a multi-cell selection A1:A4 by clicking A1 and shift-
+        // clicking A4. The shift modifier is what extendSelectionTo
+        // listens for in the cell PanResponder/click handler.
+        await page.getByLabel('Cell A1', { exact: true }).click()
+        await page.getByLabel('Cell A4', { exact: true }).click({ modifiers: ['Shift'] })
+
+        await page.getByLabel('Cell A2', { exact: true }).click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Sort range A→Z' }).click()
+
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Apple')
+        await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('Banana')
+        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('Cherry')
+        await expect(page.getByLabel('Cell A4', { exact: true })).toHaveText('Date')
+    })
+
+    test('create filter shows chevron, hide-by-value hides row, clear restores', async ({
+        page,
+    }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        await typeIntoCell(page, formulaBar, 'A1', 'Apple')
+        await typeIntoCell(page, formulaBar, 'A2', 'Banana')
+        await typeIntoCell(page, formulaBar, 'A3', 'Cherry')
+
+        // Build A1:A3 selection, open context menu, and create the filter.
+        await page.getByLabel('Cell A1', { exact: true }).click()
+        await page.getByLabel('Cell A3', { exact: true }).click({ modifiers: ['Shift'] })
+        await page.getByLabel('Cell A2', { exact: true }).click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Create filter' }).click()
+
+        // Chevron in column A header is the per-column "Filter column A"
+        // button rendered by ColumnHeader when the column is in the
+        // filter range.
+        const chevron = page.getByRole('button', { name: 'Filter column A' })
+        await expect(chevron).toBeVisible()
+
+        // Open the dropdown and uncheck "Banana".
+        await chevron.click()
+        await page.getByRole('checkbox', { name: 'Banana' }).click()
+        await page.getByRole('button', { name: 'Apply filter' }).click()
+
+        // Banana row hidden — Cell A2 should now render at row 3's old
+        // position. Easiest check: A2 either has the next-visible value
+        // (Cherry) shifted up, or the cell at "A2" is no longer visible
+        // because the row has 0 height. We check that no element labeled
+        // "Cell A2" is currently rendered.
+        await expect(page.getByLabel('Cell A2', { exact: true })).toHaveCount(0)
+
+        // Reopen, click Clear, and verify Banana returns.
+        await chevron.click()
+        await page.getByRole('button', { name: 'Clear filter' }).click()
+        await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('Banana')
+    })
+})
+
 // Reads a single computed style property from the rendered Text node
 // inside a cell. RN-Web wraps Text as a div, and the cell wrapper
 // (the element carrying aria-label="Cell A1") contains that text node
