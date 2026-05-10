@@ -8,15 +8,30 @@ import {
     readRowHeightsFromMeta,
 } from '../lib/dimensions'
 import {
+    FROZEN_COLS_KEY,
+    FROZEN_ROWS_KEY,
+    readFrozenCount,
     SHEET_COLOR_KEY,
     SHEET_HIDDEN_KEY,
     SHEETS_MAP,
+    setYFrozenCount,
     type YSheetMeta,
     ydocSheetIds,
 } from '../lib/y-doc-bootstrap'
 
 export interface SheetWithId extends YSheetMeta {
     id: string
+}
+
+// setFrozenRows / setFrozenCols are the imperative writers the grid
+// store dispatches when the user picks a freeze item from the toolbar
+// or context menu. n <= 0 unfreezes the axis (deletes the meta key).
+export function setFrozenRows(doc: Y.Doc | null, sheetId: string, n: number): void {
+    setYFrozenCount(doc, sheetId, FROZEN_ROWS_KEY, n)
+}
+
+export function setFrozenCols(doc: Y.Doc | null, sheetId: string, n: number): void {
+    setYFrozenCount(doc, sheetId, FROZEN_COLS_KEY, n)
 }
 
 // useYSheets returns the array of VISIBLE sheets in the workbook,
@@ -75,6 +90,8 @@ export function useAllYSheets(doc: Y.Doc | null): SheetWithId[] {
                 rowHeights: readRowHeightsFromMeta(meta),
                 color: typeof colorRaw === 'string' ? colorRaw : undefined,
                 hidden: hiddenRaw === true ? true : undefined,
+                frozenRows: readFrozenCount(meta, FROZEN_ROWS_KEY),
+                frozenCols: readFrozenCount(meta, FROZEN_COLS_KEY),
             }
         })
         const prev = snapshotRef.current
@@ -136,7 +153,9 @@ function sameSheets(a: SheetWithId[], b: SheetWithId[]): boolean {
             x.rowCount !== y.rowCount ||
             x.colCount !== y.colCount ||
             x.color !== y.color ||
-            x.hidden !== y.hidden
+            x.hidden !== y.hidden ||
+            x.frozenRows !== y.frozenRows ||
+            x.frozenCols !== y.frozenCols
         ) {
             return false
         }

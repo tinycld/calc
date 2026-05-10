@@ -65,10 +65,26 @@ export interface YSheetMeta {
     // out of the public sheet list (see useYSheets) but still appear in
     // the "Show hidden" submenu in the sheet-tabs UI.
     hidden?: boolean
+    // Number of rows frozen at the top of the sheet. Absent / 0 = no
+    // frozen rows. Read by Body.tsx to split the viewport into
+    // quadrants. Mirrors the xlsx <pane> ySplit value. Setters live in
+    // freeze-panes.ts.
+    frozenRows?: number
+    // Number of columns frozen at the left of the sheet. Mirrors
+    // xlsx <pane> xSplit. Independent of frozenRows.
+    frozenCols?: number
 }
 
 export const SHEET_COLOR_KEY = 'color'
 export const SHEET_HIDDEN_KEY = 'hidden'
+
+// FROZEN_ROWS_KEY / FROZEN_COLS_KEY are the nested keys under each
+// sheet's metadata Y.Map holding the frozen row/column counts. Absent
+// or zero means "no freeze on this axis" — the writer deletes the key
+// rather than storing 0, matching the sparse colWidths/rowHeights
+// pattern.
+export const FROZEN_ROWS_KEY = 'frozenRows'
+export const FROZEN_COLS_KEY = 'frozenCols'
 
 // YCellValue is the typed snapshot returned by useYCell. `kind` carries
 // the cell's semantic type; `raw` is the value in a Yjs-serializable
@@ -112,6 +128,12 @@ export function bootstrapYDocFromWorkbook(doc: Y.Doc, model: WorkbookModel): voi
             }
             if (sheet.hidden === true) {
                 meta.set(SHEET_HIDDEN_KEY, true)
+            }
+            if (typeof sheet.frozenRows === 'number' && sheet.frozenRows > 0) {
+                meta.set(FROZEN_ROWS_KEY, Math.floor(sheet.frozenRows))
+            }
+            if (typeof sheet.frozenCols === 'number' && sheet.frozenCols > 0) {
+                meta.set(FROZEN_COLS_KEY, Math.floor(sheet.frozenCols))
             }
             sheetsMap.set(sheetId, meta)
 
@@ -358,4 +380,43 @@ export function ydocSheetIds(doc: Y.Doc): string[] {
 // check.
 export function ydocIsEmpty(doc: Y.Doc): boolean {
     return doc.getMap<Y.Map<unknown>>(SHEETS_MAP).size === 0
+}
+
+// readFrozenCount reads frozenRows or frozenCols off a sheet's metadata
+// Y.Map. Returns undefined when the key is absent (no freeze on that
+// axis) or non-numeric. Zero is treated as "no freeze" too — the
+// writer never stores 0, but a stale doc could carry one.
+export function readFrozenCount(
+    meta: Y.Map<unknown> | undefined,
+    key: typeof FROZEN_ROWS_KEY | typeof FROZEN_COLS_KEY
+): number | undefined {
+    if (meta == null) return undefined
+    const v = meta.get(key)
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return undefined
+    return Math.floor(v)
+}
+
+// setYFrozenCount writes frozenRows / frozenCols on the sheet's
+// metadata Y.Map. count <= 0 deletes the key (the sparse "no freeze"
+// state) so unfreezing leaves no trace on disk and useYSheets returns
+// undefined for the field. The actual transactor batches both
+// frozenRows and frozenCols writes together — see setYFreeze.
+export function setYFrozenCount(
+    doc: Y.Doc | null,
+    sheetId: string,
+    key: typeof FROZEN_ROWS_KEY | typeof FROZEN_COLS_KEY,
+    count: number
+): void {
+    if (doc == null) return
+    const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+    const meta = sheetsMap.get(sheetId)
+    if (meta == null) return
+    const clamped = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0
+    doc.transact(() => {
+        if (clamped <= 0) {
+            meta.delete(key)
+            return
+        }
+        meta.set(key, clamped)
+    })
 }

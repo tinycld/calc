@@ -36,6 +36,12 @@ type WorksheetModel struct {
 	// Merges enumerates merged-cell rectangles imported from the
 	// source xlsx via excelize.GetMergeCells.
 	Merges []MergeRangeDTO `json:"merges,omitempty"`
+	// FrozenRows / FrozenCols mirror the xlsx <pane> ySplit /
+	// xSplit when state="frozen". Zero on either axis means "no
+	// freeze on this axis"; the doc bootstrap omits the meta key
+	// rather than writing 0 so a freeze-less sheet adds no bytes.
+	FrozenRows int `json:"frozenRows,omitempty"`
+	FrozenCols int `json:"frozenCols,omitempty"`
 }
 
 // MergeRangeDTO mirrors the TS MergeRangeModel: a merged cell anchor
@@ -151,14 +157,17 @@ func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (Work
 		colCount = 1
 	}
 	merges, _ := readMerges(f, sheetName)
+	frozenRows, frozenCols := readWorksheetFreeze(f, sheetName)
 	return WorksheetModel{
-		Name:     sheetName,
-		RowCount: rowCount,
-		ColCount: colCount,
-		Cells:    cells,
-		Color:    tabColor,
-		Hidden:   hidden,
-		Merges:   merges,
+		Name:       sheetName,
+		RowCount:   rowCount,
+		ColCount:   colCount,
+		Cells:      cells,
+		Color:      tabColor,
+		Hidden:     hidden,
+		Merges:     merges,
+		FrozenRows: frozenRows,
+		FrozenCols: frozenCols,
 	}, nil
 }
 
@@ -198,6 +207,27 @@ func readMerges(f *excelize.File, sheetName string) ([]MergeRangeDTO, error) {
 		return nil, nil
 	}
 	return out, nil
+}
+
+// readWorksheetFreeze pulls the xlsx <pane> ySplit/xSplit off the
+// sheet via excelize.GetPanes when state="frozen". Returns (0, 0) for
+// any sheet that isn't frozen — including split-pane sheets, which we
+// don't surface to the doc today (split panes are a different UX
+// affordance with no calc-side equivalent yet).
+func readWorksheetFreeze(f *excelize.File, sheetName string) (int, int) {
+	panes, err := f.GetPanes(sheetName)
+	if err != nil || !panes.Freeze {
+		return 0, 0
+	}
+	rows := panes.YSplit
+	cols := panes.XSplit
+	if rows < 0 {
+		rows = 0
+	}
+	if cols < 0 {
+		cols = 0
+	}
+	return rows, cols
 }
 
 // readWorkbookCell extracts a single cell into the typed CellValueDTO shape.
@@ -413,6 +443,12 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 			}
 			if sheet.Hidden {
 				meta.Set("hidden", true)
+			}
+			if sheet.FrozenRows > 0 {
+				meta.Set("frozenRows", sheet.FrozenRows)
+			}
+			if sheet.FrozenCols > 0 {
+				meta.Set("frozenCols", sheet.FrozenCols)
 			}
 			sheetsMap.Set(sheetID, meta)
 

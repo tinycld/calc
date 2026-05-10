@@ -118,6 +118,11 @@ export interface WorksheetModel {
     // excelize's GetMergeCells; persisted back via MergeCell. Absent on
     // sheets without merges.
     merges?: MergeRangeModel[]
+    // Optional freeze counts read from the xlsx <pane> on import.
+    // Bootstrap copies these straight onto the sheet's Y.Map so the
+    // grid renders the freeze on first open. Absent / 0 = no freeze.
+    frozenRows?: number
+    frozenCols?: number
 }
 
 export interface MergeRangeModel {

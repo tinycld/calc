@@ -230,6 +230,8 @@ func collectSheets(sheetsMap *ycrdt.YMap) ([]SheetMeta, error) {
 			Color:      color,
 			Hidden:     hidden,
 			Merges:     decodeMerges(meta, "merges"),
+			FrozenRows: numberFromAny(meta.Get("frozenRows")),
+			FrozenCols: numberFromAny(meta.Get("frozenCols")),
 		})
 	})
 	if collectErr != nil {

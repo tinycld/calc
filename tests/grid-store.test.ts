@@ -19,12 +19,16 @@ interface StubDeps {
     deps: GridStoreDeps
     writeCalls: Array<{ row: number; col: number; value: string }>
     structuralOps: StructuralOp[]
+    frozenRowCalls: number[]
+    frozenColCalls: number[]
     focusCalls: number
 }
 
 function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
     const writeCalls: StubDeps['writeCalls'] = []
     const structuralOps: StructuralOp[] = []
+    const frozenRowCalls: number[] = []
+    const frozenColCalls: number[] = []
     let focusCalls = 0
     return {
         deps: {
@@ -40,9 +44,13 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
             findMergesInRange: () => [],
             mergeRange: () => {},
             unmergeAt: () => {},
+            setFrozenRows: n => frozenRowCalls.push(n),
+            setFrozenCols: n => frozenColCalls.push(n),
         },
         writeCalls,
         structuralOps,
+        frozenRowCalls,
+        frozenColCalls,
         get focusCalls() {
             return focusCalls
         },

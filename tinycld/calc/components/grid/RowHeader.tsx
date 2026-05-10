@@ -1,3 +1,4 @@
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import {
@@ -18,6 +19,10 @@ interface RowHeaderProps {
     // read here) because the header is dimensions-agnostic; Grid
     // already has the canonical value.
     colCount: number
+    // When > 0, the first `frozenRows` row labels render in a
+    // non-scrolling section above the scrollable section. Mirror of
+    // ColumnHeader's frozen-cols handling.
+    frozenRows: number
     makeHandleProps: (row: number) => Record<string, unknown>
     dragState: RowDragState | null
 }
@@ -29,9 +34,11 @@ export function RowHeader({
     firstRow,
     lastRow,
     colCount,
+    frozenRows,
     makeHandleProps,
     dragState,
 }: RowHeaderProps) {
+    const borderColor = useThemeColor('border')
     const activeRow = useGridStore(s => s.selected?.row ?? null)
     // Highlight the row label more strongly when the user has selected
     // the WHOLE row (scope='row') vs. just clicking a body cell that
@@ -41,17 +48,121 @@ export function RowHeader({
         s => s.selectionScope === 'row' && s.selected?.row === activeRow
     )
     const store = useGridStoreApi()
-    const cells: React.ReactNode[] = []
-    for (let row = firstRow; row <= lastRow; row++) {
+
+    const rows = rowOffsets.length - 1
+    const fRows = Math.min(Math.max(0, frozenRows), rows)
+    const frozenH = fRows > 0 ? rowOffsets[fRows] : 0
+    const scrollableContentHeight = Math.max(0, contentHeight - frozenH)
+    const scrollableFirstRow = Math.max(firstRow, fRows + 1)
+
+    const frozenCells: React.ReactNode[] = []
+    if (fRows > 0) {
+        appendRowHeaderCells(
+            frozenCells,
+            rowOffsets,
+            1,
+            fRows,
+            0,
+            activeRow,
+            rowScopeActive,
+            store,
+            colCount,
+            makeHandleProps,
+            dragState
+        )
+    }
+    const scrollableCells: React.ReactNode[] = []
+    appendRowHeaderCells(
+        scrollableCells,
+        rowOffsets,
+        scrollableFirstRow,
+        lastRow,
+        frozenH,
+        activeRow,
+        rowScopeActive,
+        store,
+        colCount,
+        makeHandleProps,
+        dragState
+    )
+
+    if (fRows <= 0) {
+        return (
+            <View style={{ width: ROW_HEADER_WIDTH, overflow: 'hidden' }}>
+                <ScrollView
+                    ref={scrollRef}
+                    scrollEnabled={false}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{
+                        width: ROW_HEADER_WIDTH,
+                        height: scrollableContentHeight,
+                    }}
+                >
+                    {scrollableCells}
+                </ScrollView>
+            </View>
+        )
+    }
+
+    return (
+        <View style={{ width: ROW_HEADER_WIDTH, overflow: 'hidden' }}>
+            <View
+                style={{
+                    width: ROW_HEADER_WIDTH,
+                    height: frozenH,
+                    overflow: 'hidden',
+                    borderBottomWidth: 2,
+                    borderBottomColor: borderColor,
+                }}
+            >
+                {frozenCells}
+            </View>
+            <View style={{ flex: 1, overflow: 'hidden' }}>
+                <ScrollView
+                    ref={scrollRef}
+                    scrollEnabled={false}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{
+                        width: ROW_HEADER_WIDTH,
+                        height: scrollableContentHeight,
+                    }}
+                >
+                    {scrollableCells}
+                </ScrollView>
+            </View>
+        </View>
+    )
+}
+
+// appendRowHeaderCells emits one row-header label cell + one resize
+// handle per visible row in [first..last], with each cell's `top`
+// shifted by `yShift` (0 for the frozen section, frozenH for the
+// scrollable section so its content origin lines up with the body's
+// bottom-right quadrant ScrollView).
+function appendRowHeaderCells(
+    out: React.ReactNode[],
+    rowOffsets: Float64Array,
+    first: number,
+    last: number,
+    yShift: number,
+    activeRow: number | null,
+    rowScopeActive: boolean,
+    store: ReturnType<typeof useGridStoreApi>,
+    colCount: number,
+    makeHandleProps: (row: number) => Record<string, unknown>,
+    dragState: RowDragState | null
+): void {
+    for (let row = first; row <= last; row++) {
         const isActive = row === activeRow
         const isRowScope = rowScopeActive && isActive
-        const top = rowOffsets[row - 1]
-        const height = rowOffsets[row] - top
+        const absTop = rowOffsets[row - 1]
+        const height = rowOffsets[row] - absTop
+        const top = absTop - yShift
         // Hidden rows (height 0 from a drag-to-zero) still need to
         // occupy zero pixels of layout space — render nothing rather
         // than a W×0 view to keep the DOM lean.
         if (height > 0) {
-            cells.push(
+            out.push(
                 <Pressable
                     key={`h-${row}`}
                     onPress={() => store.getState().selectRow(row, colCount)}
@@ -82,7 +193,7 @@ export function RowHeader({
         // boundary, with extra hit slop on native.
         const handleY = top + height - ROW_HANDLE_VISUAL_HEIGHT / 2
         const isDraggingThis = dragState?.row === row
-        cells.push(
+        out.push(
             <View
                 key={`g-${row}`}
                 {...makeHandleProps(row)}
@@ -104,16 +215,4 @@ export function RowHeader({
             />
         )
     }
-    return (
-        <View style={{ width: ROW_HEADER_WIDTH, overflow: 'hidden' }}>
-            <ScrollView
-                ref={scrollRef}
-                scrollEnabled={false}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ width: ROW_HEADER_WIDTH, height: contentHeight }}
-            >
-                {cells}
-            </ScrollView>
-        </View>
-    )
 }

@@ -11,6 +11,7 @@ import { applyFilter, clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
 import { effectiveRange, forEachCellInRange } from '../../lib/selection-range'
 import { detectHeaderRow, sortRange } from '../../lib/sort'
+import { columnLabel } from '../../lib/workbook-types'
 import { MIN_COLS, MIN_ROWS } from './constants'
 import { readCellStyle, toggleCellFontAttrInRange } from './style-helpers'
 
@@ -152,6 +153,12 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
             .openCommentPopover(target.cell.row, target.cell.col, target.cursor.x, target.cursor.y)
     }, [target, store])
 
+    const frozenRows = sheet?.frozenRows ?? 0
+    const frozenCols = sheet?.frozenCols ?? 0
+    const hasFreeze = frozenRows > 0 || frozenCols > 0
+    const bottomRow = range?.endRow ?? selected?.row ?? null
+    const rightCol = range?.endCol ?? selected?.col ?? null
+
     const onToggleBold = useCallback(() => {
         if (range == null) return
         toggleCellFontAttrInRange(doc, sheetId, range, 'bold')
@@ -291,6 +298,48 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                     <Menu.Item onPress={onComment}>
                         <Menu.ItemTitle>Comment</Menu.ItemTitle>
                     </Menu.Item>
+                    <Separator className="my-1 mx-2" />
+                    <Menu.Sub>
+                        <Menu.SubTrigger>
+                            <Menu.ItemTitle>Freeze</Menu.ItemTitle>
+                        </Menu.SubTrigger>
+                        <Menu.SubContent>
+                            <Menu.Item onPress={() => store.getState().setFrozenRows(1)}>
+                                <Menu.ItemTitle>Freeze 1 row</Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={() => store.getState().setFrozenRows(2)}>
+                                <Menu.ItemTitle>Freeze 2 rows</Menu.ItemTitle>
+                            </Menu.Item>
+                            {bottomRow != null && bottomRow > 0 && (
+                                <Menu.Item
+                                    onPress={() => store.getState().setFrozenRows(bottomRow)}
+                                >
+                                    <Menu.ItemTitle>Freeze up to row {bottomRow}</Menu.ItemTitle>
+                                </Menu.Item>
+                            )}
+                            <Menu.Item onPress={() => store.getState().setFrozenCols(1)}>
+                                <Menu.ItemTitle>Freeze 1 column</Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={() => store.getState().setFrozenCols(2)}>
+                                <Menu.ItemTitle>Freeze 2 columns</Menu.ItemTitle>
+                            </Menu.Item>
+                            {rightCol != null && rightCol > 0 && (
+                                <Menu.Item
+                                    onPress={() => store.getState().setFrozenCols(rightCol)}
+                                >
+                                    <Menu.ItemTitle>
+                                        Freeze up to column {columnLabel(rightCol)}
+                                    </Menu.ItemTitle>
+                                </Menu.Item>
+                            )}
+                            <Menu.Item
+                                onPress={() => store.getState().unfreeze()}
+                                isDisabled={!hasFreeze}
+                            >
+                                <Menu.ItemTitle>Unfreeze</Menu.ItemTitle>
+                            </Menu.Item>
+                        </Menu.SubContent>
+                    </Menu.Sub>
                     <Separator className="my-1 mx-2" />
                     <Menu.Item onPress={onToggleBold}>
                         <Menu.ItemTitle>{isBold ? 'Remove bold' : 'Bold'}</Menu.ItemTitle>

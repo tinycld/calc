@@ -20,6 +20,7 @@ import {
 } from '../../lib/structural-mutations'
 import { createGridStore, type GridStoreApi, type GridStoreDeps } from '../grid-store'
 import { setYCell } from '../use-y-cell'
+import { setFrozenCols, setFrozenRows } from '../use-y-sheets'
 
 export interface GridStoreInstance {
     store: GridStoreApi
@@ -70,6 +71,8 @@ export function useGridStoreInstance({
                     surface === 'bar' ? formulaBarInputRef.current : cellEditorInputRef.current
                 target?.focus()
             },
+            setFrozenRows: n => setFrozenRows(doc, sheetId, n),
+            setFrozenCols: n => setFrozenCols(doc, sheetId, n),
             applyStructuralMutation: op => {
                 if (readOnly) return
                 switch (op.kind) {

@@ -147,7 +147,17 @@ function GridInner({
     const contentWidth = colOffsets[cols]
     const contentHeight = rowOffsets[rows]
 
-    const viewport = useGridViewport({ rows, cols, colOffsets, rowOffsets, handleRef: gridRef })
+    const frozenRows = sheet?.frozenRows ?? 0
+    const frozenCols = sheet?.frozenCols ?? 0
+    const viewport = useGridViewport({
+        rows,
+        cols,
+        colOffsets,
+        rowOffsets,
+        handleRef: gridRef,
+        frozenRows,
+        frozenCols,
+    })
     const colResize = useGridColumnResize({ doc, sheetId, sheet, readOnly })
     const rowResize = useGridRowResize({ doc, sheetId, sheet, readOnly })
 
@@ -283,6 +293,31 @@ function GridInner({
         [instance.store]
     )
 
+    // Freeze actions dispatch through the grid store (which writes via
+    // its setFrozenRows/setFrozenCols deps). Stable identities so a
+    // selection-driven re-render of Grid doesn't ripple through the
+    // memoized Toolbar.
+    const onSetFrozenRows = useCallback(
+        (n: number) => instance.store.getState().setFrozenRows(n),
+        [instance.store]
+    )
+    const onSetFrozenCols = useCallback(
+        (n: number) => instance.store.getState().setFrozenCols(n),
+        [instance.store]
+    )
+    const onUnfreeze = useCallback(() => instance.store.getState().unfreeze(), [instance.store])
+
+    // Selection bottom row / right col drive the dynamic "Freeze up to
+    // row N / column X" items. When there is no range, fall back to
+    // the anchor's row/col so a single-cell selection still produces
+    // useful items. null = no selection at all (item hidden).
+    const selectionBottomRow = useGridStore(
+        s => s.selectionRange?.endRow ?? s.selected?.row ?? null
+    )
+    const selectionRightCol = useGridStore(
+        s => s.selectionRange?.endCol ?? s.selected?.col ?? null
+    )
+
     return (
         <View className="flex-1 bg-background web:select-none">
             <Toolbar
@@ -325,6 +360,13 @@ function GridInner({
                 onMergeHorizontal={onMergeHorizontal}
                 onMergeVertical={onMergeVertical}
                 onUnmerge={onUnmerge}
+                frozenRows={frozenRows}
+                frozenCols={frozenCols}
+                selectionBottomRow={selectionBottomRow}
+                selectionRightCol={selectionRightCol}
+                onSetFrozenRows={onSetFrozenRows}
+                onSetFrozenCols={onSetFrozenCols}
+                onUnfreeze={onUnfreeze}
             />
             <SortStatusBanner />
             <FormulaBar
@@ -349,6 +391,7 @@ function GridInner({
                     colOffsets={colOffsets}
                     firstCol={viewport.visible.firstCol}
                     lastCol={viewport.visible.lastCol}
+                    frozenCols={frozenCols}
                     makeHandleProps={colResize.makeHandleProps}
                     dragState={colResize.dragState}
                     filterRange={filterRange}
@@ -363,6 +406,7 @@ function GridInner({
                     firstRow={viewport.visible.firstRow}
                     lastRow={viewport.visible.lastRow}
                     colCount={cols}
+                    frozenRows={frozenRows}
                     makeHandleProps={rowResize.makeHandleProps}
                     dragState={rowResize.dragState}
                 />
@@ -380,6 +424,10 @@ function GridInner({
                     cellEditorInputRef={instance.cellEditorInputRef}
                     presenceOnSheet={presenceOnSheet}
                     readOnly={readOnly}
+                    frozenRows={frozenRows}
+                    frozenCols={frozenCols}
+                    frozenRowHorizontalRef={viewport.frozenRowHorizontalRef}
+                    frozenColVerticalRef={viewport.frozenColVerticalRef}
                     onSpecialKey={suggestions.onSpecialKey}
                     onLayout={viewport.onBodyLayout}
                     onHorizontalScroll={viewport.onHorizontalScroll}

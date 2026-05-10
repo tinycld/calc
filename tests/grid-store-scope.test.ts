@@ -19,6 +19,8 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): GridStoreDeps {
         findMergesInRange: () => [],
         mergeRange: () => {},
         unmergeAt: () => {},
+        setFrozenRows: () => {},
+        setFrozenCols: () => {},
     }
 }
 

@@ -6,6 +6,7 @@ import {
     HANDLE_VISUAL_WIDTH,
     NATIVE_HANDLE_HIT_SLOP,
 } from '../../hooks/use-column-resize'
+import type { GridStoreApi } from '../../hooks/grid-store'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { columnLabel } from '../../lib/workbook-types'
 import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT } from './constants'
@@ -16,6 +17,12 @@ interface ColumnHeaderProps {
     colOffsets: Float64Array
     firstCol: number
     lastCol: number
+    // When > 0, the first `frozenCols` column headers render in a
+    // non-scrolling section before the scrollable section. Each
+    // section has its own offset baseline (frozen cols use absolute
+    // colOffsets; scrollable cols subtract the frozen extent so they
+    // line up with the body's bottom-right quadrant).
+    frozenCols: number
     makeHandleProps: (col: number) => Record<string, unknown>
     dragState: DragState | null
     // Range covered by the active filter view (null when no filter is
@@ -32,28 +39,154 @@ export function ColumnHeader({
     colOffsets,
     firstCol,
     lastCol,
+    frozenCols,
     makeHandleProps,
     dragState,
     filterRange,
     activeFilterCols,
 }: ColumnHeaderProps) {
+    const borderColor = useThemeColor('border')
     const activeCol = useGridStore(s => s.selected?.col ?? null)
     const store = useGridStoreApi()
     const muted = useThemeColor('muted-foreground')
     const accent = useThemeColor('accent')
-    const cells: React.ReactNode[] = []
-    for (let col = firstCol; col <= lastCol; col++) {
+
+    const cols = colOffsets.length - 1
+    const fCols = Math.min(Math.max(0, frozenCols), cols)
+    const frozenW = fCols > 0 ? colOffsets[fCols] : 0
+    const scrollableContentWidth = Math.max(0, contentWidth - frozenW)
+    const scrollableFirstCol = Math.max(firstCol, fCols + 1)
+
+    const filterCtx: HeaderFilterCtx = {
+        filterRange,
+        activeFilterCols,
+        store,
+        muted,
+        accent,
+    }
+
+    const frozenCells: React.ReactNode[] = []
+    if (fCols > 0) {
+        appendHeaderCells(
+            frozenCells,
+            colOffsets,
+            1,
+            fCols,
+            0,
+            activeCol,
+            makeHandleProps,
+            dragState,
+            filterCtx
+        )
+    }
+    const scrollableCells: React.ReactNode[] = []
+    appendHeaderCells(
+        scrollableCells,
+        colOffsets,
+        scrollableFirstCol,
+        lastCol,
+        frozenW,
+        activeCol,
+        makeHandleProps,
+        dragState,
+        filterCtx
+    )
+
+    // No-freeze layout: keep the original single-ScrollView shape so a
+    // sheet without freeze is byte-identical to the pre-freeze version.
+    if (fCols <= 0) {
+        return (
+            <View style={{ flex: 1, height: HEADER_HEIGHT, overflow: 'hidden' }}>
+                <ScrollView
+                    ref={scrollRef}
+                    horizontal
+                    scrollEnabled={false}
+                    showsHorizontalScrollIndicator={false}
+                    style={{ height: HEADER_HEIGHT }}
+                    contentContainerStyle={{
+                        width: scrollableContentWidth,
+                        height: HEADER_HEIGHT,
+                    }}
+                >
+                    {scrollableCells}
+                </ScrollView>
+            </View>
+        )
+    }
+
+    return (
+        <View
+            style={{ flex: 1, flexDirection: 'row', height: HEADER_HEIGHT, overflow: 'hidden' }}
+        >
+            <View
+                style={{
+                    width: frozenW,
+                    height: HEADER_HEIGHT,
+                    overflow: 'hidden',
+                    borderRightWidth: 2,
+                    borderRightColor: borderColor,
+                }}
+            >
+                {frozenCells}
+            </View>
+            <View style={{ flex: 1, height: HEADER_HEIGHT, overflow: 'hidden' }}>
+                <ScrollView
+                    ref={scrollRef}
+                    horizontal
+                    scrollEnabled={false}
+                    showsHorizontalScrollIndicator={false}
+                    style={{ height: HEADER_HEIGHT }}
+                    contentContainerStyle={{
+                        width: scrollableContentWidth,
+                        height: HEADER_HEIGHT,
+                    }}
+                >
+                    {scrollableCells}
+                </ScrollView>
+            </View>
+        </View>
+    )
+}
+
+interface HeaderFilterCtx {
+    filterRange: { startCol: number; endCol: number } | null
+    activeFilterCols: ReadonlySet<number>
+    store: GridStoreApi
+    muted: string
+    accent: string
+}
+
+// appendHeaderCells emits one column-header label cell + one resize
+// handle per visible column in [first..last], with each cell's `left`
+// shifted by `xShift` (0 for the frozen section, frozenW for the
+// scrollable section so its content origin lines up with the body's
+// bottom-right quadrant ScrollView).
+function appendHeaderCells(
+    out: React.ReactNode[],
+    colOffsets: Float64Array,
+    first: number,
+    last: number,
+    xShift: number,
+    activeCol: number | null,
+    makeHandleProps: (col: number) => Record<string, unknown>,
+    dragState: DragState | null,
+    filter: HeaderFilterCtx
+): void {
+    for (let col = first; col <= last; col++) {
         const isActive = col === activeCol
-        const left = colOffsets[col - 1]
-        const width = colOffsets[col] - left
+        const absLeft = colOffsets[col - 1]
+        const width = colOffsets[col] - absLeft
+        const left = absLeft - xShift
         // Hidden columns (width 0 from a drag-to-zero) still need to
         // occupy zero pixels of layout space — render nothing rather
         // than a 0×H view to keep the DOM lean.
         if (width > 0) {
             const inFilterRange =
-                filterRange != null && col >= filterRange.startCol && col <= filterRange.endCol
-            const hasActiveCriterion = activeFilterCols.has(col)
-            cells.push(
+                filter.filterRange != null &&
+                col >= filter.filterRange.startCol &&
+                col <= filter.filterRange.endCol
+            const hasActiveCriterion = filter.activeFilterCols.has(col)
+            out.push(
                 <View
                     key={`h-${col}`}
                     className={`border-r border-b border-border flex-row items-center justify-center ${
@@ -76,7 +209,7 @@ export function ColumnHeader({
                     </Text>
                     {inFilterRange ? (
                         <Pressable
-                            onPress={() => store.getState().openFilterDropdown(col)}
+                            onPress={() => filter.store.getState().openFilterDropdown(col)}
                             accessibilityLabel={`Filter column ${columnLabel(col)}`}
                             accessibilityRole="button"
                             style={{
@@ -88,7 +221,7 @@ export function ColumnHeader({
                         >
                             <ChevronDown
                                 size={12}
-                                color={hasActiveCriterion ? accent : muted}
+                                color={hasActiveCriterion ? filter.accent : filter.muted}
                             />
                         </Pressable>
                     ) : null}
@@ -102,7 +235,7 @@ export function ColumnHeader({
         // (a wider transparent View extending into both columns).
         const handleX = left + width - HANDLE_VISUAL_WIDTH / 2
         const isDraggingThis = dragState?.col === col
-        cells.push(
+        out.push(
             <View
                 key={`g-${col}`}
                 {...makeHandleProps(col)}
@@ -133,22 +266,4 @@ export function ColumnHeader({
             />
         )
     }
-    // Outer flex-1 wrapper sets the visible width (= viewport-sized clip
-    // region); the ScrollView fills it. We can't put `flex: 1` directly on
-    // the ScrollView because RN-Web's ScrollView ships `flex: 1 1 auto`
-    // and inline `width` on the same node loses to flex sizing.
-    return (
-        <View style={{ flex: 1, height: HEADER_HEIGHT, overflow: 'hidden' }}>
-            <ScrollView
-                ref={scrollRef}
-                horizontal
-                scrollEnabled={false}
-                showsHorizontalScrollIndicator={false}
-                style={{ height: HEADER_HEIGHT }}
-                contentContainerStyle={{ width: contentWidth, height: HEADER_HEIGHT }}
-            >
-                {cells}
-            </ScrollView>
-        </View>
-    )
 }

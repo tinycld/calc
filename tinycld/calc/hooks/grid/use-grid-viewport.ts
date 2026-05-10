@@ -32,6 +32,14 @@ export interface GridViewport {
     verticalRef: React.RefObject<ScrollView | null>
     headerScrollRef: React.RefObject<ScrollView | null>
     leftColumnScrollRef: React.RefObject<ScrollView | null>
+    // Freeze-pane mirror refs. `frozenRowHorizontalRef` is the
+    // horizontal-only ScrollView that holds the top-right quadrant
+    // (frozen rows × free cols); `frozenColVerticalRef` holds the
+    // bottom-left quadrant (free rows × frozen cols). Both stay null
+    // when no freeze is active; callers tolerate the null target on
+    // scrollTo (it's a no-op).
+    frozenRowHorizontalRef: React.RefObject<ScrollView | null>
+    frozenColVerticalRef: React.RefObject<ScrollView | null>
     onHorizontalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
     onVerticalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
     onBodyLayout: (e: LayoutChangeEvent) => void
@@ -50,6 +58,13 @@ interface UseGridViewportArgs {
     colOffsets: Float64Array
     rowOffsets: Float64Array
     handleRef: React.ForwardedRef<GridViewportHandle>
+    // Number of rows/columns frozen at the top/left. The bottom-right
+    // quadrant's visible window starts past the frozen extent; the
+    // viewport memo shifts the binary-search lower bound so the user
+    // can never scroll an unfrozen cell off-screen *behind* the
+    // frozen quadrant.
+    frozenRows?: number
+    frozenCols?: number
 }
 
 // useGridViewport owns the four ScrollView refs, the merged
@@ -68,6 +83,8 @@ export function useGridViewport({
     colOffsets,
     rowOffsets,
     handleRef,
+    frozenRows = 0,
+    frozenCols = 0,
 }: UseGridViewportArgs): GridViewport {
     const [viewport, setViewport] = useState<ViewportState>({
         scrollX: 0,
@@ -80,6 +97,8 @@ export function useGridViewport({
     const verticalRef = useRef<ScrollView>(null)
     const headerScrollRef = useRef<ScrollView>(null)
     const leftColumnScrollRef = useRef<ScrollView>(null)
+    const frozenRowHorizontalRef = useRef<ScrollView>(null)
+    const frozenColVerticalRef = useRef<ScrollView>(null)
 
     useImperativeHandle(
         handleRef,
@@ -104,16 +123,31 @@ export function useGridViewport({
         // padding — the visible window only needs to extend slightly
         // past the viewport so newly scrolled-in cells render before
         // they're seen.
-        const rawFirstRow = firstRowAtOffset(rowOffsets, viewport.scrollY)
-        const rawLastRow = lastRowAtOffset(rowOffsets, viewport.scrollY + viewport.height)
+        //
+        // Freeze panes: the bottom-right quadrant's scroll offset is
+        // measured from the start of its content (i.e. row
+        // frozenRows+1, col frozenCols+1 sits at content offset 0 in
+        // that quadrant). Translate scrollX/Y back into the absolute
+        // prefix-sum coordinate by adding the frozen extent. The
+        // visible window then reports absolute row/col indices the
+        // body iterates against, with the bottom-right cells filtered
+        // by the quadrant renderer.
+        const frozenW = frozenCols > 0 ? colOffsets[frozenCols] : 0
+        const frozenH = frozenRows > 0 ? rowOffsets[frozenRows] : 0
+        const yTop = viewport.scrollY + frozenH
+        const yBottom = viewport.scrollY + frozenH + viewport.height
+        const xLeft = viewport.scrollX + frozenW
+        const xRight = viewport.scrollX + frozenW + viewport.width
+        const rawFirstRow = firstRowAtOffset(rowOffsets, yTop)
+        const rawLastRow = lastRowAtOffset(rowOffsets, yBottom)
         const firstRow = Math.max(1, rawFirstRow - OVERSCAN)
         const lastRow = Math.min(rows, rawLastRow + OVERSCAN)
-        const rawFirstCol = firstColAtOffset(colOffsets, viewport.scrollX)
-        const rawLastCol = lastColAtOffset(colOffsets, viewport.scrollX + viewport.width)
+        const rawFirstCol = firstColAtOffset(colOffsets, xLeft)
+        const rawLastCol = lastColAtOffset(colOffsets, xRight)
         const firstCol = Math.max(1, rawFirstCol - OVERSCAN)
         const lastCol = Math.min(cols, rawLastCol + OVERSCAN)
         return { firstRow, lastRow, firstCol, lastCol }
-    }, [viewport, rows, cols, colOffsets, rowOffsets])
+    }, [viewport, rows, cols, colOffsets, rowOffsets, frozenRows, frozenCols])
 
     const onHorizontalScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const x = e.nativeEvent.contentOffset.x
@@ -123,12 +157,18 @@ export function useGridViewport({
         // header inside the body's content) keeps the header in its own
         // sticky region so it doesn't get clipped by row windowing.
         headerScrollRef.current?.scrollTo({ x, animated: false })
+        // Also mirror to the top-right quadrant when freeze is active so
+        // the frozen rows track the body's horizontal scroll.
+        frozenRowHorizontalRef.current?.scrollTo({ x, animated: false })
     }, [])
 
     const onVerticalScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const y = e.nativeEvent.contentOffset.y
         setViewport(v => (v.scrollY === y ? v : { ...v, scrollY: y }))
         leftColumnScrollRef.current?.scrollTo({ y, animated: false })
+        // Mirror to the bottom-left quadrant so frozen columns track
+        // the body's vertical scroll.
+        frozenColVerticalRef.current?.scrollTo({ y, animated: false })
     }, [])
 
     const onBodyLayout = useCallback((e: LayoutChangeEvent) => {
@@ -144,6 +184,8 @@ export function useGridViewport({
         verticalRef,
         headerScrollRef,
         leftColumnScrollRef,
+        frozenRowHorizontalRef,
+        frozenColVerticalRef,
         onHorizontalScroll,
         onVerticalScroll,
         onBodyLayout,

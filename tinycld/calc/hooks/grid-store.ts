@@ -286,6 +286,11 @@ export interface GridStoreDeps {
     // can stay yjs-free.
     mergeRange: (range: CellRange) => void
     unmergeAt: (anchorRow: number, anchorCol: number) => void
+    // Persist a freeze count to the sheet's metadata. Count <= 0
+    // unfreezes the axis. Wired in use-grid-store-instance to
+    // setFrozenRows/setFrozenCols so the store stays free of yjs.
+    setFrozenRows: (n: number) => void
+    setFrozenCols: (n: number) => void
 }
 
 // MergeAnchor is the store-side view of one merged-cell rectangle.
@@ -375,6 +380,13 @@ export interface GridActions {
     ) => void
     deleteRowAtHandle: (index: number, currentRowCount: number) => void
     deleteColumnAtHandle: (index: number, currentColCount: number) => void
+    // Freeze panes. n=0 unfreezes the axis. Independent: setting one
+    // axis leaves the other untouched. setFrozenRows(0) and
+    // setFrozenCols(0) are equivalent to unfreeze() for that single
+    // axis; unfreeze() clears both in one call.
+    setFrozenRows: (n: number) => void
+    setFrozenCols: (n: number) => void
+    unfreeze: () => void
     // Clipboard lifecycle. setClipboardMarker is called by useClipboard
     // on copy (isCut=false) and cut (isCut=true); it schedules a 30s
     // timeout that auto-clears the marker so an abandoned cut doesn't
@@ -1122,6 +1134,22 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     selectionScope: 'cells',
                     handleMenu: null,
                 })
+            },
+
+            setFrozenRows: n => {
+                if (deps.readOnly) return
+                deps.setFrozenRows(Math.max(0, Math.floor(n)))
+            },
+
+            setFrozenCols: n => {
+                if (deps.readOnly) return
+                deps.setFrozenCols(Math.max(0, Math.floor(n)))
+            },
+
+            unfreeze: () => {
+                if (deps.readOnly) return
+                deps.setFrozenRows(0)
+                deps.setFrozenCols(0)
             },
 
             setClipboardMarker: (markerId, sourceRange, isCut) => {

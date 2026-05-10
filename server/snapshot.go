@@ -60,6 +60,14 @@ type SheetMeta struct {
 	// Empty/nil when the sheet has no merges. Round-trips through
 	// excelize MergeCell on save.
 	Merges []MergeRange
+
+	// FrozenRows / FrozenCols mirror the Y.Doc's frozenRows /
+	// frozenCols sheet metadata (count of rows/cols frozen at the
+	// top/left). Zero on either axis means "no freeze on this
+	// axis"; the serializer skips writing the xlsx <pane> when
+	// both are zero.
+	FrozenRows int
+	FrozenCols int
 }
 
 // MergeRange is one merged-cell rectangle anchored at (AnchorRow,

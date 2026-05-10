@@ -18,6 +18,8 @@ function makeDeps(): GridStoreDeps {
         findMergesInRange: () => [],
         mergeRange: () => {},
         unmergeAt: () => {},
+        setFrozenRows: () => {},
+        setFrozenCols: () => {},
     }
 }
 

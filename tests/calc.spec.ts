@@ -1136,6 +1136,113 @@ test.describe('Sheet management', () => {
     })
 })
 
+test.describe('Freeze panes', () => {
+    test.setTimeout(120_000)
+
+    test.beforeEach(async ({ page }) => {
+        await login(page)
+    })
+
+    test('Freeze 1 row keeps row 1 pinned during vertical scroll', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+
+        // Type a value into A1 so the cell text is visually identifiable
+        // before and after scroll.
+        await typeIntoCell(page, formulaBar, 'A1', 'PINNED-A1')
+        // Add some data further down so there is content to scroll past.
+        await typeIntoCell(page, formulaBar, 'A20', '20')
+        await typeIntoCell(page, formulaBar, 'A40', '40')
+
+        const beforeFreezeY = await cellTop(page, 'A1')
+        expect(beforeFreezeY).not.toBeNull()
+
+        await page.getByRole('button', { name: 'Freeze' }).click()
+        await page.getByText('Freeze 1 row').click()
+
+        // Scroll the body vertically. The bottom-right quadrant's
+        // vertical scrollbar lives inside the body subtree — easier
+        // to drive via the wheel event on the visible cell area.
+        await page.getByLabel('Cell A20', { exact: true }).scrollIntoViewIfNeeded()
+        await page.mouse.wheel(0, 500)
+
+        const afterFreezeY = await cellTop(page, 'A1')
+        expect(afterFreezeY).not.toBeNull()
+        // A1 sits in the top-left frozen quadrant which doesn't scroll —
+        // its on-screen Y position should be unchanged (allow a tiny
+        // sub-pixel rendering drift).
+        expect(Math.abs((afterFreezeY ?? 0) - (beforeFreezeY ?? 0))).toBeLessThan(2)
+    })
+
+    test('Freeze 1 column keeps column A pinned during horizontal scroll', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+
+        await typeIntoCell(page, formulaBar, 'A1', 'PINNED-A1')
+        await typeIntoCell(page, formulaBar, 'H1', '8')
+        await typeIntoCell(page, formulaBar, 'P1', '16')
+
+        await page.getByRole('button', { name: 'Freeze' }).click()
+        await page.getByText('Freeze 1 column').click()
+
+        const beforeX = await cellLeft(page, 'A1')
+        expect(beforeX).not.toBeNull()
+
+        // Scroll body horizontally. mouse.wheel with deltaX moves
+        // horizontal scroll in the bottom-right quadrant.
+        await page.getByLabel('Cell H1', { exact: true }).hover()
+        await page.mouse.wheel(800, 0)
+
+        const afterX = await cellLeft(page, 'A1')
+        expect(afterX).not.toBeNull()
+        expect(Math.abs((afterX ?? 0) - (beforeX ?? 0))).toBeLessThan(2)
+    })
+
+    test('Unfreeze restores normal scrolling', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+
+        await typeIntoCell(page, formulaBar, 'A1', 'A1')
+        // Freeze, then unfreeze; assert the freeze menu's Unfreeze
+        // item drops the pane back to a single quadrant by checking
+        // that A1 once again moves with vertical scroll.
+        await page.getByRole('button', { name: 'Freeze' }).click()
+        await page.getByText('Freeze 1 row').click()
+        await page.getByRole('button', { name: 'Freeze' }).click()
+        await page.getByText('Unfreeze').click()
+
+        const beforeY = await cellTop(page, 'A1')
+        expect(beforeY).not.toBeNull()
+        await page.mouse.move(400, 300)
+        await page.mouse.wheel(0, 200)
+        const afterY = await cellTop(page, 'A1')
+        // After unfreeze the body is one ScrollView; A1 should have
+        // moved upward (negative direction) when the body scrolled.
+        if (beforeY != null && afterY != null) {
+            expect(afterY).toBeLessThan(beforeY)
+        }
+    })
+})
+
+async function cellTop(
+    page: import('@playwright/test').Page,
+    label: string
+): Promise<number | null> {
+    const box = await page.getByLabel(`Cell ${label}`, { exact: true }).first().boundingBox()
+    return box ? box.y : null
+}
+
+async function cellLeft(
+    page: import('@playwright/test').Page,
+    label: string
+): Promise<number | null> {
+    const box = await page.getByLabel(`Cell ${label}`, { exact: true }).first().boundingBox()
+    return box ? box.x : null
+}
+
 async function typeIntoCell(
     page: import('@playwright/test').Page,
     formulaBar: import('@playwright/test').Locator,

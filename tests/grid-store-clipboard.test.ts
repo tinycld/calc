@@ -25,6 +25,8 @@ function makeStubDeps(): GridStoreDeps {
         findMergesInRange: () => [],
         mergeRange: () => {},
         unmergeAt: () => {},
+        setFrozenRows: () => {},
+        setFrozenCols: () => {},
     }
 }
 

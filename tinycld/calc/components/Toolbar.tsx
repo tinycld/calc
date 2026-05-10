@@ -23,6 +23,7 @@ import { BordersMenu } from './toolbar/BordersMenu'
 import { DownloadMenu } from './toolbar/DownloadMenu'
 import { FillColorMenu } from './toolbar/FillColorMenu'
 import { FontSizeStepper } from './toolbar/FontSizeStepper'
+import { FreezeMenu } from './toolbar/FreezeMenu'
 import { HorizontalAlignMenu } from './toolbar/HorizontalAlignMenu'
 import { MergeMenu } from './toolbar/MergeMenu'
 import { NumberFormatMenu } from './toolbar/NumberFormatMenu'
@@ -86,6 +87,14 @@ export interface ToolbarProps {
     onMergeHorizontal: () => void
     onMergeVertical: () => void
     onUnmerge: () => void
+
+    frozenRows: number
+    frozenCols: number
+    selectionBottomRow: number | null
+    selectionRightCol: number | null
+    onSetFrozenRows: (n: number) => void
+    onSetFrozenCols: (n: number) => void
+    onUnfreeze: () => void
 }
 
 // memo'd so that selection-range churn during a drag (which only
@@ -137,6 +146,13 @@ function ToolbarImpl(props: ToolbarProps) {
         onMergeHorizontal,
         onMergeVertical,
         onUnmerge,
+        frozenRows,
+        frozenCols,
+        selectionBottomRow,
+        selectionRightCol,
+        onSetFrozenRows,
+        onSetFrozenCols,
+        onUnfreeze,
     } = props
 
     return (
@@ -245,6 +261,16 @@ function ToolbarImpl(props: ToolbarProps) {
                 onMergeHorizontal={onMergeHorizontal}
                 onMergeVertical={onMergeVertical}
                 onUnmerge={onUnmerge}
+            />
+            <FreezeMenu
+                disabled={false}
+                frozenRows={frozenRows}
+                frozenCols={frozenCols}
+                selectionBottomRow={selectionBottomRow}
+                selectionRightCol={selectionRightCol}
+                onSetFrozenRows={onSetFrozenRows}
+                onSetFrozenCols={onSetFrozenCols}
+                onUnfreeze={onUnfreeze}
             />
             <ToolbarDivider />
             <ToolbarButton icon={Search} onPress={onOpenFind} label="Find and replace" />

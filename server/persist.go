@@ -263,6 +263,41 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 			}
 		}
 
+		// Freeze panes: write the xlsx <pane> via excelize.SetPanes when
+		// the snapshot has any freeze. Both axes are independent;
+		// XSplit=0/YSplit=0 means "no freeze on that axis". When both
+		// are zero we explicitly clear any prior freeze (Freeze:false)
+		// so an unfreeze on the doc round-trips back to a freeze-less
+		// xlsx. The TopLeftCell + ActivePane fields keep Excel happy
+		// when it reopens the file.
+		if meta.FrozenRows > 0 || meta.FrozenCols > 0 {
+			topLeft, err := excelize.CoordinatesToCellName(meta.FrozenCols+1, meta.FrozenRows+1)
+			if err != nil {
+				return nil, fmt.Errorf("freeze top-left coords on %s: %w", name, err)
+			}
+			activePane := "bottomRight"
+			if meta.FrozenCols == 0 {
+				activePane = "bottomLeft"
+			} else if meta.FrozenRows == 0 {
+				activePane = "topRight"
+			}
+			if err := f.SetPanes(name, &excelize.Panes{
+				Freeze:      true,
+				XSplit:      meta.FrozenCols,
+				YSplit:      meta.FrozenRows,
+				TopLeftCell: topLeft,
+				ActivePane:  activePane,
+			}); err != nil {
+				return nil, fmt.Errorf("set panes on %s: %w", name, err)
+			}
+		} else {
+			// Explicit unfreeze: clears any existing on-disk pane so
+			// round-tripping a doc that started frozen and got
+			// unfrozen produces a freeze-less xlsx.
+			if err := f.SetPanes(name, &excelize.Panes{Freeze: false, Split: false}); err != nil {
+				return nil, fmt.Errorf("clear panes on %s: %w", name, err)
+			}
+		}
 		// Row styles are written as full-overwrite, not read-then-overlay
 		// (unlike applyCellStyle below). The Y.Doc is the source of truth
 		// for row-level styling once a workbook is in collaborative use,
