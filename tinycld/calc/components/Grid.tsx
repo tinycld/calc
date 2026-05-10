@@ -1,6 +1,5 @@
 import { forwardRef, useCallback, useMemo } from 'react'
 import { View } from 'react-native'
-import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { useGridColumnResize } from '../hooks/grid/use-grid-column-resize'
 import { useGridFormatControls } from '../hooks/grid/use-grid-format-controls'
 import { useGridFormulaBar } from '../hooks/grid/use-grid-formula-bar'
@@ -10,6 +9,9 @@ import { useGridSuggestions } from '../hooks/grid/use-grid-suggestions'
 import { useGridToolbarToggles } from '../hooks/grid/use-grid-toolbar-toggles'
 import { type GridViewportHandle, useGridViewport } from '../hooks/grid/use-grid-viewport'
 import { useRefDragExtender } from '../hooks/grid/use-ref-drag-extender'
+import { useCalcShortcuts } from '../hooks/use-calc-shortcuts'
+import { useClipboard } from '../hooks/use-clipboard'
+import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { GridStoreProvider } from '../hooks/use-grid-store'
 import { usePresence } from '../hooks/use-presence'
 import type { UndoManagerState } from '../hooks/use-undo-manager'
@@ -155,6 +157,11 @@ function GridInner({
     })
     useRefDragExtender()
     useCommentShortcut(instance.store, readOnly)
+    // Cmd+C / Cmd+X / Cmd+V plus paste-special variants. Wired here so
+    // the shortcuts live for the lifetime of the Grid mount. The
+    // clipboard hook owns the actual copy/paste plumbing.
+    const clipboard = useClipboard({ doc, sheetId, store: instance.store, readOnly })
+    useCalcShortcuts({ store: instance.store, clipboard, readOnly })
 
     // Inline arrows for the currency/percent/decimal preset shortcuts
     // would re-create on every render and force <Toolbar> to re-render

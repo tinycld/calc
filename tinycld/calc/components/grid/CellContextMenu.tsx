@@ -2,6 +2,7 @@ import { Menu, Separator } from '@tinycld/core/ui/menu'
 import { useCallback, useEffect, useRef } from 'react'
 import { Platform, Pressable, StyleSheet, type View } from 'react-native'
 import type * as Y from 'yjs'
+import { useClipboard } from '../../hooks/use-clipboard'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { setYCell } from '../../hooks/use-y-cell'
 import { useYSheets } from '../../hooks/use-y-sheets'
@@ -116,14 +117,36 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
         })
     }, [doc, sheetId, range])
 
+    const clipboard = useClipboard({ doc, sheetId, store })
+    // Fire-and-forget wrappers — async errors are swallowed inside the
+    // hook; the menu just closes after the user's tap.
+    const onCut = useCallback(() => {
+        void clipboard.cut()
+    }, [clipboard])
+    const onCopy = useCallback(() => {
+        void clipboard.copy()
+    }, [clipboard])
+    const onPaste = useCallback(() => {
+        void clipboard.paste('all')
+    }, [clipboard])
+    const onPasteValues = useCallback(() => {
+        void clipboard.paste('values')
+    }, [clipboard])
+    const onPasteFormulas = useCallback(() => {
+        void clipboard.paste('formulas')
+    }, [clipboard])
+    const onPasteFormat = useCallback(() => {
+        void clipboard.paste('format')
+    }, [clipboard])
+    const onPasteTranspose = useCallback(() => {
+        void clipboard.paste('transpose')
+    }, [clipboard])
+
     const onComment = useCallback(() => {
         if (target == null) return
-        store.getState().openCommentPopover(
-            target.cell.row,
-            target.cell.col,
-            target.cursor.x,
-            target.cursor.y
-        )
+        store
+            .getState()
+            .openCommentPopover(target.cell.row, target.cell.col, target.cursor.x, target.cursor.y)
     }, [target, store])
 
     const onToggleBold = useCallback(() => {
@@ -153,6 +176,35 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                     <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
                 )}
                 <Menu.Content ref={contentRef} placement="bottom" align="start">
+                    <Menu.Item onPress={onCut}>
+                        <Menu.ItemTitle>Cut</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Menu.Item onPress={onCopy}>
+                        <Menu.ItemTitle>Copy</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Menu.Item onPress={onPaste}>
+                        <Menu.ItemTitle>Paste</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Menu.Sub>
+                        <Menu.SubTrigger>
+                            <Menu.ItemTitle>Paste special</Menu.ItemTitle>
+                        </Menu.SubTrigger>
+                        <Menu.SubContent>
+                            <Menu.Item onPress={onPasteValues}>
+                                <Menu.ItemTitle>Values only</Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={onPasteFormulas}>
+                                <Menu.ItemTitle>Formulas only</Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={onPasteFormat}>
+                                <Menu.ItemTitle>Format only</Menu.ItemTitle>
+                            </Menu.Item>
+                            <Menu.Item onPress={onPasteTranspose}>
+                                <Menu.ItemTitle>Transposed</Menu.ItemTitle>
+                            </Menu.Item>
+                        </Menu.SubContent>
+                    </Menu.Sub>
+                    <Separator className="my-1 mx-2" />
                     <Menu.Sub>
                         <Menu.SubTrigger>
                             <Menu.ItemTitle>Insert</Menu.ItemTitle>
@@ -168,7 +220,9 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                                 <Menu.ItemTitle>{pluralize(colSpan, 'column')} left</Menu.ItemTitle>
                             </Menu.Item>
                             <Menu.Item onPress={onInsertColRight}>
-                                <Menu.ItemTitle>{pluralize(colSpan, 'column')} right</Menu.ItemTitle>
+                                <Menu.ItemTitle>
+                                    {pluralize(colSpan, 'column')} right
+                                </Menu.ItemTitle>
                             </Menu.Item>
                         </Menu.SubContent>
                     </Menu.Sub>
