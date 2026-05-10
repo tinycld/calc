@@ -106,7 +106,7 @@ export function useColumnResize({
     const lastClickRef = useRef<Map<number, number>>(new Map())
 
     const beginDrag = useCallback(
-        (col: number, startX: number) => {
+        (col: number) => {
             if (readOnly) return
             const startWidth = readColWidth(colWidthsRef.current, col)
             const next: DragState = { col, startWidth, currentWidth: startWidth }
@@ -153,7 +153,7 @@ export function useColumnResize({
                     e.stopPropagation()
                     e.currentTarget.setPointerCapture(e.pointerId)
                     webStartXRef.current = e.clientX
-                    beginDrag(col, e.clientX)
+                    beginDrag(col)
                 },
                 onPointerMove: (e: WebPointerEvent) => {
                     if (dragRef.current == null) return
@@ -214,7 +214,7 @@ export function useColumnResize({
                     onMoveShouldSetPanResponder: () => true,
                     onMoveShouldSetPanResponderCapture: () => true,
                     onPanResponderGrant: (_e: GestureResponderEvent) => {
-                        beginDrag(col, 0)
+                        beginDrag(col)
                     },
                     onPanResponderMove: (_e: GestureResponderEvent, g: { dx: number }) => {
                         updateDrag(g.dx)

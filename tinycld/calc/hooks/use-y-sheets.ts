@@ -1,6 +1,11 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type * as Y from 'yjs'
-import { type ColWidths, readColWidthsFromMeta } from '../lib/dimensions'
+import {
+    type ColWidths,
+    readColWidthsFromMeta,
+    readRowHeightsFromMeta,
+    type RowHeights,
+} from '../lib/dimensions'
 import { SHEETS_MAP, type YSheetMeta, ydocSheetIds } from '../lib/y-doc-bootstrap'
 
 export interface SheetWithId extends YSheetMeta {
@@ -42,6 +47,7 @@ export function useYSheets(doc: Y.Doc | null): SheetWithId[] {
                 rowCount: (meta?.get('rowCount') as number) ?? 0,
                 colCount: (meta?.get('colCount') as number) ?? 0,
                 colWidths: readColWidthsFromMeta(meta),
+                rowHeights: readRowHeightsFromMeta(meta),
             }
         })
         const prev = snapshotRef.current
@@ -67,7 +73,8 @@ function sameSheets(a: SheetWithId[], b: SheetWithId[]): boolean {
         ) {
             return false
         }
-        if (!sameColWidths(x.colWidths, y.colWidths)) return false
+        if (!sameDimensionMap(x.colWidths, y.colWidths)) return false
+        if (!sameDimensionMap(x.rowHeights, y.rowHeights)) return false
     }
     return true
 }
@@ -76,7 +83,10 @@ function sameSheets(a: SheetWithId[], b: SheetWithId[]): boolean {
 // to the same numbers. Order doesn't matter — Object.keys is stable
 // per-instance but two equal-content snapshots can come from different
 // observers. Cheap because the typical sheet has 0 entries.
-function sameColWidths(a: ColWidths | undefined, b: ColWidths | undefined): boolean {
+function sameDimensionMap(
+    a: ColWidths | RowHeights | undefined,
+    b: ColWidths | RowHeights | undefined
+): boolean {
     if (a === b) return true
     if (a == null || b == null) return false
     const ak = Object.keys(a)

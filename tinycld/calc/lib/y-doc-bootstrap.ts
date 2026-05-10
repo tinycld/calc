@@ -43,6 +43,9 @@ export interface YSheetMeta {
     // call sites should not index this directly so the default-fallback
     // stays in one place.
     colWidths?: Record<number, number>
+    // Sparse per-row height overrides. Absent = render at
+    // DEFAULT_ROW_HEIGHT. Read via `readRowHeight` in lib/dimensions.ts.
+    rowHeights?: Record<number, number>
 }
 
 // YCellValue is the typed snapshot returned by useYCell. `kind` carries

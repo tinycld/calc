@@ -65,51 +65,21 @@ export interface CellValue {
     style?: CellStyle
 }
 
-// formatCell computes the user-visible text for a cell from its kind
-// and raw value. Used by both the xlsx-import path (to populate the
-// `display` cache written to the doc) and the live render path. Phase
-// 1 ships with naive defaults — numFmt-aware formatting lands in
-// Phase 3.
-export function formatCell(kind: CellKind, raw: CellRaw | Date, formula?: string): string {
-    if (kind === 'formula') {
-        // Formula cells without a cached value show the formula text
-        // (matches Excel before recalculation).
-        if (raw == null) return formula ?? ''
-        if (typeof raw === 'string') return raw
-        if (typeof raw === 'number') return formatNumber(raw)
-        if (typeof raw === 'boolean') return raw ? 'TRUE' : 'FALSE'
-        if (raw instanceof Date) return formatDateISO(raw)
-        return String(raw)
-    }
-    if (raw == null) return ''
-    switch (kind) {
-        case 'string':
-            return typeof raw === 'string' ? raw : String(raw)
-        case 'number':
-            if (typeof raw === 'number') return formatNumber(raw)
-            return String(raw)
-        case 'boolean':
-            return raw ? 'TRUE' : 'FALSE'
-        case 'date':
-            if (raw instanceof Date) return formatDateISO(raw)
-            if (typeof raw === 'string') return raw.length > 10 ? raw : raw
-            return String(raw)
-    }
-}
+// formatCell computes the user-visible text for a cell from its kind,
+// raw value, optional formula text, and optional numFmt. Used by both
+// the xlsx-import path (to populate the `display` cache written to the
+// doc) and the live render path. The cache call sites pass no numFmt
+// — the cache is the kind-only baseline so old peers and serializers
+// still render correctly. The live render path passes
+// cell.style?.numFmt so any applied format takes effect immediately.
+//
+// The implementation lives in lib/number-format/format.ts; this
+// wrapper preserves the (kind, raw, formula?) signature existing
+// callers were built against.
+import { applyNumFmt } from './number-format/format'
 
-function formatNumber(n: number): string {
-    if (!Number.isFinite(n)) return String(n)
-    return Number.isInteger(n) ? String(n) : n.toString()
-}
-
-function formatDateISO(d: Date): string {
-    // Date-only fallback: ISO yyyy-mm-dd. If the time component is
-    // non-zero we emit the full ISO (with Z), so dates with explicit
-    // times round-trip identically.
-    if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0) {
-        return d.toISOString().slice(0, 10)
-    }
-    return d.toISOString()
+export function formatCell(kind: CellKind, raw: CellRaw | Date, formula?: string, numFmt?: string): string {
+    return applyNumFmt(kind, raw, numFmt, formula)
 }
 
 export interface WorksheetModel {

@@ -99,6 +99,17 @@ export function useYCell(doc: Y.Doc | null, sheetId: string, row: number, col: n
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
+// readNumFmtFromCell pulls the numFmt scalar out of a cell's nested
+// style Y.Map without going through readStyleFromYMap (which would
+// allocate a CellStyle for one field). Returns undefined when the cell
+// has no style entry or no numFmt key.
+function readNumFmtFromCell(cell: Y.Map<unknown>): string | undefined {
+    const style = cell.get('style')
+    if (!(style instanceof Y.Map)) return undefined
+    const v = style.get('numFmt')
+    return typeof v === 'string' ? v : undefined
+}
+
 // sameStyle is a structural-equality check used by the snapshot cache
 // to avoid handing back a fresh object identity when no style attribute
 // actually changed. JSON.stringify is fine here — partial style
@@ -190,7 +201,13 @@ export function setYCellFormulaResult(doc: Y.Doc, sheetId: string, row: number, 
     if (cell.get('raw') === raw) return
     const formula = cell.get('formula')
     const formulaText = typeof formula === 'string' ? formula : undefined
-    const display = formatCell('formula', raw, formulaText)
+    // Read the cell's numFmt (if any) so the cached display string
+    // reflects the formatted value old peers / serializers see. The
+    // live render path recomputes display from raw + style anyway, so
+    // a missing numFmt here just means the cache shows the unformatted
+    // baseline — it can't drift the live UI.
+    const numFmt = readNumFmtFromCell(cell)
+    const display = formatCell('formula', raw, formulaText, numFmt)
     doc.transact(() => {
         cell.set('raw', raw)
         cell.set('display', display)

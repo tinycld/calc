@@ -1,15 +1,15 @@
-// Column- and (later) row-dimension helpers for the calc grid.
+// Column- and row-dimension helpers for the calc grid.
 //
-// Column widths are stored per-sheet on the Y.Doc as a sparse Y.Map —
-// only columns whose width differs from DEFAULT_COL_WIDTH have an
-// entry, which keeps the doc cheap for sheets that never get resized.
-// The snapshot returned by `useYSheets` exposes this as a plain
-// Record<number, number>; `readColWidth` is the single read-side helper
-// every layout calculation goes through.
+// Column widths and row heights are stored per-sheet on the Y.Doc as
+// sparse Y.Maps — only entries whose value differs from the default
+// have a stored entry, which keeps the doc cheap for sheets that never
+// get resized. The snapshot returned by `useYSheets` exposes these as
+// plain Record<number, number>; `readColWidth` / `readRowHeight` are
+// the single read-side helpers every layout calculation goes through.
 //
-// Row heights and text wrap will land in this file under a parallel
-// rowHeights map; helpers are named by axis so the row-side additions
-// don't disturb existing call sites.
+// The two axes mirror each other: every column-side helper has a
+// row-side counterpart with the axis swapped (col → row, width →
+// height, x → y).
 import * as Y from 'yjs'
 import { yCellKey } from './y-cell-key'
 import { CELLS_MAP, SHEETS_MAP } from './y-doc-bootstrap'
@@ -215,6 +215,146 @@ export function autosizeColumnWidth(
     const widest = measureWidestDisplay(doc, sheetId, col, measure)
     if (widest <= 0) return DEFAULT_COL_WIDTH
     return clampColWidth(widest + AUTOSIZE_PADDING)
+}
+
+// ----- Row heights ---------------------------------------------------
+//
+// Mirror of the column helpers above with the axis swapped. A separate
+// sparse Y.Map under each sheet's metadata holds non-default row
+// heights; rows whose height is DEFAULT_ROW_HEIGHT have no entry.
+
+// Matches the legacy CELL_HEIGHT that callers rendered before per-row
+// heights existed. Keeping the same default means an unresized sheet is
+// pixel-identical to the pre-resize behavior.
+export const DEFAULT_ROW_HEIGHT = 28
+
+// Row-hide-by-drag mirrors the column behavior: drag a row handle
+// upward and below ROW_HIDE_SNAP_THRESHOLD the row snaps to height 0.
+export const MIN_ROW_HEIGHT = 0
+export const ROW_HIDE_SNAP_THRESHOLD = 8
+
+// Cap large row heights so a runaway autosize on a wrapped cell can't
+// blow out the layout. 1000px is well past anything reasonable for a
+// single row but leaves room for tall multi-line content.
+export const MAX_ROW_HEIGHT = 1000
+
+// Vertical padding added to the measured text height when autosizing.
+// Cell content centers vertically with a small gutter; 8px keeps text
+// from sitting flush against the row borders.
+export const AUTOSIZE_ROW_PADDING = 8
+
+// ROW_HEIGHTS_KEY is the nested key under each sheet's metadata Y.Map
+// holding a Y.Map<number> from "row" → height-in-px. Lazily created on
+// first write so an unresized sheet adds zero bytes to the doc.
+export const ROW_HEIGHTS_KEY = 'rowHeights'
+
+export type RowHeights = Record<number, number>
+
+export function readRowHeight(rowHeights: RowHeights | undefined, row: number): number {
+    if (rowHeights == null) return DEFAULT_ROW_HEIGHT
+    const h = rowHeights[row]
+    return typeof h === 'number' ? h : DEFAULT_ROW_HEIGHT
+}
+
+export function clampRowHeight(height: number): number {
+    if (!Number.isFinite(height)) return DEFAULT_ROW_HEIGHT
+    if (height < ROW_HIDE_SNAP_THRESHOLD) return 0
+    if (height > MAX_ROW_HEIGHT) return MAX_ROW_HEIGHT
+    return Math.round(height)
+}
+
+// setYRowHeight writes a row's height to the sheet's nested rowHeights
+// Y.Map, lazily creating the map on first write. Height is clamped to
+// [0, MAX_ROW_HEIGHT] (with a snap-to-hidden floor below
+// ROW_HIDE_SNAP_THRESHOLD). Writing DEFAULT_ROW_HEIGHT deletes the entry
+// instead of storing it — keeps the map sparse and lets the absence
+// of an entry mean "default" everywhere.
+export function setYRowHeight(doc: Y.Doc | null, sheetId: string, row: number, height: number): void {
+    if (doc == null) return
+    const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+    const meta = sheetsMap.get(sheetId)
+    if (meta == null) return
+    const clamped = clampRowHeight(height)
+    doc.transact(() => {
+        let heights = meta.get(ROW_HEIGHTS_KEY)
+        if (clamped === DEFAULT_ROW_HEIGHT) {
+            if (heights instanceof Y.Map) {
+                heights.delete(String(row))
+            }
+            return
+        }
+        if (!(heights instanceof Y.Map)) {
+            heights = new Y.Map<number>()
+            meta.set(ROW_HEIGHTS_KEY, heights)
+        }
+        ;(heights as Y.Map<number>).set(String(row), clamped)
+    })
+}
+
+export function readRowHeightsFromMeta(meta: Y.Map<unknown> | undefined): RowHeights | undefined {
+    if (meta == null) return undefined
+    const heights = meta.get(ROW_HEIGHTS_KEY)
+    if (!(heights instanceof Y.Map)) return undefined
+    if (heights.size === 0) return undefined
+    const out: RowHeights = {}
+    heights.forEach((value, key) => {
+        if (typeof value !== 'number') return
+        const row = Number(key)
+        if (!Number.isFinite(row)) return
+        out[row] = value
+    })
+    return out
+}
+
+// buildRowOffsets returns a Float64Array where `offsets[r]` is the pixel
+// y-coordinate of the TOP edge of row r+1 (so `offsets[0] === 0` and
+// `offsets[rows] === total content height`). Used both for direct
+// position lookups in render and as the input to the visible-range
+// binary search.
+export function buildRowOffsets(rows: number, rowHeights: RowHeights | undefined): Float64Array {
+    const out = new Float64Array(rows + 1)
+    let acc = 0
+    for (let r = 1; r <= rows; r++) {
+        acc += readRowHeight(rowHeights, r)
+        out[r] = acc
+    }
+    return out
+}
+
+export function firstRowAtOffset(offsets: Float64Array, y: number): number {
+    if (y <= 0) return 1
+    const lastRow = offsets.length - 1
+    if (lastRow < 1) return 1
+    if (y >= offsets[lastRow]) return lastRow
+    let lo = 0
+    let hi = lastRow
+    while (lo < hi) {
+        const mid = (lo + hi + 1) >>> 1
+        if (offsets[mid] <= y) {
+            lo = mid
+        } else {
+            hi = mid - 1
+        }
+    }
+    return Math.max(1, lo + 1)
+}
+
+export function lastRowAtOffset(offsets: Float64Array, y: number): number {
+    const lastRow = offsets.length - 1
+    if (lastRow < 1) return 0
+    if (y <= 0) return 1
+    if (y >= offsets[lastRow]) return lastRow
+    let lo = 1
+    let hi = lastRow
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1
+        if (offsets[mid] >= y) {
+            hi = mid
+        } else {
+            lo = mid + 1
+        }
+    }
+    return lo
 }
 
 // Re-exported for callers that want to compose `yCellKey` without

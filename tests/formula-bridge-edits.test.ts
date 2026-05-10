@@ -4,7 +4,7 @@ import * as Y from 'yjs'
 import { setYCellTyped } from '../tinycld/calc/hooks/use-y-cell'
 import { FormulaBridge } from '../tinycld/calc/lib/formula/bridge'
 import { HYPERFORMULA_LICENSE_KEY } from '../tinycld/calc/lib/formula/hyperformula-license'
-import { cellKey, type WorkbookModel } from '../tinycld/calc/lib/workbook-types'
+import type { WorkbookModel } from '../tinycld/calc/lib/workbook-types'
 import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
 import { bootstrapYDocFromWorkbook, CELLS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
 

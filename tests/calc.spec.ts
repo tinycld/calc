@@ -5,9 +5,8 @@ test.describe('Calc', () => {
     // Bump the test timeout: tests that hit "New spreadsheet" wait on a
     // drive_items create round-trip plus a Y.Doc realtime handshake, and
     // both can be slow under parallel-worker contention against a single
-    // dev backend. The default 30s leaves no headroom on top of helper-
-    // level URL/render waits.
-    test.setTimeout(90_000)
+    // dev backend. The default 30s leaves no headroom.
+    test.setTimeout(120_000)
 
     test.beforeEach(async ({ page }) => {
         await login(page)
@@ -274,6 +273,61 @@ test.describe('Calc', () => {
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('hello')
     })
 
+    test('typing in a cell then clicking another commits the value instead of dropping it', async ({ page }) => {
+        // Regression: clicking a different cell while editing used to
+        // discard the in-flight draft. Web preventDefault on mousedown
+        // (added so cell-ref insertion can fire mid-formula) suppresses
+        // the input's onBlur, so the click-away has to perform the
+        // commit explicitly.
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const a1 = page.getByLabel('Cell A1', { exact: true })
+        const b2 = page.getByLabel('Cell B2', { exact: true })
+
+        // Two clicks open the in-cell editor (first selects, second edits).
+        // The cell editor TextInput has no accessibility label, so we
+        // type via the focused element. autoFocus on mount means
+        // keyboard input lands in the editor without an extra .focus().
+        await a1.click()
+        await a1.click()
+        await page.keyboard.type('hello world')
+
+        // Click away to a different cell — value must persist.
+        await b2.click()
+        await expect(a1).toHaveText('hello world')
+    })
+
+    test('Delete key on a focused cell clears its contents', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        const a1 = page.getByLabel('Cell A1', { exact: true })
+        const a2 = page.getByLabel('Cell A2', { exact: true })
+
+        // Seed two cells, then move selection back to the first one so
+        // it's the focused (selected, not-editing) cell when we press
+        // Delete. typeIntoCell ends with Enter, which leaves the cell
+        // committed and selected — but we click B1 first to break the
+        // "second click opens editor" gesture that a re-click on A1
+        // would otherwise trigger.
+        await typeIntoCell(page, formulaBar, 'A1', 'hello')
+        await typeIntoCell(page, formulaBar, 'A2', 'world')
+        await page.getByLabel('Cell B1', { exact: true }).click()
+        await a1.click()
+        await expect(a1).toHaveText('hello')
+
+        await page.keyboard.press('Delete')
+        await expect(a1).toHaveText('')
+
+        // Backspace works the same way on the next cell.
+        await a2.click()
+        await expect(a2).toHaveText('world')
+        await page.keyboard.press('Backspace')
+        await expect(a2).toHaveText('')
+    })
+
     test('=SUM() over a range displays the computed total', async ({ page }) => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
@@ -316,12 +370,21 @@ async function typeIntoCell(
 // before mounting the Grid; tests that read DOM geometry or click
 // cells immediately after waitForURL race that mount.
 async function openNewSpreadsheet(page: import('@playwright/test').Page): Promise<void> {
-    await page.getByText('New spreadsheet').click()
-    // Both waits use generous timeouts because the create round-trip and
-    // the realtime open can be slow under parallel-worker contention
-    // against a single dev backend.
-    await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 60_000 })
-    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+    // Wait for the calc index to fully render before clicking the create
+    // button. handleNew inside CalcIndex throws "Organization context not
+    // ready" if useOrgInfo / useCurrentUserOrg haven't resolved yet, and
+    // when that happens the click silently does nothing — the page stays
+    // on the index and the subsequent waitForURL hangs until the test
+    // timeout.
+    await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible({ timeout: 30_000 })
+    const newBtn = page.getByRole('button', { name: 'New spreadsheet' })
+    await newBtn.click()
+    // The click triggers an async create + navigation. Under parallel-
+    // worker contention either the create or the realtime open can take
+    // longer than usual, so the URL/grid waits use a generous timeout.
+    // 90s aligns with the file-level test timeout above.
+    await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
+    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 75_000 })
 }
 
 // Reads the on-screen left/width of column-header cells A and B.

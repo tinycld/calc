@@ -30,6 +30,7 @@
         "@tanstack/db": ">=0.6",
         "hyperformula": ">=3.0.0",
         "yjs": ">=13.6",
-        "y-protocols": ">=1.0"
+        "y-protocols": ">=1.0",
+        "numfmt": ">=3.2"
     }
 }
