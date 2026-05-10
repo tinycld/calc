@@ -1,4 +1,5 @@
 import type { TextStyle, ViewStyle } from 'react-native'
+import { normalizeColor } from './normalize-color'
 import type { CellStyle } from './workbook-types'
 
 // CellRenderStyle is the bundle of RN style values produced from a
@@ -135,26 +136,3 @@ export function cellStyleToRenderProps(style: CellStyle | undefined): CellRender
     return { viewStyle, textStyle, numberOfLines }
 }
 
-// normalizeColor handles excelize-style hex colors. Excelize stores
-// colors as "FFRRGGBB" (8 hex digits including alpha) or "RRGGBB" (no
-// alpha). Both need a leading `#` to be RN/CSS color values.
-//
-// "FF000000" → "#000000" (alpha is opaque — drop it; RN accepts 6/8
-// digit hex but the leading FF is the common case so we strip it for
-// readability).
-function normalizeColor(value: string): string {
-    if (value.startsWith('#')) return value
-    const upper = value.toUpperCase()
-    if (/^[0-9A-F]{8}$/.test(upper)) {
-        // Drop the FF alpha prefix for the common opaque case;
-        // preserve it for true alpha values so transparency is kept.
-        if (upper.startsWith('FF')) {
-            return `#${upper.slice(2)}`
-        }
-        return `#${upper}`
-    }
-    if (/^[0-9A-F]{6}$/.test(upper)) {
-        return `#${upper}`
-    }
-    return value
-}
