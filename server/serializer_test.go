@@ -814,6 +814,71 @@ func TestSerializerStyleClearsFontName(t *testing.T) {
 	}
 }
 
+// readCellNumFmt returns the custom number format string applied to
+// the cell, or "" if none is set.
+func readCellNumFmt(t *testing.T, xlsx []byte, sheetName string, row, col int) string {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	id, err := f.GetCellStyle(sheetName, ref)
+	if err != nil {
+		t.Fatalf("get style %s!%s: %v", sheetName, ref, err)
+	}
+	if id == 0 {
+		return ""
+	}
+	style, err := f.GetStyle(id)
+	if err != nil {
+		t.Fatalf("read style %d: %v", id, err)
+	}
+	if style == nil || style.CustomNumFmt == nil {
+		return ""
+	}
+	return *style.CustomNumFmt
+}
+
+// TestSerializerStyleSetsNumFmt: snapshot numFmt lands as
+// CustomNumFmt on the xlsx cell.
+func TestSerializerStyleSetsNumFmt(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
+				Kind:      "number",
+				RawNumber: func() *float64 { v := 1234.5; return &v }(),
+				Display:   "1,234.50",
+				Style:     &CellStyle{NumFmt: stringPtr("#,##0.00")},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if got := readCellNumFmt(t, out, "People", 2, 2); got != "#,##0.00" {
+		t.Errorf("B2 numFmt: want %q, got %q", "#,##0.00", got)
+	}
+}
+
 // TestSerializerStyleSetsStrike: snapshot font.strike = true lands as
 // strikethrough on the xlsx cell.
 func TestSerializerStyleSetsStrike(t *testing.T) {

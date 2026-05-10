@@ -60,6 +60,10 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 		}
 		dst.Font.Family = srcPtr.Elem().String()
 	},
+	"NumFmt": func(dst *excelize.Style, srcPtr reflect.Value) {
+		s := srcPtr.Elem().String()
+		dst.CustomNumFmt = &s
+	},
 }
 
 // overlayStyle copies every non-nil leaf in patch onto the matching
