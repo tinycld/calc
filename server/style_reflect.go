@@ -62,6 +62,14 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 	},
 	"NumFmt": func(dst *excelize.Style, srcPtr reflect.Value) {
 		s := srcPtr.Elem().String()
+		if s == "" {
+			// excelize.NewStyle errors on a non-nil pointer to "" with
+			// ErrCustomNumFmt. An empty-string patch means "clear the
+			// custom format" — drop CustomNumFmt entirely so excelize
+			// falls back to the workbook's General format.
+			dst.CustomNumFmt = nil
+			return
+		}
 		dst.CustomNumFmt = &s
 	},
 }

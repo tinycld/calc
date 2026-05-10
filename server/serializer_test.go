@@ -879,6 +879,63 @@ func TestSerializerStyleSetsNumFmt(t *testing.T) {
 	}
 }
 
+// TestSerializerStyleClearsNumFmt: snapshot numFmt = "" on a cell
+// that already carries a custom format must clear it (and must not
+// fail the save). Excelize.NewStyle errors on CustomNumFmt = &""
+// with ErrCustomNumFmt — the override has to translate empty-string
+// patches into "remove custom format".
+func TestSerializerStyleClearsNumFmt(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	seedFmt := "#,##0.00"
+	id, err := f.NewStyle(&excelize.Style{CustomNumFmt: &seedFmt})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetCellStyle("People", "B2", "B2", id); err != nil {
+		t.Fatalf("SetCellStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+	if got := readCellNumFmt(t, seeded, "People", 2, 2); got != "#,##0.00" {
+		t.Fatalf("seed: want numFmt=#,##0.00, got %q", got)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1",
+				Row:     2,
+				Col:     2,
+				Style:   &CellStyle{NumFmt: stringPtr("")},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	if got := readCellNumFmt(t, out, "People", 2, 2); got == "#,##0.00" {
+		t.Errorf("B2 numFmt: clear failed silently — got %q (existing format survived)", got)
+	}
+}
+
 // TestSerializerStyleSetsStrike: snapshot font.strike = true lands as
 // strikethrough on the xlsx cell.
 func TestSerializerStyleSetsStrike(t *testing.T) {
