@@ -13,6 +13,7 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): GridStoreDeps {
         writeCell: () => {},
         focusActiveInput: () => {},
         applyStructuralMutation: () => {},
+        applyFill: () => {},
     }
 }
 

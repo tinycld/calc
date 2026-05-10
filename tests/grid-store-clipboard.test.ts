@@ -19,6 +19,7 @@ function makeStubDeps(): GridStoreDeps {
         writeCell: () => {},
         focusActiveInput: () => {},
         applyStructuralMutation: (_op: StructuralOp) => {},
+        applyFill: () => {},
     }
 }
 

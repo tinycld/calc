@@ -16,6 +16,7 @@ The collaborative core is in good shape:
 - Full font / border / alignment / wrap styling
 - Insert / delete rows + columns
 - Multi-range selection
+- Fill handle (drag-to-fill): linear-number/date/formula, suffix-int strings, month/weekday name series
 - `.xlsx` as the on-disk format
 
 ## MUST-HAVE gaps (block basic usability)
@@ -35,14 +36,19 @@ recommended implementation order.
    paste-from-system-clipboard (TSV from Excel/Sheets, plain text, internal rich
    format with styles + formulas + ref-shifting).
 
-3. **Fill handle / autofill** — `components/grid/overlays.tsx` mentions it in a
-   comment but there's no implementation. Drag-to-fill (numbers, dates, formulas
-   with relative-ref shifting, series detection) is table-stakes; without it
-   formula-heavy workflows are unbearable.
+3. ~~**Fill handle / autofill**~~ — **done.** Drag the green dot at the
+   bottom-right of the selection to fill a series across the destination
+   cells. Supports linear numeric / date series, suffix-int strings,
+   month and weekday name series, formula refs (rewritten per
+   destination via the same shift mechanic the clipboard paste uses),
+   and `copy` as the fallback when no series is detected. Shift-drag
+   on web is the escape hatch for the legacy "extend selection without
+   filling" gesture; the long-press cell context menu is the touch-side
+   fallback. See `lib/fill/detect-series.ts` and `lib/fill/apply-fill.ts`.
 
-4. **Find & replace** — For this we need to investigate how keyboard shortcuts work
-   and hook into the standard ctrl-f and control-r.  we also need to add a toolbar
-   
+4. **Find & replace** — For this we need to investigate how keyboard shortcuts
+   work and hook into the standard ctrl-f and control-r. We also need to add a
+   toolbar magnifying glass icon for find.
 
 5. **Sort & filter** — neither exists. A sheet of more than ~30 rows is useless
    without at minimum: sort range by column asc/desc, and a filter view (header
@@ -86,5 +92,6 @@ Not ship-blockers, but the difference between "MVP" and "competitive":
 The first six items in the MUST-HAVE list get to "I can actually use this for a
 real task." The rest get to "I'm not embarrassed to demo this next to Sheets."
 
-Item 1 (formula rewrite on structural mutation) shipped on the `xlsx-persistence-gaps`
-branch — that was the most contained and most urgent of the must-haves.
+Items 1 (formula rewrite on structural mutation) and 3 (fill handle /
+autofill) have shipped. Items 2 and 4–6 are the remaining MUST-HAVE work to
+reach "I can actually use this for a real task."

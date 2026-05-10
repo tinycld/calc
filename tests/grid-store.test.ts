@@ -34,6 +34,7 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
                 focusCalls += 1
             },
             applyStructuralMutation: op => structuralOps.push(op),
+            applyFill: () => {},
         },
         writeCalls,
         structuralOps,

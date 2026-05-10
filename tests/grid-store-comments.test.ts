@@ -12,6 +12,7 @@ function makeDeps(): GridStoreDeps {
         writeCell: () => {},
         focusActiveInput: () => {},
         applyStructuralMutation: () => {},
+        applyFill: () => {},
     }
 }
 

@@ -3,6 +3,7 @@ import type { TextInput } from 'react-native'
 import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
 import { subscribeAwarenessToStore } from '../../components/grid/subscribe-awareness'
+import { applyFill as applyFillToDoc } from '../../lib/fill/apply-fill'
 import {
     deleteColumns,
     deleteRows,
@@ -91,6 +92,10 @@ export function useGridStoreInstance({
                         deleteColumns(doc, sheetId, op.fromCol, op.count)
                         break
                 }
+            },
+            applyFill: ({ sourceRange, destRange, direction }) => {
+                if (readOnly) return
+                applyFillToDoc({ doc, sheetId, sourceRange, destRange, direction })
             },
         }
         const api = createGridStore(deps)

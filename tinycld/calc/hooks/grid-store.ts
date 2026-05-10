@@ -31,6 +31,7 @@ import {
     formatRef,
     isRefAcceptable,
 } from '../lib/formula/cell-ref-insertion'
+import { effectiveRange } from '../lib/selection-range'
 
 export interface SelectedCell {
     row: number
@@ -78,6 +79,21 @@ export interface RefDrag {
     anchor: { row: number; col: number }
     end: { row: number; col: number }
     lastSlice: { start: number; end: number }
+}
+
+// Fill-handle drag in progress. sourceRange is the user's pre-drag
+// selection (captured at fillDragStart and never mutated). destRange
+// grows as the pointer moves and always contains sourceRange — the
+// rectangle is anchored at sourceRange's top-left and extends down or
+// right. direction is the dominant axis the drag is currently locked
+// to; until directionLocked flips true (on the first move strictly
+// past the source's bottom or right edge), the placeholder direction
+// has no effect because destRange == sourceRange.
+export interface FillDrag {
+    sourceRange: CellRange
+    destRange: CellRange
+    direction: 'down' | 'right'
+    directionLocked: boolean
 }
 
 export interface FormulaBarRect {
@@ -161,6 +177,11 @@ export interface GridState {
     clipboardMarker: string | null
     copySourceRange: CellRange | null
     cutPending: boolean
+    // Active fill-handle drag, or null when the user isn't dragging
+    // the selection-handle dot. The preview overlay subscribes to this
+    // to paint the green extension rectangle, and fillDragEnd reads it
+    // to dispatch the commit through deps.applyFill.
+    fillDrag: FillDrag | null
 }
 
 // Live cursor position inside the editing input. Stored as a
@@ -230,6 +251,16 @@ export interface GridStoreDeps {
     // selection state in the same set() so the highlight follows the
     // shifted cells in one render.
     applyStructuralMutation: (op: StructuralOp) => void
+    // Commit a fill-handle drag to the Y.Doc. The store calls this
+    // from fillDragEnd with the captured source range, the final dest
+    // rectangle, and the dominant axis. Series detection + projection
+    // happens inside the dep so the store stays free of yjs and the
+    // detection lib.
+    applyFill: (opts: {
+        sourceRange: CellRange
+        destRange: CellRange
+        direction: 'down' | 'right'
+    }) => void
 }
 
 export interface GridActions {
@@ -316,6 +347,16 @@ export interface GridActions {
     // fires, or when the source range is overwritten.
     setClipboardMarker: (markerId: string, sourceRange: CellRange, isCut: boolean) => void
     clearClipboardMarker: () => void
+    // Fill-handle drag lifecycle. Start captures the current effective
+    // range as the immutable source; move grows the dest rectangle and
+    // locks the axis on the first move past the source's edge; end
+    // dispatches deps.applyFill and snaps the post-fill selection to
+    // the dest rectangle (Sheets behavior). Returns false from start
+    // when there's nothing to fill from (no selection or readOnly), so
+    // the overlay can fall back to selection-extend.
+    fillDragStart: () => boolean
+    fillDragMove: (target: { row: number; col: number }) => void
+    fillDragEnd: () => void
 }
 
 export interface GridStore extends GridState, GridActions {}
@@ -328,6 +369,19 @@ export type GridStoreApi = StoreApi<GridStore> & { refs: GridRefs }
 function rangeContainsCell(range: CellRange, row: number, col: number): boolean {
     return (
         row >= range.startRow && row <= range.endRow && col >= range.startCol && col <= range.endCol
+    )
+}
+
+// Bounds-equality on a CellRange, used by fillDragMove to short-
+// circuit redundant set() calls. Cheaper than JSON.stringify and
+// avoids the object-identity false-negative we'd hit comparing
+// instances by reference.
+function rangesEqual(a: CellRange, b: CellRange): boolean {
+    return (
+        a.startRow === b.startRow &&
+        a.endRow === b.endRow &&
+        a.startCol === b.startCol &&
+        a.endCol === b.endCol
     )
 }
 
@@ -348,6 +402,7 @@ const initialState: GridState = {
     clipboardMarker: null,
     copySourceRange: null,
     cutPending: false,
+    fillDrag: null,
 }
 
 // Auto-clear an abandoned cut/copy marker after 30 seconds so the
@@ -961,6 +1016,166 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     clipboardMarker: null,
                     copySourceRange: null,
                     cutPending: false,
+                })
+            },
+
+            // Fill-handle drag actions. The interesting bit is the
+            // *direction lock*: the dot can be dragged into either of
+            // four quadrants relative to the source's bottom-right
+            // corner, but v1 only fills down or right. Until the user
+            // moves strictly past the source's bottom or right edge,
+            // the drag is a no-op (destRange == sourceRange) and the
+            // direction stays "unlocked" — the placeholder 'down' has
+            // no observable effect because no cells are written. On
+            // the first move that escapes the source rectangle in a
+            // positive axis, we lock direction to whichever axis is
+            // larger (ties pick 'down', matching the placeholder).
+            // Once locked, the OTHER axis is pinned to the source's
+            // bounds for the rest of the drag — Sheets refuses to
+            // switch axes mid-drag, and so do we. A drag-back into
+            // the source collapses destRange to sourceRange but keeps
+            // the lock; if the user then drags out again on the same
+            // axis, the existing lock applies; on the perpendicular
+            // axis, the lock holds and the drag is ignored on that
+            // axis until they restart the gesture.
+            fillDragStart: () => {
+                if (deps.readOnly) return false
+                const state = get()
+                if (state.selected == null) return false
+                const sourceRange = effectiveRange(state.selected, state.selectionRange)
+                if (sourceRange == null) return false
+                set({
+                    fillDrag: {
+                        sourceRange,
+                        destRange: sourceRange,
+                        direction: 'down',
+                        directionLocked: false,
+                    },
+                })
+                return true
+            },
+
+            fillDragMove: target => {
+                const drag = get().fillDrag
+                if (drag == null) return
+                const { sourceRange, direction, directionLocked } = drag
+                const dRow = target.row - sourceRange.endRow
+                const dCol = target.col - sourceRange.endCol
+
+                // Drag-back into source (or above/left of it) — clamp
+                // dest to source. Direction lock, if any, is preserved.
+                if (dRow <= 0 && dCol <= 0) {
+                    if (rangesEqual(drag.destRange, sourceRange)) return
+                    set({ fillDrag: { ...drag, destRange: { ...sourceRange } } })
+                    return
+                }
+
+                let nextDirection = direction
+                let nextLocked = directionLocked
+                if (!directionLocked) {
+                    // First escape from the source rectangle: lock to
+                    // the dominant axis. Ties go to 'down', matching
+                    // the placeholder.
+                    nextDirection = dRow >= dCol ? 'down' : 'right'
+                    nextLocked = true
+                }
+
+                // Once locked, the perpendicular axis is pinned to
+                // source bounds. If the locked axis isn't extended
+                // (e.g. user is dragging right but we're locked to
+                // 'down'), the drag is a no-op on this axis.
+                let destRange: CellRange
+                if (nextDirection === 'down') {
+                    if (dRow <= 0) {
+                        if (
+                            rangesEqual(drag.destRange, sourceRange) &&
+                            directionLocked === nextLocked &&
+                            direction === nextDirection
+                        ) {
+                            return
+                        }
+                        set({
+                            fillDrag: {
+                                sourceRange,
+                                destRange: { ...sourceRange },
+                                direction: nextDirection,
+                                directionLocked: nextLocked,
+                            },
+                        })
+                        return
+                    }
+                    destRange = {
+                        startRow: sourceRange.startRow,
+                        endRow: target.row,
+                        startCol: sourceRange.startCol,
+                        endCol: sourceRange.endCol,
+                    }
+                } else {
+                    if (dCol <= 0) {
+                        if (
+                            rangesEqual(drag.destRange, sourceRange) &&
+                            directionLocked === nextLocked &&
+                            direction === nextDirection
+                        ) {
+                            return
+                        }
+                        set({
+                            fillDrag: {
+                                sourceRange,
+                                destRange: { ...sourceRange },
+                                direction: nextDirection,
+                                directionLocked: nextLocked,
+                            },
+                        })
+                        return
+                    }
+                    destRange = {
+                        startRow: sourceRange.startRow,
+                        endRow: sourceRange.endRow,
+                        startCol: sourceRange.startCol,
+                        endCol: target.col,
+                    }
+                }
+
+                if (
+                    rangesEqual(destRange, drag.destRange) &&
+                    direction === nextDirection &&
+                    directionLocked === nextLocked
+                ) {
+                    return
+                }
+                set({
+                    fillDrag: {
+                        sourceRange,
+                        destRange,
+                        direction: nextDirection,
+                        directionLocked: nextLocked,
+                    },
+                })
+            },
+
+            fillDragEnd: () => {
+                const drag = get().fillDrag
+                if (drag == null) return
+                const { sourceRange, destRange, direction } = drag
+                if (rangesEqual(destRange, sourceRange)) {
+                    set({ fillDrag: null })
+                    return
+                }
+                deps.applyFill({ sourceRange, destRange, direction })
+                // Post-fill selection covers the entire dest
+                // rectangle; collapse to a null range when dest is
+                // somehow a single cell so the rest of the store
+                // stays in canonical form (matches selectCell /
+                // extendSelectionTo).
+                const single =
+                    destRange.startRow === destRange.endRow &&
+                    destRange.startCol === destRange.endCol
+                set({
+                    selected: { row: destRange.startRow, col: destRange.startCol },
+                    selectionRange: single ? null : { ...destRange },
+                    selectionScope: 'cells',
+                    fillDrag: null,
                 })
             },
         }

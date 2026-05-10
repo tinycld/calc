@@ -177,6 +177,78 @@ export function RefDragOverlay({ colOffsets, rowOffsets }: RefDragOverlayProps) 
     )
 }
 
+interface FillPreviewOverlayProps {
+    colOffsets: Float64Array
+    rowOffsets: Float64Array
+}
+
+// While a fill-handle drag is in progress, paint a dashed green
+// rectangle over the *extension* of the destination range — the
+// region strictly outside sourceRange but inside destRange. The
+// source itself keeps its own selection ring (LocalSelectionOverlay)
+// so drawing the source again here would just double up. Direction
+// is one of 'down' | 'right' (never both, by FillDrag's axis-locking
+// contract), so the extension is always a single rectangle.
+//
+// Pointer-events disabled so the dot's drag listener stays in
+// control of the gesture for the entire drag.
+export function FillPreviewOverlay({ colOffsets, rowOffsets }: FillPreviewOverlayProps) {
+    const fillDrag = useGridStore(s => s.fillDrag)
+    if (fillDrag == null) return null
+    const { sourceRange, destRange, direction } = fillDrag
+    if (
+        sourceRange.startRow === destRange.startRow &&
+        sourceRange.endRow === destRange.endRow &&
+        sourceRange.startCol === destRange.startCol &&
+        sourceRange.endCol === destRange.endCol
+    ) {
+        return null
+    }
+
+    let startRow: number
+    let endRow: number
+    let startCol: number
+    let endCol: number
+    if (direction === 'down') {
+        startRow = sourceRange.endRow + 1
+        endRow = destRange.endRow
+        startCol = sourceRange.startCol
+        endCol = sourceRange.endCol
+    } else {
+        startRow = sourceRange.startRow
+        endRow = sourceRange.endRow
+        startCol = sourceRange.endCol + 1
+        endCol = destRange.endCol
+    }
+    if (startRow > endRow || startCol > endCol) return null
+
+    const left = colOffsets[startCol - 1] ?? 0
+    const right = colOffsets[endCol] ?? left
+    const width = right - left
+    if (width <= 0) return null
+    const top = rowOffsets[startRow - 1] ?? 0
+    const bottom = rowOffsets[endRow] ?? top
+    const height = bottom - top
+    if (height <= 0) return null
+
+    return (
+        <View
+            pointerEvents="none"
+            style={{
+                position: 'absolute',
+                left,
+                top,
+                width,
+                height,
+                borderWidth: 2,
+                borderStyle: 'dashed',
+                borderColor: '#22a06b',
+                backgroundColor: 'rgba(34, 160, 107, 0.10)',
+            }}
+        />
+    )
+}
+
 interface RemoteSelectionOverlayProps {
     row: number
     col: number
@@ -311,15 +383,20 @@ const HIT_SLOP = 12
 
 // SelectionHandleOverlay renders the small drag dot at the bottom-
 // right of the current selection (anchor or range). Drag — by mouse
-// or touch — extends the range to whichever cell sits under the
-// pointer at release time. This is the touch-first equivalent of
-// shift-click: there's no shift key on a touchscreen, so a draggable
-// handle is the standard way to grow a selection on mobile.
+// or touch — fills a series across the new cells (the classic
+// spreadsheet "fill handle"): pattern detection runs on the source,
+// projection writes per-cell, and the post-fill selection covers the
+// extended rectangle.
 //
-// Selection-only for now (no value/style fill propagation). The
-// classic spreadsheet "fill handle" copies the active cell's value
-// and style across the new cells — that lives one PR away and would
-// reuse the same dot.
+// Web escape hatch: holding shift while dragging routes the gesture
+// to extendSelectionTo instead of fillDragMove. This preserves the
+// pre-fill drag-to-extend behavior for the rare case where the user
+// wants to grow the selection without filling. Modifier state is
+// re-checked on each pointermove (PointerEvent carries shiftKey on
+// web), so releasing/pressing shift mid-drag flips the mode for the
+// next move. Native has no shift key — touch users always get fill;
+// "Extend selection to here" lives in the long-press cell context
+// menu as the touch-side fallback.
 //
 // Hidden during edit sessions so the dot doesn't sit on top of the
 // CellEditor's caret. Hidden in readOnly mode since there's no
@@ -348,7 +425,9 @@ export function SelectionHandleOverlay({
     // captureStart records the grid-space origin of this drag —
     // shared between the web pointer-down and the native PanResponder
     // grant callbacks so the move math is identical on both
-    // platforms.
+    // platforms. Returns false when there's nothing to drag from
+    // (no selection); callers should bail without bootstrapping any
+    // listeners.
     const captureStart = (clientX: number, clientY: number) => {
         const s = store.getState()
         const anchor = s.selected
@@ -363,19 +442,34 @@ export function SelectionHandleOverlay({
         return true
     }
 
-    const handleMove = (clientX: number, clientY: number) => {
+    const handleMove = (clientX: number, clientY: number, shiftKey: boolean) => {
         const dx = clientX - startClientX.current
         const dy = clientY - startClientY.current
         const gridX = startGridX.current + dx
         const gridY = startGridY.current + dy
         const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
         if (target == null) return
-        store.getState().extendSelectionTo(target)
+        if (shiftKey) {
+            store.getState().extendSelectionTo(target)
+            return
+        }
+        store.getState().fillDragMove(target)
+    }
+
+    // Always call fillDragEnd on release so a shift-only drag (which
+    // bootstrapped fillDrag in captureStart but never moved past the
+    // source via fillDragMove) doesn't leave stale fillDrag state in
+    // the store. The store's fillDragEnd no-ops cleanly when destRange
+    // equals sourceRange.
+    const handleEnd = () => {
+        store.getState().fillDragEnd()
     }
 
     // Native: PanResponder, since touch gestures route through it
     // reliably on iOS/Android. PageX/Y is screen-space; we use it
-    // the same way as the web clientX/Y branch.
+    // the same way as the web clientX/Y branch. Touch always drives
+    // fill — no shift key on a touchscreen, and the "extend
+    // selection" fallback lives in the long-press cell context menu.
     //
     // Recreated per render rather than memoized — the overlay only
     // mounts when a selection exists (rare event).
@@ -385,12 +479,15 @@ export function SelectionHandleOverlay({
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: e => {
             const { pageX, pageY } = e.nativeEvent
-            captureStart(pageX, pageY)
+            if (!captureStart(pageX, pageY)) return
+            if (!store.getState().fillDragStart()) return
         },
         onPanResponderMove: e => {
             const { pageX, pageY } = e.nativeEvent
-            handleMove(pageX, pageY)
+            handleMove(pageX, pageY, false)
         },
+        onPanResponderRelease: () => handleEnd(),
+        onPanResponderTerminate: () => handleEnd(),
         onPanResponderTerminationRequest: () => false,
     }).panHandlers
 
@@ -419,11 +516,18 @@ export function SelectionHandleOverlay({
         const clientX = typeof e.clientX === 'number' ? e.clientX : 0
         const clientY = typeof e.clientY === 'number' ? e.clientY : 0
         if (!captureStart(clientX, clientY)) return
-        const onMove = (ev: PointerEvent) => handleMove(ev.clientX, ev.clientY)
+        // Bootstrap the fill drag eagerly. If the selection is empty
+        // (the only way fillDragStart returns false), bail entirely
+        // so we don't leak document listeners. Shift-drag-extend is
+        // the escape hatch ON TOP of an active fill — without a
+        // fillDragStart, there's nothing to extend either.
+        if (!store.getState().fillDragStart()) return
+        const onMove = (ev: PointerEvent) => handleMove(ev.clientX, ev.clientY, ev.shiftKey)
         const cleanup = () => {
             document.removeEventListener('pointermove', onMove)
             document.removeEventListener('pointerup', cleanup)
             document.removeEventListener('pointercancel', cleanup)
+            handleEnd()
         }
         document.addEventListener('pointermove', onMove)
         document.addEventListener('pointerup', cleanup)

@@ -15,6 +15,7 @@ import type { FormulaSpecialKey } from '../FormulaBar'
 import { Cell } from './Cell'
 import { CutMarchingAntsOverlay } from './CutMarchingAntsOverlay'
 import {
+    FillPreviewOverlay,
     LocalSelectionOverlay,
     RefDragOverlay,
     RemoteOverlays,
@@ -139,6 +140,7 @@ export function Body({
                     />
                     <LocalSelectionOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <CutMarchingAntsOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
+                    <FillPreviewOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <SelectionHandleOverlay
                         colOffsets={colOffsets}
                         rowOffsets={rowOffsets}
