@@ -1,5 +1,6 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type * as Y from 'yjs'
+import { type ColWidths, readColWidthsFromMeta } from '../lib/dimensions'
 import { SHEETS_MAP, type YSheetMeta, ydocSheetIds } from '../lib/y-doc-bootstrap'
 
 export interface SheetWithId extends YSheetMeta {
@@ -40,6 +41,7 @@ export function useYSheets(doc: Y.Doc | null): SheetWithId[] {
                 position: (meta?.get('position') as number) ?? 0,
                 rowCount: (meta?.get('rowCount') as number) ?? 0,
                 colCount: (meta?.get('colCount') as number) ?? 0,
+                colWidths: readColWidthsFromMeta(meta),
             }
         })
         const prev = snapshotRef.current
@@ -65,6 +67,23 @@ function sameSheets(a: SheetWithId[], b: SheetWithId[]): boolean {
         ) {
             return false
         }
+        if (!sameColWidths(x.colWidths, y.colWidths)) return false
+    }
+    return true
+}
+
+// Both shapes are sparse Records; equal iff the same set of keys map
+// to the same numbers. Order doesn't matter — Object.keys is stable
+// per-instance but two equal-content snapshots can come from different
+// observers. Cheap because the typical sheet has 0 entries.
+function sameColWidths(a: ColWidths | undefined, b: ColWidths | undefined): boolean {
+    if (a === b) return true
+    if (a == null || b == null) return false
+    const ak = Object.keys(a)
+    const bk = Object.keys(b)
+    if (ak.length !== bk.length) return false
+    for (const k of ak) {
+        if (a[Number(k)] !== b[Number(k)]) return false
     }
     return true
 }

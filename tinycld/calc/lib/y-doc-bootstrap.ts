@@ -38,6 +38,11 @@ export interface YSheetMeta {
     position: number
     rowCount: number
     colCount: number
+    // Sparse per-column width overrides. Absent = render at
+    // DEFAULT_COL_WIDTH. Read via `readColWidth` in lib/dimensions.ts —
+    // call sites should not index this directly so the default-fallback
+    // stays in one place.
+    colWidths?: Record<number, number>
 }
 
 // YCellValue is the typed snapshot returned by useYCell. `kind` carries
@@ -166,9 +171,7 @@ export function readYCell(cell: Y.Map<unknown>): YCellValue {
             // Cached scalar may be string/number/boolean/null. Trust
             // whatever was written; null means "no cached value yet".
             raw =
-                typeof rawRaw === 'string' || typeof rawRaw === 'number' || typeof rawRaw === 'boolean'
-                    ? rawRaw
-                    : null
+                typeof rawRaw === 'string' || typeof rawRaw === 'number' || typeof rawRaw === 'boolean' ? rawRaw : null
             break
         case 'string':
             // Legacy cells written before kind existed wrote `raw` as a
