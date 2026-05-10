@@ -86,7 +86,7 @@ func TestSaveRoomWritesUpdatedXLSX(t *testing.T) {
 		t.Fatalf("ApplyUpdate: %v", err)
 	}
 
-	if err := SaveRoom(app, handle, itemID); err != nil {
+	if err := SaveRoom(app, handle, itemID, nil); err != nil {
 		t.Fatalf("SaveRoom: %v", err)
 	}
 
@@ -136,7 +136,7 @@ func TestSaveRoomPersistsBold(t *testing.T) {
 	if err := handle.ApplyUpdate(update); err != nil {
 		t.Fatalf("ApplyUpdate: %v", err)
 	}
-	if err := SaveRoom(app, handle, itemID); err != nil {
+	if err := SaveRoom(app, handle, itemID, nil); err != nil {
 		t.Fatalf("SaveRoom: %v", err)
 	}
 
@@ -170,7 +170,7 @@ func TestSaveRoomMissingRecordReturnsError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = handle.Close() })
 
-	if err := SaveRoom(app, handle, "doesnotexist"); err == nil {
+	if err := SaveRoom(app, handle, "doesnotexist", nil); err == nil {
 		t.Fatal("expected SaveRoom on missing record to fail")
 	}
 }
@@ -179,7 +179,7 @@ func TestSaveRoomMissingRecordReturnsError(t *testing.T) {
 // caller side surfaces clearly rather than panicking.
 func TestSaveRoomNilHandleReturnsError(t *testing.T) {
 	app := setupPersistTestApp(t)
-	if err := SaveRoom(app, nil, "any"); err == nil {
+	if err := SaveRoom(app, nil, "any", nil); err == nil {
 		t.Fatal("expected nil handle to fail")
 	} else if !errors.Is(err, errors.New("calc: SaveRoom called with nil handle")) {
 		// errors.Is on a sentinel-less error: just check the message.
@@ -218,7 +218,7 @@ func TestSerializerKindNumber(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestSerializerKindNumberFloat(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestSerializerKindBoolean(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestSerializerKindDate(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestSerializerKindStringDoesNotPromoteToNumber(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestSerializerLegacyCellNoKind(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap)
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}

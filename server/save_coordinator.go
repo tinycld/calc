@@ -326,10 +326,12 @@ func (c *SaveCoordinator) triggerSave(driveItemID, reason string) {
 }
 
 // MakeProductionFlush returns a FlushFn that calls the real
-// SaveRoom against the given app. Plug into NewSaveCoordinator at
-// startup.
+// SaveRoom against the given app. The loadComments dep is plumbed
+// through so the saved xlsx carries the workbook's calc_comments rows
+// as classic cell notes (one-way: app → xlsx).
 func MakeProductionFlush(app core.App) FlushFn {
+	loadComments := MakeProductionLoadComments(app)
 	return func(driveItemID string, handle realtime.DocHandle) error {
-		return SaveRoom(app, handle, driveItemID)
+		return SaveRoom(app, handle, driveItemID, loadComments)
 	}
 }

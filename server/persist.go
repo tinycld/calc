@@ -34,7 +34,11 @@ const driveItemsCollection = "drive_items"
 // Runtime.NewDoc; we type-assert to *sheetsDocHandle to access the
 // Snapshot method (not part of the realtime.DocHandle interface
 // because XLSX-flavored snapshots are calc-specific).
-func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string) error {
+//
+// loadComments is optional; when nil the saved xlsx omits cell-comment
+// rendering. Tests pass nil; production wiring (MakeProductionFlush)
+// supplies MakeProductionLoadComments(app).
+func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string, loadComments LoadCommentsFn) error {
 	if handle == nil {
 		return errors.New("calc: SaveRoom called with nil handle")
 	}
@@ -58,7 +62,15 @@ func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string) error
 		return fmt.Errorf("calc: snapshot Y.Doc for %s: %w", driveItemID, err)
 	}
 
-	updatedBytes, err := serializeSnapshotToXLSX(originalBytes, snap)
+	var comments []CommentRow
+	if loadComments != nil {
+		comments, err = loadComments(driveItemID)
+		if err != nil {
+			return fmt.Errorf("calc: load comments for %s: %w", driveItemID, err)
+		}
+	}
+
+	updatedBytes, err := serializeSnapshotToXLSX(originalBytes, snap, comments)
 	if err != nil {
 		return fmt.Errorf("calc: serialize Y.Doc for %s: %w", driveItemID, err)
 	}
@@ -104,10 +116,13 @@ func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string) error
 //     for are left untouched. There is no client-side delete path
 //     today, so a missing snapshot entry means "untouched", not
 //     "removed".
+//   - When comments is non-empty, classic xlsx cell notes are written
+//     for each thread via applyCommentsToFile (one-way: app → xlsx).
+//     Existing cell notes from external editors are overwritten.
 //
 // Returns an error rather than empty bytes on any sheet/cell write
 // failure; the caller treats both alike.
-func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot) ([]byte, error) {
+func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments []CommentRow) ([]byte, error) {
 	if len(originalBytes) == 0 {
 		return nil, errors.New("calc: serializeSnapshotToXLSX called with empty original bytes")
 	}
@@ -186,6 +201,12 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot) ([]byte, e
 			if err := applyCellStyle(f, sheetName, ref, cell.Style); err != nil {
 				return nil, fmt.Errorf("apply style at %s!%s: %w", sheetName, ref, err)
 			}
+		}
+	}
+
+	if len(comments) > 0 {
+		if err := applyCommentsToFile(f, comments, sheetNameByID); err != nil {
+			return nil, fmt.Errorf("apply comments: %w", err)
 		}
 	}
 
