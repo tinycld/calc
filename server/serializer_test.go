@@ -329,6 +329,35 @@ func readCellFontSize(t *testing.T, xlsx []byte, sheetName string, row, col int)
 	return style.Font.Size
 }
 
+// readCellItalic returns the font.italic flag for the given cell.
+func readCellItalic(t *testing.T, xlsx []byte, sheetName string, row, col int) bool {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	ref, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	}
+	id, err := f.GetCellStyle(sheetName, ref)
+	if err != nil {
+		t.Fatalf("get style %s!%s: %v", sheetName, ref, err)
+	}
+	if id == 0 {
+		return false
+	}
+	style, err := f.GetStyle(id)
+	if err != nil {
+		t.Fatalf("read style %d: %v", id, err)
+	}
+	if style == nil || style.Font == nil {
+		return false
+	}
+	return style.Font.Italic
+}
+
 // stampFontSize pre-applies a font size on a cell and returns the new
 // xlsx bytes. Used to seed an "existing style" we then test the
 // overlay preserves.
@@ -469,5 +498,41 @@ func TestSerializerStyleAbsentLeavesCellAlone(t *testing.T) {
 	}
 	if got := readCellFontSize(t, out, "People", 2, 2); got != 18 {
 		t.Errorf("B2 font size after styleless save: want 18 preserved, got %v", got)
+	}
+}
+
+// TestSerializerStyleSetsItalic: a snapshot whose cell carries
+// style.font.italic = true lands as italic on the resulting xlsx
+// cell. Italic is structurally aligned with excelize.Font.Italic; this
+// test guards against a future refactor breaking the reflect walk.
+func TestSerializerStyleSetsItalic(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       2,
+				Col:       2,
+				RawString: "from-save",
+				Display:   "from-save",
+				Style:     &CellStyle{Font: &CellFont{Italic: boolPtr(true)}},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if !readCellItalic(t, out, "People", 2, 2) {
+		t.Errorf("B2 should be italic after style overlay")
 	}
 }
