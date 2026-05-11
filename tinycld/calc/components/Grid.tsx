@@ -14,6 +14,7 @@ import { useGridFormulaBar } from '../hooks/grid/use-grid-formula-bar'
 import { useGridRowResize } from '../hooks/grid/use-grid-row-resize'
 import { type GridStoreInstance, useGridStoreInstance } from '../hooks/grid/use-grid-store-instance'
 import { useGridSuggestions } from '../hooks/grid/use-grid-suggestions'
+import { useGridToolbarActions } from '../hooks/grid/use-grid-toolbar-actions'
 import { useGridToolbarToggles } from '../hooks/grid/use-grid-toolbar-toggles'
 import { type GridViewportHandle, useGridViewport } from '../hooks/grid/use-grid-viewport'
 import { useRefDragExtender } from '../hooks/grid/use-ref-drag-extender'
@@ -210,14 +211,7 @@ function GridInner({
     const findActions = useFindActions({ doc, sheetId, findStore, readOnly })
     const onOpenFind = useCallback(() => findActions.openFind(), [findActions])
 
-    // Inline arrows for the currency/percent/decimal preset shortcuts
-    // would re-create on every render and force <Toolbar> to re-render
-    // its full subtree. Wrap in useCallback so identity is stable —
-    // the underlying applyPreset/stepDecimal are stable from the hook.
-    const onApplyCurrency = useCallback(() => format.applyPreset('currency'), [format.applyPreset])
-    const onApplyPercent = useCallback(() => format.applyPreset('percent'), [format.applyPreset])
-    const onDecreaseDecimal = useCallback(() => format.stepDecimal(-1), [format.stepDecimal])
-    const onIncreaseDecimal = useCallback(() => format.stepDecimal(1), [format.stepDecimal])
+    const toolbarActions = useGridToolbarActions(instance.store)
 
     // Stable identity for the format-shortcut bundle so the shortcut
     // registry doesn't churn on every render.
@@ -273,10 +267,6 @@ function GridInner({
         return set
     }, [filterView])
 
-    const onOpenSort = useCallback(
-        () => instance.store.getState().openSortDialog(),
-        [instance.store]
-    )
     const onToggleFilter = useCallback(() => {
         if (doc == null) return
         const state = instance.store.getState()
@@ -288,37 +278,6 @@ function GridInner({
         if (range == null) return
         applyFilter(doc, sheetId, { range, criteria: {} })
     }, [doc, sheetId, instance.store, filterView])
-
-    const onMergeAll = useCallback(
-        () => instance.store.getState().mergeSelection(),
-        [instance.store]
-    )
-    const onMergeHorizontal = useCallback(
-        () => instance.store.getState().mergeSelectionHorizontal(),
-        [instance.store]
-    )
-    const onMergeVertical = useCallback(
-        () => instance.store.getState().mergeSelectionVertical(),
-        [instance.store]
-    )
-    const onUnmerge = useCallback(
-        () => instance.store.getState().unmergeSelection(),
-        [instance.store]
-    )
-
-    // Freeze actions dispatch through the grid store (which writes via
-    // its setFrozenRows/setFrozenCols deps). Stable identities so a
-    // selection-driven re-render of Grid doesn't ripple through the
-    // memoized Toolbar.
-    const onSetFrozenRows = useCallback(
-        (n: number) => instance.store.getState().setFrozenRows(n),
-        [instance.store]
-    )
-    const onSetFrozenCols = useCallback(
-        (n: number) => instance.store.getState().setFrozenCols(n),
-        [instance.store]
-    )
-    const onUnfreeze = useCallback(() => instance.store.getState().unfreeze(), [instance.store])
 
     const printDialogIsOpen = usePrintDialog(s => s.isOpen)
     const printDialogOpen = usePrintDialog(s => s.open)
@@ -369,10 +328,10 @@ function GridInner({
                 onToggleStrike={toolbar.onToggleStrike}
                 currentNumFmt={format.currentNumFmt}
                 onApplyPreset={format.applyPreset}
-                onApplyCurrency={onApplyCurrency}
-                onApplyPercent={onApplyPercent}
-                onDecreaseDecimal={onDecreaseDecimal}
-                onIncreaseDecimal={onIncreaseDecimal}
+                onApplyCurrency={format.applyCurrency}
+                onApplyPercent={format.applyPercent}
+                onDecreaseDecimal={format.decreaseDecimal}
+                onIncreaseDecimal={format.increaseDecimal}
                 fontSize={format.fontSize}
                 onSetFontSize={format.setFontSize}
                 fontColor={format.fontColor}
@@ -387,20 +346,20 @@ function GridInner({
                 onDownloadCsvCurrent={onDownloadCsvCurrent}
                 onDownloadCsvAll={onDownloadCsvAll}
                 onOpenPrint={printDialogOpen}
-                onOpenSort={onOpenSort}
+                onOpenSort={toolbarActions.openSort}
                 onToggleFilter={onToggleFilter}
                 isFilterActive={filterView != null}
-                onMergeAll={onMergeAll}
-                onMergeHorizontal={onMergeHorizontal}
-                onMergeVertical={onMergeVertical}
-                onUnmerge={onUnmerge}
+                onMergeAll={toolbarActions.mergeAll}
+                onMergeHorizontal={toolbarActions.mergeHorizontal}
+                onMergeVertical={toolbarActions.mergeVertical}
+                onUnmerge={toolbarActions.unmerge}
                 frozenRows={frozenRows}
                 frozenCols={frozenCols}
                 selectionBottomRow={selectionBottomRow}
                 selectionRightCol={selectionRightCol}
-                onSetFrozenRows={onSetFrozenRows}
-                onSetFrozenCols={onSetFrozenCols}
-                onUnfreeze={onUnfreeze}
+                onSetFrozenRows={toolbarActions.setFrozenRows}
+                onSetFrozenCols={toolbarActions.setFrozenCols}
+                onUnfreeze={toolbarActions.unfreeze}
             />
             <SortStatusBanner />
             <FormulaBar

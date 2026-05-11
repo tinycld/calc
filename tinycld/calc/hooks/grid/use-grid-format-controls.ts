@@ -42,6 +42,13 @@ export interface GridFormatControls {
     applyPreset: (id: string) => void
     applyNumFmt: (numFmt: string) => void
     stepDecimal: (delta: 1 | -1) => void
+    // Pre-bound shortcuts for the toolbar's currency / percent / decimal
+    // buttons. Identities are stable across renders so memo'd Toolbar
+    // doesn't churn.
+    applyCurrency: () => void
+    applyPercent: () => void
+    decreaseDecimal: () => void
+    increaseDecimal: () => void
     setFontSize: (size: number) => void
     setFontColor: (color: string) => void
     setFillColor: (color: string) => void
@@ -121,6 +128,11 @@ export function useGridFormatControls({
         [currentNumFmt, writeNumFmt]
     )
 
+    const applyCurrency = useCallback(() => applyPreset('currency'), [applyPreset])
+    const applyPercent = useCallback(() => applyPreset('percent'), [applyPreset])
+    const decreaseDecimal = useCallback(() => stepDecimal(-1), [stepDecimal])
+    const increaseDecimal = useCallback(() => stepDecimal(1), [stepDecimal])
+
     const setFontSize = useCallback(
         (size: number) => {
             if (readOnly || doc == null) return
@@ -186,6 +198,10 @@ export function useGridFormatControls({
         applyPreset,
         applyNumFmt,
         stepDecimal,
+        applyCurrency,
+        applyPercent,
+        decreaseDecimal,
+        increaseDecimal,
         setFontSize,
         setFontColor,
         setFillColor,
