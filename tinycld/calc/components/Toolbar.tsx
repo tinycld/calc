@@ -27,6 +27,7 @@ import { FreezeMenu } from './toolbar/FreezeMenu'
 import { HorizontalAlignMenu } from './toolbar/HorizontalAlignMenu'
 import { MergeMenu } from './toolbar/MergeMenu'
 import { NumberFormatMenu } from './toolbar/NumberFormatMenu'
+import { PrintButton } from './toolbar/PrintButton'
 import { TextColorMenu } from './toolbar/TextColorMenu'
 import { ToolbarButton, ToolbarDivider } from './toolbar/ToolbarButton'
 
@@ -76,6 +77,8 @@ export interface ToolbarProps {
     onDownloadCsvCurrent: () => void
     onDownloadCsvAll: () => void
     onDownloadXlsx?: () => void
+
+    onOpenPrint: () => void
 
     // Sort opens the modal SortDialog. Filter toggles the filter view
     // on the active selection (creates if none, removes if present).
@@ -139,6 +142,7 @@ function ToolbarImpl(props: ToolbarProps) {
         onDownloadCsvCurrent,
         onDownloadCsvAll,
         onDownloadXlsx,
+        onOpenPrint,
         onOpenSort,
         onToggleFilter,
         isFilterActive,
@@ -279,6 +283,7 @@ function ToolbarImpl(props: ToolbarProps) {
                 onDownloadCsvAll={onDownloadCsvAll}
                 onDownloadXlsx={onDownloadXlsx}
             />
+            <PrintButton onPress={onOpenPrint} />
         </View>
     )
 }
