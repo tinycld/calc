@@ -1611,9 +1611,12 @@ func TestSerializerPersistsColWidths(t *testing.T) {
 
 // TestSerializerRowHeightsNilLeavesExistingAlone: a snapshot whose
 // SheetMeta.RowHeights is nil must not touch the workbook's existing
-// row heights. Mirrors the T8 sentinel-untouched discipline so a future
-// loop refactor (e.g. switching the range over nil for an explicit
-// nil-check) can't silently regress.
+// row heights. The nil-vs-empty-map distinction is load-bearing: nil
+// means "the Y.Doc has no nested map for this field" (legacy doc that
+// predates bootstrap-seeding), and the serializer leaves the on-disk
+// xlsx alone. An empty (but non-nil) map signals "the doc tracked the
+// field and the user cleared every entry" — the serializer clears
+// every customization in that case (see TestSerializerClearsRowHeightsForEmptyMap).
 func TestSerializerRowHeightsNilLeavesExistingAlone(t *testing.T) {
 	original, err := os.ReadFile(tinyXlsxPath)
 	if err != nil {
@@ -1654,8 +1657,10 @@ func TestSerializerRowHeightsNilLeavesExistingAlone(t *testing.T) {
 	}
 }
 
-// TestSerializerColWidthsNilLeavesExistingAlone: same sentinel as
-// above for the column-widths path.
+// TestSerializerColWidthsNilLeavesExistingAlone: same tri-state
+// sentinel as above for the column-widths path. Nil ⇒ preserve;
+// empty (non-nil) ⇒ clear all (covered by
+// TestSerializerClearsColWidthsForEmptyMap).
 func TestSerializerColWidthsNilLeavesExistingAlone(t *testing.T) {
 	original, err := os.ReadFile(tinyXlsxPath)
 	if err != nil {
@@ -1769,12 +1774,12 @@ func TestSerializerPersistsRowStyle(t *testing.T) {
 	}
 }
 
-// TestSerializerRowStylesNilLeavesExistingAlone: a snapshot whose
-// SheetMeta.RowStyles is nil must not blow away pre-existing row-level
-// styles in the workbook. Mirrors the T8/T9 sentinel discipline: even
-// though Go's range-over-nil is a no-op today, a future refactor that
-// adds an explicit nil-check or different iteration helper could
-// silently regress, and the sentinel pins the contract.
+// TestSerializerRowStylesNilLeavesExistingAlone: nil RowStyles means
+// the Y.Doc has no nested map for this field, so the serializer leaves
+// pre-existing row-level styles in the workbook alone. The empty-map
+// case (doc tracks the field, user cleared every entry) is the
+// snapshot-is-authoritative clear path — see
+// TestSerializerClearsRowStylesForEmptyMap.
 func TestSerializerRowStylesNilLeavesExistingAlone(t *testing.T) {
 	original, err := os.ReadFile(tinyXlsxPath)
 	if err != nil {
@@ -1976,5 +1981,484 @@ func TestSerializerStyleClearsFill(t *testing.T) {
 	// Color slice should be empty, which means no fill color is set.
 	if len(colors) != 0 {
 		t.Errorf("B2 fill color: want empty slice after clear, got %v", colors)
+	}
+}
+
+// TestSerializerClearsRowHeightsForEmptyMap: a snapshot whose
+// SheetMeta.RowHeights is non-nil but empty represents a Y.Doc that
+// tracked row heights and then had every entry cleared. The serializer
+// must unset all stored row heights on the sheet so the user-side
+// clears survive a reload. Without this, the prior fix for
+// delete-row persistence (c901b55) left a parallel hole open for
+// resize-then-default-reset.
+func TestSerializerClearsRowHeightsForEmptyMap(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := f.SetRowHeight("People", 2, 50); err != nil {
+		t.Fatalf("seed SetRowHeight: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+	if got := readRowHeight(t, seeded, "People", 2); got != 50 {
+		t.Fatalf("seed: want row 2 height=50, got %v", got)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{
+				ID: "sheet1", Name: "People", Position: 0,
+				// Non-nil empty: doc tracked heights, user cleared all.
+				RowHeights: map[int]int{},
+			},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	// Cleared row falls back to the workbook default — read row 3
+	// (which we never touched) to find what that default is for this
+	// fixture, then assert row 2 matches it (and is no longer 50pt).
+	def := readRowHeight(t, out, "People", 3)
+	got := readRowHeight(t, out, "People", 2)
+	if got == 50.0 {
+		t.Errorf("row 2 height after empty-map clear: still seeded 50pt — clear did not run")
+	}
+	if got != def {
+		t.Errorf("row 2 height after empty-map clear: want default %v (matching row 3), got %v", def, got)
+	}
+}
+
+// TestSerializerClearsColWidthsForEmptyMap: non-nil empty ColWidths
+// clears every customized column on the sheet. Same contract as
+// TestSerializerClearsRowHeightsForEmptyMap; pinned per-axis because
+// SetColWidth and SetRowHeight have different "unset" mechanisms in
+// excelize (col uses defaultColWidth, row uses height=-1).
+func TestSerializerClearsColWidthsForEmptyMap(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := f.SetColWidth("People", "C", "C", 25); err != nil {
+		t.Fatalf("seed SetColWidth: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{
+				ID: "sheet1", Name: "People", Position: 0,
+				ColWidths: map[int]int{},
+				// ColCount > seeded customization so the clear loop reaches col C.
+				ColCount: 5,
+			},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	got := readColWidth(t, out, "People", 3)
+	// defaultExcelColWidth ≈ 9.140625
+	if got < 9.0 || got > 9.3 {
+		t.Errorf("col C width after empty-map clear: want ≈ default (9.14), got %v", got)
+	}
+}
+
+// TestSerializerClearsRowStylesForEmptyMap: non-nil empty RowStyles
+// clears every row-level style on the sheet. Per-cell styles applied
+// in the cells pass layer on top in Excel's render model, so clearing
+// the row-level style is the right scope.
+func TestSerializerClearsRowStylesForEmptyMap(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	id, err := f.NewStyle(&excelize.Style{
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFFF00"}},
+	})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetRowStyle("People", 7, 7, id); err != nil {
+		t.Fatalf("seed SetRowStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{
+				ID: "sheet1", Name: "People", Position: 0,
+				RowStyles: map[int]*CellStyle{},
+				// RowCount > seeded row so the clear loop reaches row 7.
+				RowCount: 10,
+			},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	_, _, colors := readRowStyleFill(t, out, "People", 7)
+	if len(colors) != 0 {
+		t.Errorf("row 7 row-style after empty-map clear: want no colors, got %v", colors)
+	}
+}
+
+// TestSerializerClearsTabColorWhenSnapshotEmpty: a snapshot with empty
+// SheetMeta.Color must clear any prior tab color on the sheet. Mirrors
+// the same authoritative-snapshot contract used for cells, merges, and
+// the sparse maps above. Previously this branch was a write-only
+// `if meta.Color != "" { ... }` — a user clearing the tab color in
+// the client would silently leave the old color on disk.
+func TestSerializerClearsTabColorWhenSnapshotEmpty(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	// Seed a tab color on the original.
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	red := "FF0000"
+	if err := f.SetSheetProps("People", &excelize.SheetPropsOptions{TabColorRGB: &red}); err != nil {
+		t.Fatalf("seed SetSheetProps: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+
+	props, err := openSheetProps(t, seeded, "People")
+	if err != nil {
+		t.Fatalf("read seeded props: %v", err)
+	}
+	if props.TabColorRGB == nil || *props.TabColorRGB != "FF0000" {
+		t.Fatalf("seed: want TabColorRGB=FF0000, got %v", props.TabColorRGB)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0}, // Color: "" (cleared)
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	outProps, err := openSheetProps(t, out, "People")
+	if err != nil {
+		t.Fatalf("read output props: %v", err)
+	}
+	if outProps.TabColorRGB != nil && *outProps.TabColorRGB != "" {
+		t.Errorf("tab color after clear: want empty/absent, got %q", *outProps.TabColorRGB)
+	}
+}
+
+// openSheetProps returns the excelize SheetPropsOptions for the given
+// sheet — used by tab-color tests to assert the on-disk worksheet
+// <sheetPr> state.
+func openSheetProps(t *testing.T, xlsx []byte, sheet string) (excelize.SheetPropsOptions, error) {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		return excelize.SheetPropsOptions{}, err
+	}
+	defer func() { _ = f.Close() }()
+	return f.GetSheetProps(sheet)
+}
+
+// TestSerializerSparseMapRoundTripContract is the structural canary
+// that catches future regressions of the c901b55 bug class: a sparse
+// per-sheet map (or scalar) whose serializer writes new values but
+// fails to clear values the snapshot has dropped.
+//
+// For each registered (name, seed, mutate-snapshot, observe) tuple,
+// the test:
+//  1. Seeds the source xlsx with a non-default customization for the
+//     field.
+//  2. Builds a snapshot via snapshotFromXLSX (cells mirrored) and
+//     applies the mutate-snapshot callback — typically dropping the
+//     field's customization from the snapshot.
+//  3. Asserts the observe callback finds the customization cleared in
+//     the output.
+//
+// Adding a new persisted per-sheet attribute means adding one entry
+// here. If the new attribute's serializer code forgets the clear-on-
+// drop pass, this test fails immediately rather than waiting for a
+// user-visible "my edit came back" bug report.
+func TestSerializerSparseMapRoundTripContract(t *testing.T) {
+	type roundTripCase struct {
+		name     string
+		seed     func(t *testing.T, f *excelize.File)
+		mutate   func(snap *YDocSnapshot)
+		observe  func(t *testing.T, out []byte) (got string, want string)
+		describe string
+	}
+
+	cases := []roundTripCase{
+		{
+			name: "row height dropped from snapshot clears on disk",
+			seed: func(t *testing.T, f *excelize.File) {
+				if err := f.SetRowHeight("People", 2, 50); err != nil {
+					t.Fatalf("seed SetRowHeight: %v", err)
+				}
+			},
+			mutate: func(snap *YDocSnapshot) {
+				// Doc tracks heights but row 2's customization is gone.
+				snap.Sheets[0].RowHeights = map[int]int{}
+				snap.Sheets[0].RowCount = 10
+			},
+			observe: func(t *testing.T, out []byte) (string, string) {
+				// Workbook default varies per fixture; row 3 was never
+				// touched, so it reads as the workbook default. The
+				// cleared row must match that, not the seeded 50pt.
+				h := readRowHeight(t, out, "People", 2)
+				def := readRowHeight(t, out, "People", 3)
+				if h == 50.0 {
+					return "50 (seeded — clear did not run)", "default"
+				}
+				if h == def {
+					return "default", "default"
+				}
+				return fmt.Sprintf("%v", h), fmt.Sprintf("default(%v)", def)
+			},
+			describe: "RowHeights",
+		},
+		{
+			name: "col width dropped from snapshot clears on disk",
+			seed: func(t *testing.T, f *excelize.File) {
+				if err := f.SetColWidth("People", "C", "C", 25); err != nil {
+					t.Fatalf("seed SetColWidth: %v", err)
+				}
+			},
+			mutate: func(snap *YDocSnapshot) {
+				snap.Sheets[0].ColWidths = map[int]int{}
+				snap.Sheets[0].ColCount = 5
+			},
+			observe: func(t *testing.T, out []byte) (string, string) {
+				w := readColWidth(t, out, "People", 3)
+				// Within tolerance of defaultExcelColWidth.
+				if w > 9.0 && w < 9.3 {
+					return "default", "default"
+				}
+				return fmt.Sprintf("%v", w), "default"
+			},
+			describe: "ColWidths",
+		},
+		{
+			name: "row style dropped from snapshot clears on disk",
+			seed: func(t *testing.T, f *excelize.File) {
+				id, err := f.NewStyle(&excelize.Style{
+					Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFFF00"}},
+				})
+				if err != nil {
+					t.Fatalf("seed NewStyle: %v", err)
+				}
+				if err := f.SetRowStyle("People", 7, 7, id); err != nil {
+					t.Fatalf("seed SetRowStyle: %v", err)
+				}
+			},
+			mutate: func(snap *YDocSnapshot) {
+				snap.Sheets[0].RowStyles = map[int]*CellStyle{}
+				snap.Sheets[0].RowCount = 10
+			},
+			observe: func(t *testing.T, out []byte) (string, string) {
+				_, _, colors := readRowStyleFill(t, out, "People", 7)
+				if len(colors) == 0 {
+					return "cleared", "cleared"
+				}
+				return fmt.Sprintf("%v", colors), "cleared"
+			},
+			describe: "RowStyles",
+		},
+		{
+			name: "tab color dropped from snapshot clears on disk",
+			seed: func(t *testing.T, f *excelize.File) {
+				rgb := "FF0000"
+				if err := f.SetSheetProps("People", &excelize.SheetPropsOptions{TabColorRGB: &rgb}); err != nil {
+					t.Fatalf("seed SetSheetProps: %v", err)
+				}
+			},
+			mutate: func(snap *YDocSnapshot) {
+				// Color: "" — doc explicitly has no tab color.
+				snap.Sheets[0].Color = ""
+			},
+			observe: func(t *testing.T, out []byte) (string, string) {
+				props, err := openSheetProps(t, out, "People")
+				if err != nil {
+					return "error", "cleared"
+				}
+				if props.TabColorRGB == nil || *props.TabColorRGB == "" {
+					return "cleared", "cleared"
+				}
+				return *props.TabColorRGB, "cleared"
+			},
+			describe: "Color",
+		},
+	}
+
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := excelize.OpenReader(bytes.NewReader(original))
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			tc.seed(t, f)
+			buf, err := f.WriteToBuffer()
+			if err != nil {
+				t.Fatalf("WriteToBuffer: %v", err)
+			}
+			_ = f.Close()
+			seeded := buf.Bytes()
+
+			snap := snapshotFromXLSX(t, seeded)
+			tc.mutate(&snap)
+
+			out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+			if err != nil {
+				t.Fatalf("serialize: %v", err)
+			}
+			got, want := tc.observe(t, out)
+			if got != want {
+				t.Errorf("%s round-trip clear: want %q, got %q", tc.describe, want, got)
+			}
+		})
+	}
+}
+
+// countSheetDataRows enumerates the <row> elements in a sheet's
+// sheetData via excelize's streaming row iterator. Used by the no-op-
+// save bloat regression test below.
+func countSheetDataRows(t *testing.T, xlsx []byte, sheetName string) int {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	rows, err := f.Rows(sheetName)
+	if err != nil {
+		t.Fatalf("open row iterator: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	count := 0
+	for rows.Next() {
+		count++
+	}
+	if err := rows.Error(); err != nil {
+		t.Fatalf("row iterator: %v", err)
+	}
+	return count
+}
+
+// TestSerializerNoOpSaveDoesNotInflateSheetData pins the optimization-#2
+// invariant: a save whose snapshot has empty (non-nil) RowStyles on a
+// sheet that itself has no on-disk row-level styles must NOT backfill
+// placeholder <row> entries up to the sheet's <dimension>.
+//
+// Why RowStyles specifically: excelize's trimRow() filter (called at
+// marshal time) prunes rows whose only "customization" is Ht=nil /
+// CustomHeight=false, so the row-heights clear pass survives
+// pre-optimization without inflating the file. But SetRowStyle(_,_,_,0)
+// sets the row's CustomFormat=true, which trimRow.hasAttr() returns
+// true for — those rows are KEPT on write. The dense version of
+// applySparseRowStyles would have walked 1..dimensionRowExtent and
+// marked every row CustomFormat=true. A 50k-dimension sheet with no
+// row styles would gain 50k <row> entries on every save.
+//
+// The test pins the row-style clear path specifically because that's
+// where the inflation actually shows up in the saved file. The other
+// two helpers (heights, widths) are still optimized for the same
+// reason but their inflation was masked by excelize's own pruning.
+func TestSerializerNoOpSaveDoesNotInflateSheetData(t *testing.T) {
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+	if err := f.SetCellValue("Sheet1", "A1", "hello"); err != nil {
+		t.Fatalf("seed cell: %v", err)
+	}
+	// Widen <dimension> well past the populated cells so the
+	// pre-optimization dense loop would have walked 1..1000 in the
+	// clear pass.
+	if err := f.SetSheetDimension("Sheet1", "A1:Z1000"); err != nil {
+		t.Fatalf("widen dimension: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	original := buf.Bytes()
+	originalRowCount := countSheetDataRows(t, original, "Sheet1")
+	if originalRowCount > 5 {
+		t.Fatalf("fixture row count %d is unexpectedly large — test setup may be wrong", originalRowCount)
+	}
+
+	// Snapshot mirrors the workbook contents and declares an empty-but-
+	// non-nil RowStyles map so the clear-then-write helper runs its
+	// clear pass. Heights and widths are exercised too for completeness,
+	// but RowStyles is the one that actually inflates pre-optimization.
+	snap := snapshotFromXLSX(t, original)
+	for i := range snap.Sheets {
+		snap.Sheets[i].RowHeights = map[int]int{}
+		snap.Sheets[i].ColWidths = map[int]int{}
+		snap.Sheets[i].RowStyles = map[int]*CellStyle{}
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	outRowCount := countSheetDataRows(t, out, "Sheet1")
+	if outRowCount != originalRowCount {
+		t.Errorf("sheetData row count after no-op save: want %d (matching input), got %d — clear pass backfilled placeholder rows",
+			originalRowCount, outRowCount)
 	}
 }

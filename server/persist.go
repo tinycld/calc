@@ -212,30 +212,51 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 				return nil, fmt.Errorf("set dimension on %s: %w", name, err)
 			}
 		}
-		// px==0 is a deliberate value, not an absence: the TS side's
-		// snap-to-hide thresholds (ROW_HIDE_SNAP_THRESHOLD,
-		// HIDE_SNAP_THRESHOLD) round small drag widths to 0, and excelize
-		// hides the row/column when SetRowHeight/SetColWidth gets 0. The
-		// guards reject only negatives so the hide round-trip survives.
-		for row, px := range meta.RowHeights {
-			if row < 1 || px < 0 {
-				continue
-			}
-			if err := f.SetRowHeight(name, row, pxToExcelPoints(px)); err != nil {
-				return nil, fmt.Errorf("set row height %s!%d: %w", name, row, err)
-			}
+		// Enumerate the sheet's existing per-row / per-column
+		// customizations once so each clear-then-write helper below
+		// only walks the small (existingCustom ∪ snapshotKeys) set
+		// rather than the dense 1..maxRow / 1..maxCol range.
+		//
+		// Why it matters: every mutation API in excelize
+		// (SetRowHeight, SetRowStyle, SetCellValue, …) routes through
+		// an internal backfill step that extends the worksheet's
+		// in-memory row slice up to the touched row, allocating a
+		// placeholder xlsxRow for every gap. A dense walk over
+		// 1..dimensionExtent triggers that backfill for every
+		// uncustomized row in the sheet — wasteful in CPU and
+		// allocations even when the on-disk output ends up small
+		// after trimRow filtering, and visibly bloating when the
+		// helper (SetRowStyle) sets CustomFormat=true on the
+		// placeholder, which trimRow keeps.
+		//
+		// One enumeration covers both row heights and row styles
+		// because excelize's Rows() iterator surfaces both Height
+		// and StyleID in a single streaming pass over the sheet XML.
+		existingHeightRows, existingStyleRows, err := existingCustomRowOpts(f, name)
+		if err != nil {
+			return nil, fmt.Errorf("enumerate custom row opts on %s: %w", name, err)
 		}
-		for col, px := range meta.ColWidths {
-			if col < 1 || px < 0 {
-				continue
-			}
-			colName, err := excelize.ColumnNumberToName(col)
-			if err != nil {
-				return nil, fmt.Errorf("col name for %d: %w", col, err)
-			}
-			if err := f.SetColWidth(name, colName, colName, pxToExcelCharWidth(px)); err != nil {
-				return nil, fmt.Errorf("set col width %s!%s: %w", name, colName, err)
-			}
+		existingWidthCols, err := existingCustomCols(f, name, meta.ColCount)
+		if err != nil {
+			return nil, fmt.Errorf("enumerate custom col widths on %s: %w", name, err)
+		}
+		// Row heights / col widths follow the snapshot-is-authoritative
+		// contract for tri-state sparse maps (see SheetMeta docstring).
+		// Nil ⇒ the Y.Doc has no nested map ⇒ preserve on-disk values
+		// (legacy bootstraps). Non-nil ⇒ the Y.Doc tracks this field ⇒
+		// clear any on-disk customization not in the map, then write
+		// the map entries.
+		//
+		// px==0 is a deliberate value (snap-to-hide), not an absence:
+		// the TS side's HIDE_SNAP_THRESHOLD rounds small drag widths to
+		// 0 so excelize's SetRowHeight/SetColWidth=0 hides the row/col.
+		// The serializer treats px<0 as an out-of-band sentinel and
+		// skips it.
+		if err := applySparseRowHeights(f, name, meta.RowHeights, existingHeightRows); err != nil {
+			return nil, err
+		}
+		if err := applySparseColWidths(f, name, meta.ColWidths, existingWidthCols); err != nil {
+			return nil, err
 		}
 		// Merges: unmerge anything that the workbook already has on this
 		// sheet (excelize has no "set merges" call — only Add/Remove),
@@ -303,38 +324,36 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 				return nil, fmt.Errorf("clear panes on %s: %w", name, err)
 			}
 		}
-		// Row styles are written as full-overwrite, not read-then-overlay
-		// (unlike applyCellStyle below). The Y.Doc is the source of truth
-		// for row-level styling once a workbook is in collaborative use,
-		// so any pre-existing xlsx row-style from an external editor is
-		// superseded on the first save. Per-cell styles applied in the
-		// cells pass below still layer on top in Excel's render model,
-		// so this destructive write is scoped to the row's own style.
-		for row, style := range meta.RowStyles {
-			if row < 1 || style == nil {
-				continue
-			}
-			base := &excelize.Style{}
-			overlayStyle(base, style)
-			styleID, err := f.NewStyle(base)
-			if err != nil {
-				return nil, fmt.Errorf("register row style %s!%d: %w", name, row, err)
-			}
-			if err := f.SetRowStyle(name, row, row, styleID); err != nil {
-				return nil, fmt.Errorf("set row style %s!%d: %w", name, row, err)
-			}
+		// Row styles follow the same snapshot-is-authoritative contract
+		// as row heights / col widths above. Nil ⇒ preserve on-disk;
+		// non-nil ⇒ clear any on-disk row style not in the map, then
+		// write the entries. Per-cell styles layer on top in Excel's
+		// render model, so the row-level clear here doesn't affect
+		// individual cells' own styles applied in the cells pass below.
+		if err := applySparseRowStyles(f, name, meta.RowStyles, existingStyleRows); err != nil {
+			return nil, err
 		}
 
-		// Tab color: round-trip through SheetPropsOptions.TabColorRGB.
-		// excelize accepts the hex with or without the leading "#"; we
-		// strip it for portability with older sheet readers that store
-		// the bare RGB hex.
+		// Tab color: the Y.Doc is authoritative once a workbook has been
+		// bootstrapped (BootstrapYDocFromWorkbook seeds the imported
+		// xlsx's TabColorRGB into the doc). Empty Color ⇒ clear any
+		// prior tab color so a user-side unset round-trips; non-empty ⇒
+		// stamp it via SheetPropsOptions.TabColorRGB. excelize accepts
+		// the hex with or without the leading "#"; we strip it for
+		// portability with older sheet readers that store the bare RGB.
 		if meta.Color != "" {
 			rgb := strings.TrimPrefix(meta.Color, "#")
 			if err := f.SetSheetProps(name, &excelize.SheetPropsOptions{
 				TabColorRGB: &rgb,
 			}); err != nil {
 				return nil, fmt.Errorf("set tab color on %s: %w", name, err)
+			}
+		} else {
+			empty := ""
+			if err := f.SetSheetProps(name, &excelize.SheetPropsOptions{
+				TabColorRGB: &empty,
+			}); err != nil {
+				return nil, fmt.Errorf("clear tab color on %s: %w", name, err)
 			}
 		}
 	}
@@ -476,6 +495,213 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		return nil, fmt.Errorf("write workbook: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// existingCustomRowOpts streams the sheet's rows via excelize.Rows()
+// and returns two sets of 1-based row numbers: rows whose stored
+// height differs from the xlsx default, and rows whose StyleID is
+// non-zero. One pass produces both because the streaming iterator
+// surfaces Height + StyleID in the same XML stream.
+//
+// The serializer's clear-then-write helpers use these sets to bound
+// their clear pass to rows that actually have a customization to
+// clear. Without that bound, the helpers walked 1..dimensionRowExtent
+// and called SetRowHeight(-1) / SetRowStyle(_,_,0) on every row, each
+// call triggering excelize's in-memory backfill (it densifies the
+// worksheet's row slice up to the touched row, allocating a
+// placeholder for every gap). A 50k-row <dimension> sheet with no
+// customizations would allocate 50k placeholder rows on every save,
+// and the row-style clear path also marks each placeholder with
+// CustomFormat=true so the bloat survives excelize's marshal-time
+// trimRow filter and shows up as 50k <row> entries on disk.
+//
+// Returns empty (non-nil) sets on success when nothing is customized;
+// callers can treat that as "nothing to clear" without a nil check.
+func existingCustomRowOpts(f *excelize.File, sheet string) (map[int]struct{}, map[int]struct{}, error) {
+	heights := map[int]struct{}{}
+	styles := map[int]struct{}{}
+	rows, err := f.Rows(sheet)
+	if err != nil {
+		return heights, styles, fmt.Errorf("open row iterator: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	rowIdx := 0
+	for rows.Next() {
+		rowIdx++
+		opts := rows.GetRowOpts()
+		// excelize's extractRowOpts seeds Height with defaultRowHeight
+		// when the <row> element has no `ht` attribute. The 0.01pt
+		// epsilon catches roundtrip rounding without missing real
+		// customizations.
+		if opts.Height > 0 && (opts.Height < defaultExcelRowHeight-0.01 || opts.Height > defaultExcelRowHeight+0.01) {
+			heights[rowIdx] = struct{}{}
+		}
+		if opts.StyleID > 0 {
+			styles[rowIdx] = struct{}{}
+		}
+	}
+	if err := rows.Error(); err != nil {
+		return heights, styles, fmt.Errorf("row iterator: %w", err)
+	}
+	return heights, styles, nil
+}
+
+// existingCustomCols walks columns 1..maxCol and returns the set of
+// 1-based column numbers whose stored width differs from the xlsx
+// default. excelize has no public column iterator so the bounded walk
+// is the simplest correct path — GetColWidth is a constant-time lookup
+// into ws.Cols.Col, so the cost is O(maxCol) memory reads, not
+// O(maxCol) XML mutations.
+//
+// maxCol is read from the snapshot's tracked ColCount unioned with the
+// workbook's <dimension> column extent so columns customized in the
+// original file beyond the snapshot's tracked extent still surface.
+func existingCustomCols(f *excelize.File, sheet string, snapshotColCount int) (map[int]struct{}, error) {
+	out := map[int]struct{}{}
+	dimCol, _ := parseDimensionRef(getSheetDimension(f, sheet))
+	maxCol := dimCol
+	if snapshotColCount > maxCol {
+		maxCol = snapshotColCount
+	}
+	for col := 1; col <= maxCol; col++ {
+		colName, err := excelize.ColumnNumberToName(col)
+		if err != nil {
+			return out, fmt.Errorf("col name for %d: %w", col, err)
+		}
+		w, err := f.GetColWidth(sheet, colName)
+		if err != nil {
+			return out, fmt.Errorf("get col width %s!%s: %w", sheet, colName, err)
+		}
+		if w > 0 && (w < defaultExcelColWidth-0.001 || w > defaultExcelColWidth+0.001) {
+			out[col] = struct{}{}
+		}
+	}
+	return out, nil
+}
+
+// applySparseRowHeights enforces the snapshot-is-authoritative contract
+// for per-row heights on one sheet.
+//
+//   - heights == nil → no-op (legacy bootstrap; preserve on-disk).
+//   - heights non-nil → walk (existingCustom ∪ snapshotKeys), unset
+//     rows in existingCustom but not in the snapshot, write rows in
+//     the snapshot. existingCustom is pre-computed by
+//     existingCustomRowOpts so the clear pass touches only rows that
+//     have something to clear — no dense 1..maxRow walk, no
+//     excelize-side backfill of placeholders on uncustomized rows.
+//
+// Without the unset pass, a user resizing a row and then resetting to
+// default would silently leave the old height in the saved xlsx; the
+// next reload would reseed the row's customization from the stale file.
+func applySparseRowHeights(f *excelize.File, sheet string, heights map[int]int, existingCustom map[int]struct{}) error {
+	if heights == nil {
+		return nil
+	}
+	for row := range existingCustom {
+		if _, kept := heights[row]; kept {
+			continue
+		}
+		if err := f.SetRowHeight(sheet, row, -1); err != nil {
+			return fmt.Errorf("clear stale row height %s!%d: %w", sheet, row, err)
+		}
+	}
+	for row, px := range heights {
+		if row < 1 || px < 0 {
+			continue
+		}
+		if err := f.SetRowHeight(sheet, row, pxToExcelPoints(px)); err != nil {
+			return fmt.Errorf("set row height %s!%d: %w", sheet, row, err)
+		}
+	}
+	return nil
+}
+
+// applySparseColWidths enforces the snapshot-is-authoritative contract
+// for per-column widths on one sheet. excelize has no public
+// "unset column width" call, so the "clear" path writes the workbook
+// default (defaultExcelColWidth) which is the rendered behavior of a
+// column with no customization. The clear is bounded to columns
+// pre-identified as having a non-default width on disk, so the file
+// gains no spurious <col> entries on a no-op save.
+func applySparseColWidths(f *excelize.File, sheet string, widths map[int]int, existingCustom map[int]struct{}) error {
+	if widths == nil {
+		return nil
+	}
+	for col := range existingCustom {
+		if _, kept := widths[col]; kept {
+			continue
+		}
+		colName, err := excelize.ColumnNumberToName(col)
+		if err != nil {
+			return fmt.Errorf("col name for %d: %w", col, err)
+		}
+		if err := f.SetColWidth(sheet, colName, colName, defaultExcelColWidth); err != nil {
+			return fmt.Errorf("clear stale col width %s!%s: %w", sheet, colName, err)
+		}
+	}
+	for col, px := range widths {
+		if col < 1 || px < 0 {
+			continue
+		}
+		colName, err := excelize.ColumnNumberToName(col)
+		if err != nil {
+			return fmt.Errorf("col name for %d: %w", col, err)
+		}
+		if err := f.SetColWidth(sheet, colName, colName, pxToExcelCharWidth(px)); err != nil {
+			return fmt.Errorf("set col width %s!%s: %w", sheet, colName, err)
+		}
+	}
+	return nil
+}
+
+// applySparseRowStyles enforces the snapshot-is-authoritative contract
+// for per-row styles. Same tri-state semantics as the height/width
+// helpers above. The "clear" path writes excelize's style-ID 0 (the
+// "no style" sentinel), which removes the row-level style without
+// affecting per-cell styles applied in the cells pass.
+//
+// existingCustom is bounded to rows that actually carry a non-zero
+// StyleID on disk so the clear pass doesn't dirty every row in the
+// dimension on a sheet with no row-level styles.
+func applySparseRowStyles(f *excelize.File, sheet string, styles map[int]*CellStyle, existingCustom map[int]struct{}) error {
+	if styles == nil {
+		return nil
+	}
+	for row := range existingCustom {
+		if _, kept := styles[row]; kept {
+			continue
+		}
+		if err := f.SetRowStyle(sheet, row, row, 0); err != nil {
+			return fmt.Errorf("clear stale row style %s!%d: %w", sheet, row, err)
+		}
+	}
+	for row, style := range styles {
+		if row < 1 || style == nil {
+			continue
+		}
+		base := &excelize.Style{}
+		overlayStyle(base, style)
+		styleID, err := f.NewStyle(base)
+		if err != nil {
+			return fmt.Errorf("register row style %s!%d: %w", sheet, row, err)
+		}
+		if err := f.SetRowStyle(sheet, row, row, styleID); err != nil {
+			return fmt.Errorf("set row style %s!%d: %w", sheet, row, err)
+		}
+	}
+	return nil
+}
+
+// getSheetDimension is a small error-swallowing wrapper around
+// excelize.GetSheetDimension so callers can use it inside expression
+// contexts without four lines of plumbing. A missing dimension reads
+// as the empty string, which parseDimensionRef maps to (0, 0).
+func getSheetDimension(f *excelize.File, sheet string) string {
+	ref, err := f.GetSheetDimension(sheet)
+	if err != nil {
+		return ""
+	}
+	return ref
 }
 
 // applyCellStyle overlays a partial CellStyle onto the cell's existing

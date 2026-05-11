@@ -463,12 +463,25 @@ func numberFromAny(v any) int {
 
 // decodeSparseIntMap pulls a nested Y.Map<string,int-like> off the
 // given parent meta map and returns it as a Go map[int]int. Keys that
-// fail to parse as a positive integer are skipped. Returns nil when
-// the nested map is absent or empty so callers can leave the
-// surrounding workbook attribute alone (sparse-by-default).
+// fail to parse as a positive integer are skipped.
+//
+// Tri-state return — load-bearing for the serializer's clear-then-
+// write contract:
+//   - nil: the Y.Doc has no nested map for this key at all (sheet was
+//     bootstrapped before this field was tracked, or never had a
+//     customization). The serializer leaves the on-disk xlsx alone.
+//   - non-nil empty: the Y.Doc has the nested map but every entry has
+//     been removed (user cleared all customizations). The serializer
+//     unsets all on-disk customizations for this field.
+//   - non-nil non-empty: the entries are authoritative. The serializer
+//     unsets any on-disk entry not in the map and writes the rest.
+//
+// Without the empty-but-non-nil case, a clear-the-last-entry would
+// silently bounce back on reload because the decoder collapsed
+// "absent" and "empty" both to nil.
 func decodeSparseIntMap(meta *ycrdt.YMap, key string) map[int]int {
 	nested, ok := meta.Get(key).(*ycrdt.YMap)
-	if !ok || nested.GetSize() == 0 {
+	if !ok {
 		return nil
 	}
 	out := map[int]int{}
@@ -479,9 +492,6 @@ func decodeSparseIntMap(meta *ycrdt.YMap, key string) map[int]int {
 		}
 		out[n] = numberFromAny(v)
 	})
-	if len(out) == 0 {
-		return nil
-	}
 	return out
 }
 
@@ -536,11 +546,13 @@ func decodeMerges(meta *ycrdt.YMap, key string) []MergeRange {
 // decodeSparseStyleMap pulls a nested Y.Map<string, Y.Map> off the
 // given parent meta map and returns it as a map[int]*CellStyle.
 // Decodes each entry through decodeCellStyle to keep the shape
-// identical to per-cell styles. Returns nil for an absent or empty
-// nested map.
+// identical to per-cell styles.
+//
+// Tri-state return — same contract as decodeSparseIntMap. See that
+// function's docstring for the absent / empty / non-empty meanings.
 func decodeSparseStyleMap(meta *ycrdt.YMap, key string) (map[int]*CellStyle, error) {
 	nested, ok := meta.Get(key).(*ycrdt.YMap)
-	if !ok || nested.GetSize() == 0 {
+	if !ok {
 		return nil, nil
 	}
 	out := map[int]*CellStyle{}
@@ -568,9 +580,6 @@ func decodeSparseStyleMap(meta *ycrdt.YMap, key string) (map[int]*CellStyle, err
 	})
 	if decodeErr != nil {
 		return nil, decodeErr
-	}
-	if len(out) == 0 {
-		return nil, nil
 	}
 	return out, nil
 }

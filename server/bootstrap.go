@@ -43,6 +43,17 @@ type WorksheetModel struct {
 	// rather than writing 0 so a freeze-less sheet adds no bytes.
 	FrozenRows int `json:"frozenRows,omitempty"`
 	FrozenCols int `json:"frozenCols,omitempty"`
+	// RowHeights / ColWidths / RowStyles seed the Y.Doc's sparse
+	// per-row / per-column customization maps from the imported
+	// xlsx. Without this seed the Y.Doc has no knowledge of the
+	// original sizing, so the serializer's snapshot-is-authoritative
+	// contract for these fields would silently wipe legitimate
+	// external customizations on first save. Keys are 1-based row
+	// or column numbers; values are CSS pixels (matching the TS
+	// side's storage unit).
+	RowHeights map[int]int        `json:"rowHeights,omitempty"`
+	ColWidths  map[int]int        `json:"colWidths,omitempty"`
+	RowStyles  map[int]*CellStyle `json:"rowStyles,omitempty"`
 }
 
 // MergeRangeDTO mirrors the TS MergeRangeModel: a merged cell anchor
@@ -159,6 +170,14 @@ func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (Work
 	}
 	merges, _ := readMerges(f, sheetName)
 	frozenRows, frozenCols := readWorksheetFreeze(f, sheetName)
+	rowHeights, rowStyles, err := readWorksheetRowOpts(f, sheetName)
+	if err != nil {
+		return WorksheetModel{}, fmt.Errorf("row opts: %w", err)
+	}
+	colWidths, err := readWorksheetColWidths(f, sheetName, colCount)
+	if err != nil {
+		return WorksheetModel{}, fmt.Errorf("col widths: %w", err)
+	}
 	return WorksheetModel{
 		Name:       sheetName,
 		RowCount:   rowCount,
@@ -169,7 +188,153 @@ func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (Work
 		Merges:     merges,
 		FrozenRows: frozenRows,
 		FrozenCols: frozenCols,
+		RowHeights: rowHeights,
+		ColWidths:  colWidths,
+		RowStyles:  rowStyles,
 	}, nil
+}
+
+// readWorksheetRowOpts streams the sheet's rows via excelize.Rows() and
+// collects per-row Height + StyleID into maps keyed by 1-based row
+// number. Only emits entries whose Height differs from the xlsx default
+// (or whose StyleID is non-zero) so the resulting maps remain sparse:
+// a workbook with no row customizations contributes no Y.Doc bytes.
+//
+// Why both maps come from one pass: excelize's streaming row iterator
+// is the only public API that exposes both the per-row Height (via
+// rows.GetRowOpts().Height) and StyleID without re-decoding the whole
+// worksheet XML. A second pass for styles would double the cost on
+// large sheets.
+//
+// Why errors propagate: a partial seed here is dangerous downstream.
+// If we returned (nil, nil) on a read failure and the user later
+// touched one row, the Y.Doc would carry a one-entry map and the
+// serializer's clear-then-write contract would wipe every other row's
+// original on-disk customization — re-creating the bug class this
+// package is built to prevent. Better to fail bootstrap loudly than
+// silently degrade into a save-time wipe.
+//
+// The default-height epsilon (0.01 pt) catches roundtrip rounding
+// without dropping near-default custom heights.
+func readWorksheetRowOpts(f *excelize.File, sheetName string) (map[int]int, map[int]*CellStyle, error) {
+	rows, err := f.Rows(sheetName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open row iterator: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	heights := map[int]int{}
+	styles := map[int]*CellStyle{}
+	rowIdx := 0
+	for rows.Next() {
+		rowIdx++
+		opts := rows.GetRowOpts()
+		// excelize's extractRowOpts seeds Height with defaultRowHeight
+		// (15pt). Any value materially different from that is a stored
+		// customization in the xlsx's <row ht="..."> attribute.
+		if opts.Height > 0 && (opts.Height < defaultExcelRowHeight-0.01 || opts.Height > defaultExcelRowHeight+0.01) {
+			heights[rowIdx] = excelPointsToPx(opts.Height)
+		}
+		if opts.StyleID > 0 {
+			style, err := f.GetStyle(opts.StyleID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("read style id %d on row %d: %w", opts.StyleID, rowIdx, err)
+			}
+			if style != nil {
+				if cs := extractStyle(style); cs != nil {
+					styles[rowIdx] = cs
+				}
+			}
+		}
+	}
+	if err := rows.Error(); err != nil {
+		return nil, nil, fmt.Errorf("row iterator: %w", err)
+	}
+	if len(heights) == 0 {
+		heights = nil
+	}
+	if len(styles) == 0 {
+		styles = nil
+	}
+	return heights, styles, nil
+}
+
+// readWorksheetColWidths walks columns 1..colCount and emits any whose
+// stored width differs from the xlsx default. excelize exposes only a
+// per-column lookup (GetColWidth) without an enumerator, so this loop
+// is the simplest correct path — colCount is already bounded by the
+// sheet's used range and capped by the caller.
+//
+// Like readWorksheetRowOpts, the result stays sparse: a workbook with
+// no width customizations contributes no Y.Doc bytes. Errors propagate
+// for the same reason — a partial seed here would let the serializer
+// wipe legitimate on-disk widths on first save (see readWorksheetRowOpts
+// for the full data-loss story).
+//
+// ColumnNumberToName failing inside a 1..colCount walk would mean
+// colCount is out of range for the xlsx column-name encoding (max
+// XFD = 16384), which is a structural invariant violation we should
+// surface rather than skip.
+func readWorksheetColWidths(f *excelize.File, sheetName string, colCount int) (map[int]int, error) {
+	if colCount < 1 {
+		return nil, nil
+	}
+	out := map[int]int{}
+	for col := 1; col <= colCount; col++ {
+		colName, err := excelize.ColumnNumberToName(col)
+		if err != nil {
+			return nil, fmt.Errorf("column name for %d: %w", col, err)
+		}
+		w, err := f.GetColWidth(sheetName, colName)
+		if err != nil {
+			return nil, fmt.Errorf("get col width %s!%s: %w", sheetName, colName, err)
+		}
+		// GetColWidth falls back to defaultColWidth (9.140625) when
+		// the column has no stored width entry; skip those so the
+		// emitted map only carries true customizations.
+		if w <= 0 || (w > defaultExcelColWidth-0.001 && w < defaultExcelColWidth+0.001) {
+			continue
+		}
+		out[col] = excelCharWidthToPx(w)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+// defaultExcelRowHeight and defaultExcelColWidth mirror excelize's
+// internal defaults (rows.go: defaultRowHeight=15, col.go:
+// defaultColWidth=9.140625). Exposed here so the import-side seeding
+// can detect "this row/col uses the workbook default" without taking
+// on a build-time dependency on excelize's private constants.
+const (
+	defaultExcelRowHeight = 15.0
+	defaultExcelColWidth  = 9.140625
+)
+
+// excelPointsToPx is the inverse of pxToExcelPoints (persist.go). 72
+// pt / inch / 96 px / inch = 0.75 ratio in the forward direction; the
+// inverse divides. Rounds to the nearest integer pixel because the
+// Y.Doc stores row heights as ints.
+func excelPointsToPx(pt float64) int {
+	if pt <= 0 {
+		return 0
+	}
+	return int(pt/0.75 + 0.5)
+}
+
+// excelCharWidthToPx is the inverse of pxToExcelCharWidth (persist.go).
+// Forward: chars = (px-5)/7 for px>12 else px/12. We pick the inverse
+// branch by whether the result of the px>12 branch lands above 12 — i.e.
+// `(chars*7)+5 > 12` ⇒ `chars > 1`. Rounds to the nearest integer pixel.
+func excelCharWidthToPx(chars float64) int {
+	if chars <= 0 {
+		return 0
+	}
+	if chars > 1 {
+		return int(chars*7 + 5 + 0.5)
+	}
+	return int(chars*12 + 0.5)
 }
 
 // readMerges extracts the sheet's merged cell rectangles via
@@ -473,6 +638,65 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 				}
 				if wroteAny {
 					meta.Set("merges", mergesMap)
+				}
+			}
+
+			// Seed the sparse per-row / per-column customization maps
+			// from the imported xlsx. Without this, the serializer's
+			// snapshot-is-authoritative pass would clear legitimate
+			// pre-existing customizations on the first save.
+			//
+			// Gotcha: y-crdt's YMap.GetSize() reads from the integrated
+			// `Map` field, not from `PrelimContent`. A freshly-created
+			// YMap that we've called Set on N times still reports
+			// GetSize()==0 until it's attached to a Doc via the parent's
+			// Set call. So we track whether we wrote any entry on a
+			// plain Go bool (the same shape the merges block above
+			// uses) instead of asking the YMap how many entries it
+			// holds. Skipping this tripped a silent no-op for all three
+			// fields and broke the bootstrap→serializer round-trip.
+			if len(sheet.RowHeights) > 0 {
+				heightsMap := ycrdt.NewYMap(nil)
+				wroteAny := false
+				for row, px := range sheet.RowHeights {
+					if row < 1 || px <= 0 {
+						continue
+					}
+					heightsMap.Set(strconv.Itoa(row), px)
+					wroteAny = true
+				}
+				if wroteAny {
+					meta.Set("rowHeights", heightsMap)
+				}
+			}
+			if len(sheet.ColWidths) > 0 {
+				widthsMap := ycrdt.NewYMap(nil)
+				wroteAny := false
+				for col, px := range sheet.ColWidths {
+					if col < 1 || px <= 0 {
+						continue
+					}
+					widthsMap.Set(strconv.Itoa(col), px)
+					wroteAny = true
+				}
+				if wroteAny {
+					meta.Set("colWidths", widthsMap)
+				}
+			}
+			if len(sheet.RowStyles) > 0 {
+				stylesMap := ycrdt.NewYMap(nil)
+				wroteAny := false
+				for row, style := range sheet.RowStyles {
+					if row < 1 || style == nil {
+						continue
+					}
+					if built := buildStyleYMapFromStyle(style); built != nil {
+						stylesMap.Set(strconv.Itoa(row), built)
+						wroteAny = true
+					}
+				}
+				if wroteAny {
+					meta.Set("rowStyles", stylesMap)
 				}
 			}
 

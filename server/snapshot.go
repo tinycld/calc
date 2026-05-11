@@ -27,26 +27,31 @@ type SheetMeta struct {
 	RowCount int
 	ColCount int
 
-	// RowHeights maps row number (1-based) -> pixel height for rows
-	// the user has resized away from the default. Sparse: rows at
-	// default height have no entry. Pixels are converted to Excel
-	// points (px * 0.75) at serialization time.
+	// RowHeights / ColWidths / RowStyles are tri-state sparse maps —
+	// the snapshot-is-authoritative contract depends on the distinction
+	// between absent (nil) and present-but-empty (non-nil, len 0):
+	//
+	//   - nil: the Y.Doc has no nested map for this field. The
+	//     serializer leaves the on-disk xlsx alone. Happens for legacy
+	//     workbooks bootstrapped before this field was seeded.
+	//   - non-nil, empty: the Y.Doc tracked the field and the user
+	//     cleared every entry. The serializer unsets every on-disk
+	//     customization for this field on the sheet.
+	//   - non-nil, non-empty: the entries are authoritative. The
+	//     serializer unsets any on-disk customization not in the map
+	//     and writes the entries.
+	//
+	// Pixels round-trip through pxToExcelPoints / pxToExcelCharWidth at
+	// serialization time.
 	RowHeights map[int]int
-
-	// ColWidths maps column number (1-based) -> pixel width for
-	// resized columns. Sparse, as above. Converted to Excel
-	// character units at serialization time.
-	ColWidths map[int]int
-
-	// RowStyles maps row number (1-based) -> partial style applied
-	// to the entire row. Per-cell styles still layer on top at
-	// render time; this is the "fill row 7 yellow" affordance.
-	// Sparse: rows without a row-level style have no entry.
-	RowStyles map[int]*CellStyle
+	ColWidths  map[int]int
+	RowStyles  map[int]*CellStyle
 
 	// Color is the user-chosen tab color (hex string like "#FF0000").
-	// Empty string means no override; the serializer leaves whatever
-	// tab color the source xlsx had alone in that case.
+	// Empty string is authoritative — it means the doc has no tab
+	// color, and the serializer clears any prior tab color on save.
+	// The Y.Doc is the source of truth for tab color once a workbook
+	// has been bootstrapped (bootstrap seeds it from the source xlsx).
 	Color string
 
 	// Hidden mirrors the Y.Doc's `hidden` flag. When true the
