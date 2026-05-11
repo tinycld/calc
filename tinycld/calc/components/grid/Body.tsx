@@ -414,6 +414,10 @@ function SplitBody({
                                 colOffsets={brColOffsets}
                                 rowOffsets={brRowOffsets}
                             />
+                            <FillPreviewOverlay
+                                colOffsets={brColOffsets}
+                                rowOffsets={brRowOffsets}
+                            />
                             <SelectionHandleOverlay
                                 colOffsets={brColOffsets}
                                 rowOffsets={brRowOffsets}

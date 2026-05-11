@@ -472,12 +472,18 @@ export function SelectionHandleOverlay({
     // fill — no shift key on a touchscreen, and the "extend
     // selection" fallback lives in the long-press cell context menu.
     //
+    // The should-set callbacks return false on web so RN-Web's
+    // responder system doesn't claim the mousedown ahead of our
+    // onMouseDown handler — the web path is driven entirely by the
+    // document-level pointer listeners installed below.
+    //
     // Recreated per render rather than memoized — the overlay only
     // mounts when a selection exists (rare event).
+    const isNative = Platform.OS !== 'web'
     const panHandlers = PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onStartShouldSetPanResponderCapture: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponder: () => isNative,
+        onStartShouldSetPanResponderCapture: () => isNative,
+        onMoveShouldSetPanResponder: () => isNative,
         onPanResponderGrant: e => {
             const { pageX, pageY } = e.nativeEvent
             if (!captureStart(pageX, pageY)) return
