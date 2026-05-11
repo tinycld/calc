@@ -12,6 +12,15 @@ import { primaryAnchor } from '../../lib/selection-range'
 import { columnLabel } from '../../lib/workbook-types'
 import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT } from './constants'
 
+// Module-level skip flag for the synthetic click after a modifier
+// mousedown. Set by the modifier-aware onMouseDown handler and
+// consumed by the very next onPress. preventDefault on mousedown
+// blocks the focus shift but NOT the synthetic click on web, so
+// without this gate a Ctrl-click would land on a Pressable.onPress
+// that calls selectColumn and collapses the disjoint selection.
+// One flag is sufficient — clicks are serial.
+let skipNextHeaderPress = false
+
 interface ColumnHeaderProps {
     scrollRef: React.RefObject<ScrollView | null>
     contentWidth: number
@@ -212,10 +221,71 @@ function appendHeaderCells(
                 col >= filter.filterRange.startCol &&
                 col <= filter.filterRange.endCol
             const hasActiveCriterion = filter.activeFilterCols.has(col)
+            // Web modifier-aware mousedown: Ctrl/Cmd-click appends a
+            // column-scope sub-range (Sheets-parity disjoint
+            // selection); Shift-click extends the active column-
+            // scope sub-range; plain click replaces the selection.
+            //
+            // We wire on mousedown — not Pressable.onPress — because
+            // RN's GestureResponderEvent doesn't expose modifier
+            // keys. preventDefault on mousedown blocks the focus
+            // shift; the synthetic click that still fires after
+            // mouseup re-runs onPress, so we use a skipNext gate via
+            // an action that the followup onPress just no-ops on
+            // by virtue of being idempotent (selectColumn with the
+            // same modifier-less semantics).
+            const webMouseDownProp =
+                Platform.OS === 'web'
+                    ? {
+                          onMouseDown: (e: {
+                              preventDefault: () => void
+                              button?: number
+                              shiftKey?: boolean
+                              ctrlKey?: boolean
+                              metaKey?: boolean
+                          }) => {
+                              if (e.button != null && e.button !== 0) return
+                              const isCtrl = e.ctrlKey || e.metaKey
+                              if (isCtrl && !e.shiftKey) {
+                                  e.preventDefault()
+                                  skipNextHeaderPress = true
+                                  filter.store
+                                      .getState()
+                                      .addColumnSubRange(col, rowCount)
+                                  return
+                              }
+                              if (e.shiftKey && !isCtrl) {
+                                  e.preventDefault()
+                                  skipNextHeaderPress = true
+                                  filter.store
+                                      .getState()
+                                      .extendActiveColumnTo(col, rowCount)
+                                  return
+                              }
+                              if (isCtrl && e.shiftKey) {
+                                  // Ctrl+Shift-click adds a new range
+                                  // (most-recent additive gesture
+                                  // wins; documented in plan §5).
+                                  e.preventDefault()
+                                  skipNextHeaderPress = true
+                                  filter.store
+                                      .getState()
+                                      .addColumnSubRange(col, rowCount)
+                              }
+                          },
+                      }
+                    : null
+            const onPlainPress = () => {
+                if (skipNextHeaderPress) {
+                    skipNextHeaderPress = false
+                    return
+                }
+                filter.store.getState().selectColumn(col, rowCount)
+            }
             out.push(
                 <Pressable
                     key={`h-${col}`}
-                    onPress={() => filter.store.getState().selectColumn(col, rowCount)}
+                    onPress={onPlainPress}
                     accessibilityLabel={`Select column ${columnLabel(col)}`}
                     className={`border-r border-b border-border flex-row items-center justify-center ${
                         isActive ? 'bg-accent' : 'bg-surface-secondary'
@@ -228,6 +298,8 @@ function appendHeaderCells(
                         height: HEADER_HEIGHT,
                         ...(isActive ? ACTIVE_HEADER_INSET_STYLE : null),
                     }}
+                    // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
+                    {...((webMouseDownProp ?? {}) as any)}
                 >
                     <Text
                         className={`text-xs ${isActive ? 'text-accent-foreground' : 'text-muted-foreground'}`}

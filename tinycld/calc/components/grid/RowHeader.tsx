@@ -9,6 +9,10 @@ import {
 import { primaryAnchor } from '../../lib/selection-range'
 import { ACTIVE_HEADER_INSET_STYLE, ROW_HEADER_WIDTH } from './constants'
 
+// Skip flag for the synthetic click after a modifier mousedown.
+// See the matching comment in ColumnHeader.tsx for rationale.
+let skipNextHeaderPress = false
+
 interface RowHeaderProps {
     scrollRef: React.RefObject<ScrollView | null>
     contentHeight: number
@@ -168,10 +172,49 @@ function appendRowHeaderCells(
         // occupy zero pixels of layout space — render nothing rather
         // than a W×0 view to keep the DOM lean.
         if (height > 0) {
+            const webMouseDownProp =
+                Platform.OS === 'web'
+                    ? {
+                          onMouseDown: (e: {
+                              preventDefault: () => void
+                              button?: number
+                              shiftKey?: boolean
+                              ctrlKey?: boolean
+                              metaKey?: boolean
+                          }) => {
+                              if (e.button != null && e.button !== 0) return
+                              const isCtrl = e.ctrlKey || e.metaKey
+                              if (isCtrl && !e.shiftKey) {
+                                  e.preventDefault()
+                                  skipNextHeaderPress = true
+                                  store.getState().addRowSubRange(row, colCount)
+                                  return
+                              }
+                              if (e.shiftKey && !isCtrl) {
+                                  e.preventDefault()
+                                  skipNextHeaderPress = true
+                                  store.getState().extendActiveRowTo(row, colCount)
+                                  return
+                              }
+                              if (isCtrl && e.shiftKey) {
+                                  e.preventDefault()
+                                  skipNextHeaderPress = true
+                                  store.getState().addRowSubRange(row, colCount)
+                              }
+                          },
+                      }
+                    : null
+            const onPlainPress = () => {
+                if (skipNextHeaderPress) {
+                    skipNextHeaderPress = false
+                    return
+                }
+                store.getState().selectRow(row, colCount)
+            }
             out.push(
                 <Pressable
                     key={`h-${row}`}
-                    onPress={() => store.getState().selectRow(row, colCount)}
+                    onPress={onPlainPress}
                     accessibilityLabel={`Select row ${row}`}
                     className={`border-r border-b border-border items-center justify-center ${
                         isActive ? 'bg-accent' : 'bg-surface-secondary'
@@ -184,6 +227,8 @@ function appendRowHeaderCells(
                         height,
                         ...(isActive ? ACTIVE_HEADER_INSET_STYLE : null),
                     }}
+                    // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
+                    {...((webMouseDownProp ?? {}) as any)}
                 >
                     <Text
                         className={`text-xs ${isActive ? 'text-accent-foreground' : 'text-muted-foreground'}`}
