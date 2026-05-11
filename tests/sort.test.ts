@@ -238,6 +238,101 @@ describe('sortRange', () => {
         ).toBe(true)
     })
 
+    it('keeps empty rows last when sorting descending across a sparse range', () => {
+        // Regression: a Z→A sort on a column-header range that spans
+        // every row of the sheet used to flip empty rows to the top,
+        // pushing real data off the visible area.
+        const doc = new Y.Doc()
+        seedSheet(doc, 'sheet1')
+        setYCell(doc, 'sheet1', 1, 1, 'Apple')
+        setYCell(doc, 'sheet1', 2, 1, 'Banana')
+        setYCell(doc, 'sheet1', 3, 1, 'Cherry')
+
+        sortRange(
+            doc,
+            'sheet1',
+            { startRow: 1, endRow: 100, startCol: 1, endCol: 1 },
+            1,
+            'desc',
+            false
+        )
+
+        expect(readCell(doc, 'sheet1', 1, 1)?.raw).toBe('Cherry')
+        expect(readCell(doc, 'sheet1', 2, 1)?.raw).toBe('Banana')
+        expect(readCell(doc, 'sheet1', 3, 1)?.raw).toBe('Apple')
+        expect(readCell(doc, 'sheet1', 4, 1)).toBeNull()
+        expect(readCell(doc, 'sheet1', 50, 1)).toBeNull()
+    })
+
+    it('does not delete data when the range extends well past the populated rows', () => {
+        // Simulates the column-header "Sort sheet A→Z" flow where the
+        // range spans every row of the sheet (1..100) but only a handful
+        // of rows actually have data. Empty cells must sort last and
+        // populated rows must survive at the top.
+        const doc = new Y.Doc()
+        seedSheet(doc, 'sheet1')
+        setYCell(doc, 'sheet1', 1, 1, 'Banana')
+        setYCell(doc, 'sheet1', 1, 2, '2')
+        setYCell(doc, 'sheet1', 2, 1, 'Apple')
+        setYCell(doc, 'sheet1', 2, 2, '1')
+        setYCell(doc, 'sheet1', 3, 1, 'Cherry')
+        setYCell(doc, 'sheet1', 3, 2, '3')
+
+        sortRange(
+            doc,
+            'sheet1',
+            { startRow: 1, endRow: 100, startCol: 1, endCol: 10 },
+            1,
+            'asc',
+            false
+        )
+
+        expect(readCell(doc, 'sheet1', 1, 1)?.raw).toBe('Apple')
+        expect(readCell(doc, 'sheet1', 1, 2)?.raw).toBe(1)
+        expect(readCell(doc, 'sheet1', 2, 1)?.raw).toBe('Banana')
+        expect(readCell(doc, 'sheet1', 2, 2)?.raw).toBe(2)
+        expect(readCell(doc, 'sheet1', 3, 1)?.raw).toBe('Cherry')
+        expect(readCell(doc, 'sheet1', 3, 2)?.raw).toBe(3)
+        // Trailing rows should be empty.
+        expect(readCell(doc, 'sheet1', 4, 1)).toBeNull()
+        expect(readCell(doc, 'sheet1', 50, 1)).toBeNull()
+    })
+
+    it('sorts entire rows across all columns when the range spans multiple columns', () => {
+        const doc = new Y.Doc()
+        seedSheet(doc, 'sheet1')
+        // Three rows, three columns: sort key in col 1, sibling
+        // payload in cols 2 and 3 that must travel with their row.
+        setYCell(doc, 'sheet1', 1, 1, '3')
+        setYCell(doc, 'sheet1', 1, 2, 'three-b')
+        setYCell(doc, 'sheet1', 1, 3, 'three-c')
+        setYCell(doc, 'sheet1', 2, 1, '1')
+        setYCell(doc, 'sheet1', 2, 2, 'one-b')
+        setYCell(doc, 'sheet1', 2, 3, 'one-c')
+        setYCell(doc, 'sheet1', 3, 1, '2')
+        setYCell(doc, 'sheet1', 3, 2, 'two-b')
+        setYCell(doc, 'sheet1', 3, 3, 'two-c')
+
+        sortRange(
+            doc,
+            'sheet1',
+            { startRow: 1, endRow: 3, startCol: 1, endCol: 3 },
+            1,
+            'asc',
+            false
+        )
+
+        expect(readCell(doc, 'sheet1', 1, 1)?.raw).toBe(1)
+        expect(readCell(doc, 'sheet1', 1, 2)?.raw).toBe('one-b')
+        expect(readCell(doc, 'sheet1', 1, 3)?.raw).toBe('one-c')
+        expect(readCell(doc, 'sheet1', 2, 1)?.raw).toBe(2)
+        expect(readCell(doc, 'sheet1', 2, 2)?.raw).toBe('two-b')
+        expect(readCell(doc, 'sheet1', 2, 3)?.raw).toBe('two-c')
+        expect(readCell(doc, 'sheet1', 3, 1)?.raw).toBe(3)
+        expect(readCell(doc, 'sheet1', 3, 2)?.raw).toBe('three-b')
+        expect(readCell(doc, 'sheet1', 3, 3)?.raw).toBe('three-c')
+    })
+
     it('detectHeaderRow returns false when first row already contains a number', () => {
         const doc = new Y.Doc()
         seedSheet(doc, 'sheet1')

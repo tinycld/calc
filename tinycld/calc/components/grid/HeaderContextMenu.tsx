@@ -148,50 +148,51 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
     // selection — hide when disjoint. The cell menu does the same.
     const filterView = useFilterView(doc, sheetId)
 
-    // Column-header sort uses the selection's first column as the key
-    // and runs over the data rows of the entire sheet (every row
-    // except the optional header row). detectHeaderRow looks at the
-    // selection range itself, so we pass a synthetic range that spans
-    // every row of the sheet for sort/filter operations.
-    const fullColumnRange = useCallback(() => {
+    // Column-header sort uses the clicked column as the sort key but
+    // must reorder every row across every column of the sheet — every
+    // sibling column rides along with its row so a "Sort sheet A→Z"
+    // does not desynchronise the table. The range spans all rows and
+    // all columns; the sort key column is `range.startCol`.
+    const fullSheetRange = useCallback(() => {
         if (range == null) return null
         const lastRow = Math.max(rowCount, displayedRowCount)
+        const lastCol = Math.max(colCount, displayedColCount)
         return {
             startRow: 1,
             endRow: lastRow,
-            startCol: range.startCol,
-            endCol: range.endCol,
+            startCol: 1,
+            endCol: lastCol,
         }
-    }, [range, rowCount, displayedRowCount])
+    }, [range, rowCount, displayedRowCount, colCount, displayedColCount])
 
     const onSortAsc = useCallback(() => {
-        if (doc == null) return
-        const r = fullColumnRange()
+        if (doc == null || range == null) return
+        const r = fullSheetRange()
         if (r == null) return
         const hasHeader = detectHeaderRow(doc, sheetId, r)
-        const result = sortRange(doc, sheetId, r, r.startCol, 'asc', hasHeader)
+        const result = sortRange(doc, sheetId, r, range.startCol, 'asc', hasHeader)
         if (result.ok && result.mergesBroken > 0) {
             store.getState().setSortStatus({ mergesBroken: result.mergesBroken })
         }
-    }, [doc, sheetId, fullColumnRange, store])
+    }, [doc, sheetId, fullSheetRange, range, store])
 
     const onSortDesc = useCallback(() => {
-        if (doc == null) return
-        const r = fullColumnRange()
+        if (doc == null || range == null) return
+        const r = fullSheetRange()
         if (r == null) return
         const hasHeader = detectHeaderRow(doc, sheetId, r)
-        const result = sortRange(doc, sheetId, r, r.startCol, 'desc', hasHeader)
+        const result = sortRange(doc, sheetId, r, range.startCol, 'desc', hasHeader)
         if (result.ok && result.mergesBroken > 0) {
             store.getState().setSortStatus({ mergesBroken: result.mergesBroken })
         }
-    }, [doc, sheetId, fullColumnRange, store])
+    }, [doc, sheetId, fullSheetRange, range, store])
 
     const onCreateFilter = useCallback(() => {
         if (doc == null) return
-        const r = fullColumnRange()
+        const r = fullSheetRange()
         if (r == null) return
         applyFilter(doc, sheetId, { range: r, criteria: {} })
-    }, [doc, sheetId, fullColumnRange])
+    }, [doc, sheetId, fullSheetRange])
 
     const onRemoveFilter = useCallback(() => {
         if (doc == null) return

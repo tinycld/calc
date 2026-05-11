@@ -927,6 +927,39 @@ test.describe('Sort & Filter', () => {
         await expect(page.getByLabel('Cell A4', { exact: true })).toHaveText('Date')
     })
 
+    test('column-header Sort sheet Z→A keeps populated rows at top with all columns aligned', async ({
+        page,
+    }) => {
+        // Regression: a Z→A sort triggered from the column-header
+        // context menu used to bubble empty rows above the data,
+        // pushing every populated row off-screen (visually identical
+        // to "deleting" the sheet). Also verifies that sibling columns
+        // travel with their key column — the sort must reorder whole
+        // rows, not just the clicked column.
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        await typeIntoCell(page, formulaBar, 'A1', 'Apple')
+        await typeIntoCell(page, formulaBar, 'B1', '1')
+        await typeIntoCell(page, formulaBar, 'A2', 'Banana')
+        await typeIntoCell(page, formulaBar, 'B2', '2')
+        await typeIntoCell(page, formulaBar, 'A3', 'Cherry')
+        await typeIntoCell(page, formulaBar, 'B3', '3')
+
+        await page
+            .getByLabel('Select column A', { exact: true })
+            .click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Sort sheet Z→A' }).click()
+
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Cherry')
+        await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('3')
+        await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('Banana')
+        await expect(page.getByLabel('Cell B2', { exact: true })).toHaveText('2')
+        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('Apple')
+        await expect(page.getByLabel('Cell B3', { exact: true })).toHaveText('1')
+    })
+
     test('create filter shows chevron, hide-by-value hides row, clear restores', async ({
         page,
     }) => {
@@ -991,6 +1024,77 @@ async function readCellTextStyle(
         { label: cellLabel, prop: property }
     )
 }
+
+test.describe('Persistence', () => {
+    test.setTimeout(180_000)
+
+    test.beforeEach(async ({ page }) => {
+        await login(page)
+    })
+
+    test('deleted rows stay deleted after reload', async ({ page }) => {
+        // Regression: the calc server's snapshot → XLSX serializer
+        // used to treat cells missing from the snapshot as
+        // "untouched", so client-side row deletions never made it
+        // into the saved .xlsx. After the debounce-driven save the
+        // file still held the deleted rows, and the next time anyone
+        // opened the doc the bootstrap reseeded the Y.Doc from that
+        // stale file — undoing the deletion. This test types four
+        // rows, deletes the middle two via the column-header context
+        // menu, waits past the 3s save debounce, reloads, and
+        // verifies the deletion survived.
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        // A fresh blank workbook seeds rowCount=1, which leaves the
+        // "Delete rows" menu item disabled (the structural-mutation
+        // floor refuses to remove the last row). Insert four rows
+        // above row 1 first so rowCount grows past the floor before
+        // we add data and exercise the deletion path.
+        await page.getByLabel('Select row 1', { exact: true }).click({ button: 'right' })
+        await page.getByRole('menuitem', { name: /Insert 1 row above/ }).click()
+        await page.getByLabel('Select row 1', { exact: true }).click({ button: 'right' })
+        await page.getByRole('menuitem', { name: /Insert 1 row above/ }).click()
+        await page.getByLabel('Select row 1', { exact: true }).click({ button: 'right' })
+        await page.getByRole('menuitem', { name: /Insert 1 row above/ }).click()
+        await page.getByLabel('Select row 1', { exact: true }).click({ button: 'right' })
+        await page.getByRole('menuitem', { name: /Insert 1 row above/ }).click()
+
+        await typeIntoCell(page, formulaBar, 'A1', 'keep-top')
+        await typeIntoCell(page, formulaBar, 'A2', 'delete-me-1')
+        await typeIntoCell(page, formulaBar, 'A3', 'delete-me-2')
+        await typeIntoCell(page, formulaBar, 'A4', 'keep-bottom')
+
+        const workbookUrl = page.url()
+
+        // Select A2:A3, then right-click on row-header 2 to open the
+        // row context menu.
+        await page.getByLabel('Cell A2', { exact: true }).click()
+        await page.getByLabel('Cell A3', { exact: true }).click({ modifiers: ['Shift'] })
+        await page.getByLabel('Select row 2', { exact: true }).click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Delete 2 rows' }).click()
+
+        // Verify the in-memory grid shifted up immediately so we
+        // know the mutation ran before the reload.
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('keep-top')
+        await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('keep-bottom')
+
+        // Wait past the save coordinator's 3s debounce + a margin
+        // for the actual flush + xlsx write to land.
+        await page.waitForTimeout(6_000)
+
+        await page.goto(workbookUrl)
+        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({
+            timeout: 60_000,
+        })
+
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('keep-top')
+        await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('keep-bottom')
+        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('')
+        await expect(page.getByLabel('Cell A4', { exact: true })).toHaveText('')
+    })
+})
 
 test.describe('Find & Replace', () => {
     test.setTimeout(120_000)

@@ -231,9 +231,17 @@ export function sortRange(
         }
 
         const sign = direction === 'asc' ? 1 : -1
-        // Stable sort: equal keys break ties by original index so the
-        // relative order is preserved.
+        // Empty rows ALWAYS sort last, in both directions — matches
+        // Sheets/Excel. We branch on null before applying `sign` so a
+        // descending sort doesn't flip nulls to the top (which would
+        // push real data off the bottom of the range, visually
+        // "deleting" the sheet's content).
         rows.sort((a, b) => {
+            const aNull = a.keyValue.kind === 'null'
+            const bNull = b.keyValue.kind === 'null'
+            if (aNull && bNull) return a.index - b.index
+            if (aNull) return 1
+            if (bNull) return -1
             const cmp = compareSortKeys(a.keyValue, b.keyValue)
             return cmp !== 0 ? sign * cmp : a.index - b.index
         })

@@ -120,10 +120,15 @@ func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string, loadC
 //   - For each cell: if Formula is non-empty, write the formula via
 //     SetCellFormula; otherwise write the value (Raw, falling back to
 //     Display).
-//   - Cells in the original workbook that the snapshot has no entry
-//     for are left untouched. There is no client-side delete path
-//     today, so a missing snapshot entry means "untouched", not
-//     "removed".
+//   - Cells in the original workbook that the snapshot does NOT have
+//     an entry for are cleared (value + formula). The Y.Doc is seeded
+//     from a complete walk of the source workbook on bootstrap, so a
+//     missing snapshot entry reflects a real client-side deletion
+//     (delete-rows, delete-columns, clear-contents, sort that wrote
+//     null tuples into trailing slots) rather than an untracked cell.
+//     The deletion pass runs per-sheet via GetRows before the cell
+//     writes below; the writes then re-seed whatever the snapshot
+//     does carry.
 //   - When comments is non-empty, classic xlsx cell notes are written
 //     for each thread via applyCommentsToFile (one-way: app → xlsx).
 //     Existing cell notes from external editors are overwritten.
@@ -365,6 +370,58 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		}
 		if err := f.DeleteSheet(name); err != nil {
 			return nil, fmt.Errorf("delete sheet %s: %w", name, err)
+		}
+	}
+
+	// Build the per-sheet set of (row, col) keys the snapshot carries
+	// so we can clear any source-workbook cell the snapshot has dropped.
+	// Encoding row/col as int64 (row << 32 | col) keeps the key cheap
+	// and unambiguous for the worksheet's million-row/16k-column limit.
+	snapshotCellsBySheet := make(map[string]map[int64]struct{}, len(sheetNameByID))
+	for _, cell := range snap.Cells {
+		sheetName, ok := sheetNameByID[cell.SheetID]
+		if !ok || cell.Row <= 0 || cell.Col <= 0 {
+			continue
+		}
+		set, exists := snapshotCellsBySheet[sheetName]
+		if !exists {
+			set = make(map[int64]struct{})
+			snapshotCellsBySheet[sheetName] = set
+		}
+		set[int64(cell.Row)<<32|int64(cell.Col)] = struct{}{}
+	}
+
+	// Per-sheet deletion pass: walk the workbook's existing cells and
+	// blank any cell the snapshot no longer carries. Without this,
+	// row/column deletions and clear-contents would silently bounce
+	// back on reload because the original .xlsx bytes still hold those
+	// values. GetRows skips truly-empty rows so the cost scales with
+	// populated cells, not the worksheet's nominal dimension.
+	for _, name := range f.GetSheetList() {
+		rows, err := f.GetRows(name)
+		if err != nil {
+			return nil, fmt.Errorf("read rows on %s for delete pass: %w", name, err)
+		}
+		set := snapshotCellsBySheet[name]
+		for rowIdx, row := range rows {
+			rowNumber := rowIdx + 1
+			for colIdx, value := range row {
+				if value == "" {
+					continue
+				}
+				colNumber := colIdx + 1
+				key := int64(rowNumber)<<32 | int64(colNumber)
+				if _, kept := set[key]; kept {
+					continue
+				}
+				ref, err := excelize.CoordinatesToCellName(colNumber, rowNumber)
+				if err != nil {
+					return nil, fmt.Errorf("delete-pass cell coords (%d,%d): %w", colNumber, rowNumber, err)
+				}
+				if err := f.SetCellValue(name, ref, nil); err != nil {
+					return nil, fmt.Errorf("clear stale cell at %s!%s: %w", name, ref, err)
+				}
+			}
 		}
 	}
 

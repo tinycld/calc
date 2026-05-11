@@ -72,26 +72,93 @@ func readFormula(t *testing.T, xlsx []byte, sheetName string, row, col int) stri
 	return formula
 }
 
+// snapshotFromXLSX walks the source workbook with excelize and
+// produces a YDocSnapshot whose Cells slice mirrors every populated
+// cell. Used by serializer tests to construct the "client mirrored
+// the whole file" baseline that the new deletion-pass semantic
+// requires.
+func snapshotFromXLSX(t *testing.T, original []byte) YDocSnapshot {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open xlsx for snapshot mirror: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	snap := YDocSnapshot{}
+	for i, sheetName := range f.GetSheetList() {
+		sheetID := fmt.Sprintf("sheet%d", i+1)
+		snap.Sheets = append(snap.Sheets, SheetMeta{
+			ID:       sheetID,
+			Name:     sheetName,
+			Position: i,
+		})
+		rows, err := f.GetRows(sheetName)
+		if err != nil {
+			t.Fatalf("get rows for snapshot mirror: %v", err)
+		}
+		for rowIdx, row := range rows {
+			for colIdx, v := range row {
+				if v == "" {
+					continue
+				}
+				snap.Cells = append(snap.Cells, CellEntry{
+					SheetID:   sheetID,
+					Row:       rowIdx + 1,
+					Col:       colIdx + 1,
+					RawString: v,
+					Display:   v,
+				})
+			}
+		}
+	}
+	return snap
+}
+
+// overrideCell replaces (or inserts) a cell entry in the snapshot
+// for the given sheet/row/col.
+func overrideCell(snap *YDocSnapshot, sheetID string, row, col int, value string) {
+	for i := range snap.Cells {
+		c := &snap.Cells[i]
+		if c.SheetID == sheetID && c.Row == row && c.Col == col {
+			c.RawString = value
+			c.Display = value
+			return
+		}
+	}
+	snap.Cells = append(snap.Cells, CellEntry{
+		SheetID:   sheetID,
+		Row:       row,
+		Col:       col,
+		RawString: value,
+		Display:   value,
+	})
+}
+
+// dropCell removes a single cell entry from the snapshot — mirroring
+// a client-side delete that takes the cell out of the Y.Doc.
+func dropCell(snap *YDocSnapshot, sheetID string, row, col int) {
+	for i := range snap.Cells {
+		c := &snap.Cells[i]
+		if c.SheetID == sheetID && c.Row == row && c.Col == col {
+			snap.Cells = append(snap.Cells[:i], snap.Cells[i+1:]...)
+			return
+		}
+	}
+}
+
 // TestSerializerSingleCellChange round-trips tiny.xlsx through the
-// snapshot → serializer pipeline with one cell edit, and asserts the
-// edit lands while the rest of the workbook is untouched.
+// snapshot → serializer pipeline with one cell edit. The snapshot
+// mirrors every populated cell of the source workbook plus one edit
+// so the assertions exercise "snapshot-is-authoritative": cells the
+// snapshot carries land in the output verbatim.
 func TestSerializerSingleCellChange(t *testing.T) {
 	original, err := os.ReadFile(tinyXlsxPath)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
 
-	// Two-sheet workbook: People (sheet1) and Incomes (sheet2). We
-	// just need sheet1 here.
-	snap := YDocSnapshot{
-		Sheets: []SheetMeta{
-			{ID: "sheet1", Name: "People", Position: 0},
-			{ID: "sheet2", Name: "Incomes", Position: 1},
-		},
-		Cells: []CellEntry{
-			{SheetID: "sheet1", Row: 2, Col: 2, RawString: "from-save", Display: "from-save"},
-		},
-	}
+	snap := snapshotFromXLSX(t, original)
+	overrideCell(&snap, "sheet1", 2, 2, "from-save")
 
 	out, err := serializeSnapshotToXLSX(original, snap, nil)
 	if err != nil {
@@ -101,21 +168,46 @@ func TestSerializerSingleCellChange(t *testing.T) {
 		t.Fatalf("output is not a valid xlsx (first 4 bytes = %x)", out[:4])
 	}
 
-	// The edit landed.
 	if got := readCell(t, out, "People", 2, 2); got != "from-save" {
 		t.Errorf("B2 after serialize: want %q, got %q", "from-save", got)
 	}
-	// Header row preserved.
 	if got := readCell(t, out, "People", 1, 2); got != "First Name" {
 		t.Errorf("B1 (header) after serialize: want %q, got %q", "First Name", got)
 	}
-	// Untouched data row preserved.
 	if got := readCell(t, out, "People", 3, 2); got != "Mara" {
-		t.Errorf("B3 (untouched) after serialize: want %q, got %q", "Mara", got)
+		t.Errorf("B3 (carried in snapshot) after serialize: want %q, got %q", "Mara", got)
 	}
-	// Other sheet preserved.
 	if got := readCell(t, out, "Incomes", 1, 1); got == "" {
 		t.Error("Incomes!A1 unexpectedly empty — second sheet may have been dropped")
+	}
+}
+
+// TestSerializerClearsCellsDroppedFromSnapshot exercises the deletion
+// pass: a cell present in the original .xlsx that the snapshot no
+// longer carries (e.g. after a row delete or clear-contents on the
+// client) must be blanked in the saved workbook. Without this, the
+// next reload reseeds the Y.Doc from the stale .xlsx and the user's
+// deletion silently un-does itself.
+func TestSerializerClearsCellsDroppedFromSnapshot(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := snapshotFromXLSX(t, original)
+	dropCell(&snap, "sheet1", 3, 2) // People!B3 ("Mara")
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if got := readCell(t, out, "People", 3, 2); got != "" {
+		t.Errorf("B3 after drop: want empty, got %q", got)
+	}
+	// Sibling cells in the same row are still in the snapshot and
+	// must survive — the deletion is per-cell, not per-row.
+	if got := readCell(t, out, "People", 3, 3); got != "Hashimoto" {
+		t.Errorf("C3 (still in snapshot) after drop: want %q, got %q", "Hashimoto", got)
 	}
 }
 
@@ -235,8 +327,11 @@ func TestSerializerFormulaCell(t *testing.T) {
 	}
 }
 
-// TestSerializerEmptySnapshot leaves the workbook structurally
-// untouched if the snapshot has no cell entries.
+// TestSerializerEmptySnapshot: a snapshot with no cell entries
+// represents a workbook whose Y.Doc has had every cell cleared. The
+// saved .xlsx must reflect that — sheets stay (their metadata is
+// still in the snapshot) but every populated cell from the original
+// is blanked.
 func TestSerializerEmptySnapshot(t *testing.T) {
 	original, err := os.ReadFile(tinyXlsxPath)
 	if err != nil {
@@ -254,11 +349,11 @@ func TestSerializerEmptySnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
-	if got := readCell(t, out, "People", 2, 2); got != "Dulce" {
-		t.Errorf("B2 after empty serialize: want %q, got %q", "Dulce", got)
+	if got := readCell(t, out, "People", 2, 2); got != "" {
+		t.Errorf("B2 after empty serialize: want empty, got %q", got)
 	}
-	if got := readCell(t, out, "People", 1, 2); got != "First Name" {
-		t.Errorf("B1 after empty serialize: want %q, got %q", "First Name", got)
+	if got := readCell(t, out, "People", 1, 2); got != "" {
+		t.Errorf("B1 after empty serialize: want empty, got %q", got)
 	}
 }
 
