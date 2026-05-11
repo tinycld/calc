@@ -16,9 +16,9 @@ import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import * as Y from 'yjs'
 import type { CellRange } from '../hooks/grid-store'
 import { yCellKey } from './y-cell-key'
-import { CELLS_MAP, SHEETS_MAP } from './y-doc-bootstrap'
+import { CELLS_MAP, MERGES_KEY, SHEETS_MAP } from './y-doc-bootstrap'
 
-export const MERGES_KEY = 'merges'
+export { MERGES_KEY }
 
 export interface MergeRange {
     anchorRow: number

@@ -1,7 +1,11 @@
 import * as Y from 'yjs'
-import { MERGES_KEY } from './merge'
 import type { CellKind, CellRaw, CellStyle, WorkbookModel } from './workbook-types'
 import { yCellKey } from './y-cell-key'
+
+// MERGES_KEY is the per-sheet meta key holding the merged-range Y.Map.
+// Declared here (alongside SHEETS_MAP / CELLS_MAP) so merge.ts can read
+// it without forming a require-cycle through y-doc-bootstrap.
+export const MERGES_KEY = 'merges'
 
 // SHEETS_MAP is the Y.Map name holding sheet metadata, keyed by sheet id.
 export const SHEETS_MAP = 'sheets'
