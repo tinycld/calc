@@ -17,7 +17,6 @@ import {
 import { detectHeaderRow, sortRange } from '../../lib/sort'
 import { columnLabel } from '../../lib/workbook-types'
 import { MIN_COLS, MIN_ROWS } from './constants'
-import { readCellStyle, toggleCellFontAttrAcrossRanges } from './style-helpers'
 
 interface CellContextMenuProps {
     doc: Y.Doc | null
@@ -33,7 +32,7 @@ interface CellContextMenuProps {
 export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     const target = useGridStore(s => s.contextTarget)
     // Read the live selection so range-aware menu actions (clear,
-    // toggle bold/italic) cover every cell currently highlighted.
+    // sort/filter) cover every cell currently highlighted.
     // openCellContextMenu has already collapsed the range to a single
     // cell when the right-click landed outside any prior sub-range,
     // so this naturally reduces to single-cell when there's no range.
@@ -166,31 +165,6 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     const bottomRow = range?.endRow ?? null
     const rightCol = range?.endCol ?? null
 
-    // Route through the union helper so the mixed-toggle decision
-    // (any-off → all-on; otherwise all-off) is computed once across
-    // every sub-range — matching the toolbar's behavior. A per-range
-    // decision would split the toggle on disjoint selections, which
-    // diverges from the toolbar's union semantic.
-    const onToggleBold = useCallback(() => {
-        if (selection == null) return
-        toggleCellFontAttrAcrossRanges(
-            doc,
-            sheetId,
-            selection.ranges.map(sr => sr.range),
-            'bold'
-        )
-    }, [doc, sheetId, selection])
-
-    const onToggleItalic = useCallback(() => {
-        if (selection == null) return
-        toggleCellFontAttrAcrossRanges(
-            doc,
-            sheetId,
-            selection.ranges.map(sr => sr.range),
-            'italic'
-        )
-    }, [doc, sheetId, selection])
-
     const filterView = useFilterView(doc, sheetId)
     // Sort/filter only make sense on a single contiguous rectangle —
     // hide the entries when the selection is disjoint (plan Tier B).
@@ -229,16 +203,6 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
 
     const onMergeAll = useCallback(() => store.getState().mergeSelection(), [store])
     const onUnmergeMenuAction = useCallback(() => store.getState().unmergeSelection(), [store])
-
-    // Indicator labels reflect the anchor cell only — that's the cell
-    // the user sees outlined and is the natural reference point for
-    // "is this currently bold?". The mixed-toggle action will still
-    // promote the whole range when needed.
-    const currentStyle = target
-        ? readCellStyle(doc, sheetId, target.cell.row, target.cell.col)
-        : undefined
-    const isBold = currentStyle?.font?.bold === true
-    const isItalic = currentStyle?.font?.italic === true
 
     return (
         <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
@@ -364,13 +328,6 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                             </Menu.Item>
                         </Menu.SubContent>
                     </Menu.Sub>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onToggleBold}>
-                        <Menu.ItemTitle>{isBold ? 'Remove bold' : 'Bold'}</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={onToggleItalic}>
-                        <Menu.ItemTitle>{isItalic ? 'Remove italic' : 'Italic'}</Menu.ItemTitle>
-                    </Menu.Item>
                     <Separator className="my-1 mx-2" />
                     {hasMultiCellRange ? (
                         <>
