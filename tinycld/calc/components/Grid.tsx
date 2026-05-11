@@ -311,6 +311,7 @@ function GridInner({
                     colOffsets={colOffsets}
                     firstCol={viewport.visible.firstCol}
                     lastCol={viewport.visible.lastCol}
+                    rowCount={rows}
                     frozenCols={frozenCols}
                     makeHandleProps={colResize.makeHandleProps}
                     dragState={colResize.dragState}

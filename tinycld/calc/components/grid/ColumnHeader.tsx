@@ -17,6 +17,11 @@ interface ColumnHeaderProps {
     colOffsets: Float64Array
     firstCol: number
     lastCol: number
+    // Number of rows in the sheet — used by selectColumn to size the
+    // selection range to span the whole column. Passed in (rather than
+    // read here) because the header is dimensions-agnostic; Grid
+    // already has the canonical value. Mirror of RowHeader's colCount.
+    rowCount: number
     // When > 0, the first `frozenCols` column headers render in a
     // non-scrolling section before the scrollable section. Each
     // section has its own offset baseline (frozen cols use absolute
@@ -39,6 +44,7 @@ export function ColumnHeader({
     colOffsets,
     firstCol,
     lastCol,
+    rowCount,
     frozenCols,
     makeHandleProps,
     dragState,
@@ -47,6 +53,12 @@ export function ColumnHeader({
 }: ColumnHeaderProps) {
     const borderColor = useThemeColor('border')
     const activeCol = useGridStore(s => s.selected?.col ?? null)
+    // Mirror of RowHeader: bolden the column label when the user
+    // selected the WHOLE column (scope='column') vs. clicking a body
+    // cell that happens to live in this column.
+    const colScopeActive = useGridStore(
+        s => s.selectionScope === 'column' && s.selected?.col === activeCol
+    )
     const store = useGridStoreApi()
     const muted = useThemeColor('muted-foreground')
     const accent = useThemeColor('accent')
@@ -74,6 +86,8 @@ export function ColumnHeader({
             fCols,
             0,
             activeCol,
+            colScopeActive,
+            rowCount,
             makeHandleProps,
             dragState,
             filterCtx
@@ -87,6 +101,8 @@ export function ColumnHeader({
         lastCol,
         frozenW,
         activeCol,
+        colScopeActive,
+        rowCount,
         makeHandleProps,
         dragState,
         filterCtx
@@ -168,12 +184,15 @@ function appendHeaderCells(
     last: number,
     xShift: number,
     activeCol: number | null,
+    colScopeActive: boolean,
+    rowCount: number,
     makeHandleProps: (col: number) => Record<string, unknown>,
     dragState: DragState | null,
     filter: HeaderFilterCtx
 ): void {
     for (let col = first; col <= last; col++) {
         const isActive = col === activeCol
+        const isColScope = colScopeActive && isActive
         const absLeft = colOffsets[col - 1]
         const width = colOffsets[col] - absLeft
         const left = absLeft - xShift
@@ -187,8 +206,10 @@ function appendHeaderCells(
                 col <= filter.filterRange.endCol
             const hasActiveCriterion = filter.activeFilterCols.has(col)
             out.push(
-                <View
+                <Pressable
                     key={`h-${col}`}
+                    onPress={() => filter.store.getState().selectColumn(col, rowCount)}
+                    accessibilityLabel={`Select column ${columnLabel(col)}`}
                     className={`border-r border-b border-border flex-row items-center justify-center ${
                         isActive ? 'bg-accent' : 'bg-surface-secondary'
                     }`}
@@ -203,13 +224,20 @@ function appendHeaderCells(
                 >
                     <Text
                         className={`text-xs ${isActive ? 'text-accent-foreground' : 'text-muted-foreground'}`}
-                        style={isActive ? { fontWeight: 'bold' } : undefined}
+                        style={isActive || isColScope ? { fontWeight: 'bold' } : undefined}
                     >
                         {columnLabel(col)}
                     </Text>
                     {inFilterRange ? (
                         <Pressable
-                            onPress={() => filter.store.getState().openFilterDropdown(col)}
+                            // The chevron sits inside the column-select
+                            // Pressable; stop the press event so opening
+                            // the filter dropdown doesn't also collapse
+                            // the selection onto the whole column.
+                            onPress={e => {
+                                e.stopPropagation()
+                                filter.store.getState().openFilterDropdown(col)
+                            }}
                             accessibilityLabel={`Filter column ${columnLabel(col)}`}
                             accessibilityRole="button"
                             style={{
@@ -225,7 +253,7 @@ function appendHeaderCells(
                             />
                         </Pressable>
                     ) : null}
-                </View>
+                </Pressable>
             )
         }
         // Resize handle straddles the right boundary of column `col`.
