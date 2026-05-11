@@ -42,6 +42,7 @@ import { HandleContextMenu } from './grid/HandleContextMenu'
 import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
 import { SortDialog } from './grid/SortDialog'
+import { SelectionStatusBanner } from './SelectionStatusBanner'
 import { SortStatusBanner } from './SortStatusBanner'
 import { Toolbar } from './Toolbar'
 
@@ -289,6 +290,7 @@ function GridInner({
                 onUnfreeze={freeze.unfreeze}
             />
             <SortStatusBanner />
+            <SelectionStatusBanner />
             <FormulaBar
                 ref={instance.formulaBarInputRef}
                 cellLabel={formulaBar.cellLabel}
