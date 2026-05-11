@@ -62,9 +62,13 @@ describe('cellStyleToInlineCss', () => {
         )
     })
 
-    it('preserves 8-digit non-opaque ARGB as #AARRGGBB', () => {
+    it('converts 8-digit non-opaque ARGB to rgba()', () => {
+        // 80 alpha → 128/255 → ~0.502; rgb part is 11/22/33 hex = 17/34/51.
+        // CSS uses #RRGGBBAA byte order while excelize stores AARRGGBB,
+        // so we cannot emit `#80112233` (browsers would parse the alpha
+        // as red). Emit rgba() to preserve transparency correctly.
         expect(cellStyleToInlineCss({ font: { color: '80112233' } })).toContain(
-            'color:#80112233'
+            'color:rgba(17,34,51,0.502)'
         )
     })
 

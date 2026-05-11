@@ -22,7 +22,11 @@ import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { useFilterView } from '../hooks/use-filter-view'
 import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
-import { usePrintDialog } from '../hooks/use-print-dialog'
+import {
+    createPrintDialogStore,
+    PrintDialogProvider,
+    usePrintDialog,
+} from '../hooks/use-print-dialog'
 import { usePresence } from '../hooks/use-presence'
 import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
@@ -87,19 +91,25 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     // One find store per workbook — kept stable across sheet switches
     // so the dialog (and any in-flight query) survives navigation.
     const findStore = useMemo(() => createFindStore(), [])
+    // Per-Grid-instance print-dialog store. Matches find-store's
+    // pattern; prevents a second concurrent Grid mount from sharing
+    // dialog state.
+    const printDialogStore = useMemo(() => createPrintDialogStore(), [])
     return (
         <GridStoreProvider store={instance.store}>
             <FindStoreProvider store={findStore}>
-                <GridInner
-                    sheetId={sheetId}
-                    driveItemId={driveItemId}
-                    minRows={minRows}
-                    minCols={minCols}
-                    readOnly={readOnly}
-                    undoState={undoState}
-                    instance={instance}
-                    gridRef={ref}
-                />
+                <PrintDialogProvider store={printDialogStore}>
+                    <GridInner
+                        sheetId={sheetId}
+                        driveItemId={driveItemId}
+                        minRows={minRows}
+                        minCols={minCols}
+                        readOnly={readOnly}
+                        undoState={undoState}
+                        instance={instance}
+                        gridRef={ref}
+                    />
+                </PrintDialogProvider>
             </FindStoreProvider>
         </GridStoreProvider>
     )
@@ -310,7 +320,9 @@ function GridInner({
     )
     const onUnfreeze = useCallback(() => instance.store.getState().unfreeze(), [instance.store])
 
-    const printDialog = usePrintDialog()
+    const printDialogIsOpen = usePrintDialog(s => s.isOpen)
+    const printDialogOpen = usePrintDialog(s => s.open)
+    const printDialogClose = usePrintDialog(s => s.close)
     // The print dialog's "current selection" scope only makes sense for
     // a true rectangular selection — a lone anchor cell falls through
     // to null so the dialog hides the option.
@@ -374,7 +386,7 @@ function GridInner({
                 onOpenFind={onOpenFind}
                 onDownloadCsvCurrent={onDownloadCsvCurrent}
                 onDownloadCsvAll={onDownloadCsvAll}
-                onOpenPrint={printDialog.open}
+                onOpenPrint={printDialogOpen}
                 onOpenSort={onOpenSort}
                 onToggleFilter={onToggleFilter}
                 isFilterActive={filterView != null}
@@ -460,8 +472,8 @@ function GridInner({
             <CommentPopover driveItemId={driveItemId} sheetId={sheetId} />
             <SortDialog doc={doc} sheetId={sheetId} />
             <PrintDialog
-                isOpen={printDialog.isOpen}
-                onClose={printDialog.close}
+                isOpen={printDialogIsOpen}
+                onClose={printDialogClose}
                 doc={doc}
                 currentSheetId={sheetId}
                 currentSelection={printSelection}

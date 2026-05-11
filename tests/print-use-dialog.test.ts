@@ -1,16 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { usePrintDialog } from '../tinycld/calc/hooks/use-print-dialog'
+import { createPrintDialogStore } from '../tinycld/calc/hooks/use-print-dialog'
 
-describe('usePrintDialog', () => {
+describe('createPrintDialogStore', () => {
     it('starts closed', () => {
-        const state = usePrintDialog.getState()
-        expect(state.isOpen).toBe(false)
+        const store = createPrintDialogStore()
+        expect(store.getState().isOpen).toBe(false)
     })
 
     it('opens and closes', () => {
-        usePrintDialog.getState().open()
-        expect(usePrintDialog.getState().isOpen).toBe(true)
-        usePrintDialog.getState().close()
-        expect(usePrintDialog.getState().isOpen).toBe(false)
+        const store = createPrintDialogStore()
+        store.getState().open()
+        expect(store.getState().isOpen).toBe(true)
+        store.getState().close()
+        expect(store.getState().isOpen).toBe(false)
+    })
+
+    it('produces independent stores per call (no shared singleton)', () => {
+        const a = createPrintDialogStore()
+        const b = createPrintDialogStore()
+        a.getState().open()
+        expect(a.getState().isOpen).toBe(true)
+        expect(b.getState().isOpen).toBe(false)
     })
 })
