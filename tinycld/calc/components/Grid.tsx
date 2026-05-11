@@ -22,6 +22,7 @@ import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { useFilterView } from '../hooks/use-filter-view'
 import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
+import { usePrintDialog } from '../hooks/use-print-dialog'
 import { usePresence } from '../hooks/use-presence'
 import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
@@ -30,8 +31,10 @@ import { downloadCsv } from '../lib/csv/download'
 import { serializeSheetToCsv } from '../lib/csv/encode'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { applyFilter, clearFilter } from '../lib/filter'
+import type { PrintSelection } from '../lib/print/snapshot'
 import { effectiveRange } from '../lib/selection-range'
 import { FindReplaceDialog } from './FindReplaceDialog'
+import { PrintDialog } from './PrintDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
 import { Body } from './grid/Body'
@@ -307,6 +310,24 @@ function GridInner({
     )
     const onUnfreeze = useCallback(() => instance.store.getState().unfreeze(), [instance.store])
 
+    const printDialog = usePrintDialog()
+    // The print dialog's "current selection" scope only makes sense for
+    // a true rectangular selection — a lone anchor cell falls through
+    // to null so the dialog hides the option.
+    const printSelectionRange = useGridStore(s => s.selectionRange)
+    const printSelection = useMemo<PrintSelection | null>(() => {
+        if (printSelectionRange == null) return null
+        return {
+            sheetId,
+            rect: {
+                startRow: printSelectionRange.startRow,
+                startCol: printSelectionRange.startCol,
+                endRow: printSelectionRange.endRow,
+                endCol: printSelectionRange.endCol,
+            },
+        }
+    }, [printSelectionRange, sheetId])
+
     // Selection bottom row / right col drive the dynamic "Freeze up to
     // row N / column X" items. When there is no range, fall back to
     // the anchor's row/col so a single-cell selection still produces
@@ -353,6 +374,7 @@ function GridInner({
                 onOpenFind={onOpenFind}
                 onDownloadCsvCurrent={onDownloadCsvCurrent}
                 onDownloadCsvAll={onDownloadCsvAll}
+                onOpenPrint={printDialog.open}
                 onOpenSort={onOpenSort}
                 onToggleFilter={onToggleFilter}
                 isFilterActive={filterView != null}
@@ -437,6 +459,13 @@ function GridInner({
             <CellContextMenu doc={doc} sheetId={sheetId} />
             <CommentPopover driveItemId={driveItemId} sheetId={sheetId} />
             <SortDialog doc={doc} sheetId={sheetId} />
+            <PrintDialog
+                isOpen={printDialog.isOpen}
+                onClose={printDialog.close}
+                doc={doc}
+                currentSheetId={sheetId}
+                currentSelection={printSelection}
+            />
             <GridFilterDropdownAnchor
                 doc={doc}
                 sheetId={sheetId}

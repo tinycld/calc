@@ -51,26 +51,11 @@ export function PrintScopeFields({
                                 }
                             />
                             {typeof field.value === 'object' ? (
-                                <View style={{ paddingLeft: 24, gap: 4 }}>
-                                    {sheets.map(s => {
-                                        const checked = field.value.ids.includes(s.id)
-                                        return (
-                                            <CheckboxRow
-                                                key={s.id}
-                                                label={s.name}
-                                                checked={checked}
-                                                onPress={() => {
-                                                    const next = checked
-                                                        ? field.value.ids.filter(
-                                                              id => id !== s.id,
-                                                          )
-                                                        : [...field.value.ids, s.id]
-                                                    field.onChange({ ids: next })
-                                                }}
-                                            />
-                                        )
-                                    })}
-                                </View>
+                                <PickedSheetList
+                                    pickedIds={field.value.ids}
+                                    sheets={sheets}
+                                    onChange={ids => field.onChange({ ids })}
+                                />
                             ) : null}
                         </View>
                     )}
@@ -143,5 +128,40 @@ function CheckboxRow({ label, checked, onPress }: RowProps) {
             />
             <Text className="ml-2 text-sm text-foreground">{label}</Text>
         </Pressable>
+    )
+}
+
+interface PickedSheetListProps {
+    pickedIds: string[]
+    sheets: Array<{ id: string; name: string }>
+    onChange: (next: string[]) => void
+}
+
+// Lives outside the Controller render so the `pickedIds: string[]`
+// narrowing is preserved across the per-sheet onPress closures. The
+// outer Controller still owns the "Pick" branch — this component just
+// renders the checkbox list once the parent has decided the picked
+// shape is active.
+function PickedSheetList({ pickedIds, sheets, onChange }: PickedSheetListProps) {
+    return (
+        <View style={{ paddingLeft: 24, gap: 4 }}>
+            {sheets.map(s => {
+                const checked = pickedIds.includes(s.id)
+                return (
+                    <CheckboxRow
+                        key={s.id}
+                        label={s.name}
+                        checked={checked}
+                        onPress={() =>
+                            onChange(
+                                checked
+                                    ? pickedIds.filter(id => id !== s.id)
+                                    : [...pickedIds, s.id]
+                            )
+                        }
+                    />
+                )
+            })}
+        </View>
     )
 }

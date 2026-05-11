@@ -56,7 +56,11 @@ export type PrintOrientation = z.infer<typeof orientationSchema>
 export type PrintScaling = z.infer<typeof scalingSchema>
 export type PrintMargins = z.infer<typeof marginsSchema>
 
-export const DEFAULT_PRINT_CONFIG = {
+// The explicit annotation is required: without it, TypeScript widens
+// the literal strings ('current', 'portrait', etc.) to `string`, which
+// breaks `useForm<PrintConfig>({ defaultValues: ... })` inference at
+// every call site.
+export const DEFAULT_PRINT_CONFIG: PrintConfig = {
     scope: { sheets: 'current', range: 'used' },
     page: { orientation: 'portrait', scaling: 'fit-width', margins: 'normal' },
     layout: { showHeaders: false, showGridlines: true, repeatRows: null },
