@@ -321,6 +321,74 @@ describe('createGridStore', () => {
         })
     })
 
+    describe('openHeaderMenu', () => {
+        it('opens the menu and pre-selects the column when click is outside the selection', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().selectCell({ row: 2, col: 2 })
+            store.getState().openHeaderMenu('col', 5, 100, 10, 20)
+            const s = store.getState()
+            expect(s.headerMenu).toEqual({
+                axis: 'col',
+                index: 5,
+                cursor: { x: 10, y: 20 },
+            })
+            // Pre-selected the whole column 5 (axisSpan rows tall).
+            expect(primaryRange(s.selection)).toEqual({
+                startRow: 1,
+                endRow: 100,
+                startCol: 5,
+                endCol: 5,
+            })
+            expect(primaryAnchor(s.selection)).toEqual({ row: 1, col: 5 })
+        })
+
+        it('preserves a multi-column selection when click lands inside it', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            // Select columns 3..7 by selecting column 3 then extending.
+            store.getState().selectColumn(3, 10)
+            store.getState().extendActiveColumnTo(7, 10)
+            store.getState().openHeaderMenu('col', 5, 10, 0, 0)
+            const s = store.getState()
+            expect(primaryRange(s.selection)).toEqual({
+                startRow: 1,
+                endRow: 10,
+                startCol: 3,
+                endCol: 7,
+            })
+        })
+
+        it('opens the menu and pre-selects the row when click is outside the selection', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().selectCell({ row: 2, col: 2 })
+            store.getState().openHeaderMenu('row', 8, 12, 5, 6)
+            const s = store.getState()
+            expect(s.headerMenu).toEqual({
+                axis: 'row',
+                index: 8,
+                cursor: { x: 5, y: 6 },
+            })
+            expect(primaryRange(s.selection)).toEqual({
+                startRow: 8,
+                endRow: 8,
+                startCol: 1,
+                endCol: 12,
+            })
+            expect(primaryAnchor(s.selection)).toEqual({ row: 8, col: 1 })
+        })
+
+        it('closeHeaderMenu clears the target', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().openHeaderMenu('col', 1, 10, 0, 0)
+            expect(store.getState().headerMenu).not.toBeNull()
+            store.getState().closeHeaderMenu()
+            expect(store.getState().headerMenu).toBeNull()
+        })
+    })
+
     describe('editCell', () => {
         it('opens an edit session with the given draft and snaps cursor to end', () => {
             const stub = makeStubDeps()

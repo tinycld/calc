@@ -124,6 +124,15 @@ export interface HandleMenuTarget {
     cursor: { x: number; y: number }
 }
 
+// Right-click menu on a column-label or row-label cell. Distinct from
+// HandleMenuTarget (resize handle between headers) so the two menus
+// can render independently and carry their own action sets.
+export interface HeaderMenuTarget {
+    axis: 'col' | 'row'
+    index: number
+    cursor: { x: number; y: number }
+}
+
 // Transient banner state — single union so future selection-level
 // status messages (e.g. "Can't sort disjoint selection") slot in
 // without growing the state surface. Today's only kind is the
@@ -149,6 +158,7 @@ export interface GridState {
     contextTarget: ContextTarget | null
     commentTarget: CommentTarget | null
     handleMenu: HandleMenuTarget | null
+    headerMenu: HeaderMenuTarget | null
     clipboardMarker: string | null
     copySourceRange: CellRange | null
     cutPending: boolean
@@ -265,6 +275,25 @@ export interface GridActions {
     closeCommentPopover: () => void
     openHandleMenu: (axis: 'col' | 'row', index: number, x: number, y: number) => void
     closeHandleMenu: () => void
+    // openHeaderMenu pre-selects the clicked row/col when it isn't
+    // already part of the active selection, then opens the menu.
+    // Mirrors Sheets/Excel: right-clicking a header that's outside
+    // the current selection replaces it; right-clicking inside it
+    // keeps the existing (possibly multi-row/col) selection so
+    // range-targeted actions cover everything highlighted.
+    //
+    // `axisSpan` is the perpendicular dimension passed through to the
+    // selectColumn(rowCount) / selectRow(colCount) call when the
+    // pre-selection fires — i.e. rowCount for axis='col', colCount
+    // for axis='row'.
+    openHeaderMenu: (
+        axis: 'col' | 'row',
+        index: number,
+        axisSpan: number,
+        x: number,
+        y: number
+    ) => void
+    closeHeaderMenu: () => void
     insertRowsAtSelection: (position: 'above' | 'below', displayedRowCount: number) => void
     insertColumnsAtSelection: (position: 'left' | 'right', displayedColCount: number) => void
     deleteSelectedRows: (currentRowCount: number) => void
@@ -329,6 +358,7 @@ const initialState: GridState = {
     contextTarget: null,
     commentTarget: null,
     handleMenu: null,
+    headerMenu: null,
     clipboardMarker: null,
     copySourceRange: null,
     cutPending: false,
@@ -1007,6 +1037,40 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             },
             closeHandleMenu: () => set({ handleMenu: null }),
 
+            openHeaderMenu: (axis, index, axisSpan, x, y) => {
+                // Right-clicking a header that's already inside the
+                // selection keeps the selection (so multi-row/col Insert
+                // and Delete cover everything highlighted). Outside the
+                // selection replaces with the whole clicked row/col.
+                const state = get()
+                let alreadySelected = false
+                if (state.selection != null) {
+                    for (const sr of state.selection.ranges) {
+                        const r = sr.range
+                        if (axis === 'col') {
+                            if (index >= r.startCol && index <= r.endCol) {
+                                alreadySelected = true
+                                break
+                            }
+                        } else {
+                            if (index >= r.startRow && index <= r.endRow) {
+                                alreadySelected = true
+                                break
+                            }
+                        }
+                    }
+                }
+                if (!alreadySelected) {
+                    if (axis === 'col') {
+                        get().selectColumn(index, axisSpan)
+                    } else {
+                        get().selectRow(index, axisSpan)
+                    }
+                }
+                set({ headerMenu: { axis, index, cursor: { x, y } } })
+            },
+            closeHeaderMenu: () => set({ headerMenu: null }),
+
             // Structural mutations route by the primary (last) sub-
             // range. Other sub-ranges follow the same shift via
             // shiftSubRangesForInsert / clampSubRangesForDelete so a
@@ -1133,6 +1197,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 set({
                     selection: shiftSubRangesForInsert(state.selection, 'row', insertAt, 1),
                     handleMenu: null,
+                    headerMenu: null,
                 })
             },
 
@@ -1150,13 +1215,14 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 set({
                     selection: shiftSubRangesForInsert(state.selection, 'col', insertAt, 1),
                     handleMenu: null,
+                    headerMenu: null,
                 })
             },
 
             deleteRowAtHandle: (index, currentRowCount) => {
                 if (deps.readOnly) return
                 if (currentRowCount <= 1) {
-                    set({ handleMenu: null })
+                    set({ handleMenu: null, headerMenu: null })
                     return
                 }
                 deps.applyStructuralMutation({ kind: 'deleteRows', fromRow: index, count: 1 })
@@ -1175,13 +1241,14 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                         newRowCount
                     ),
                     handleMenu: null,
+                    headerMenu: null,
                 })
             },
 
             deleteColumnAtHandle: (index, currentColCount) => {
                 if (deps.readOnly) return
                 if (currentColCount <= 1) {
-                    set({ handleMenu: null })
+                    set({ handleMenu: null, headerMenu: null })
                     return
                 }
                 deps.applyStructuralMutation({ kind: 'deleteColumns', fromCol: index, count: 1 })
@@ -1196,6 +1263,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                         newColCount
                     ),
                     handleMenu: null,
+                    headerMenu: null,
                 })
             },
 

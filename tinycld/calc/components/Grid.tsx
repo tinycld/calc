@@ -39,6 +39,7 @@ import { CornerCell } from './grid/CornerCell'
 import { MIN_COLS, MIN_ROWS } from './grid/constants'
 import { FilterDropdownAnchor } from './grid/FilterDropdown'
 import { HandleContextMenu } from './grid/HandleContextMenu'
+import { HeaderContextMenu } from './grid/HeaderContextMenu'
 import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
 import { SortDialog } from './grid/SortDialog'
@@ -382,6 +383,7 @@ function GridInner({
                 displayedRowCount={rows}
                 displayedColCount={cols}
             />
+            <HeaderContextMenu doc={doc} sheetId={sheetId} />
             <FormulaSuggestionList
                 items={suggestions.items}
                 selectedIndex={suggestions.selectedIndex}

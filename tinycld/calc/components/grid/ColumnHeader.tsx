@@ -273,6 +273,18 @@ function appendHeaderCells(
                                       .addColumnSubRange(col, rowCount)
                               }
                           },
+                          onContextMenu: (e: {
+                              preventDefault: () => void
+                              stopPropagation: () => void
+                              clientX: number
+                              clientY: number
+                          }) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              filter.store
+                                  .getState()
+                                  .openHeaderMenu('col', col, rowCount, e.clientX, e.clientY)
+                          },
                       }
                     : null
             const onPlainPress = () => {
