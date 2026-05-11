@@ -10,9 +10,10 @@ interface FindReplaceDialogProps {
 }
 
 // Floating panel pinned to the top-right of the grid viewport. Only
-// mounted while the find store's isOpen is true (Grid gates it). All
-// state — query, replacement, options, mode — is read directly from
-// the find store via useFindStore selectors.
+// mounted while the find store's isOpen is true — see
+// FindReplaceDialogGate at the bottom of this file. All state —
+// query, replacement, options, mode — is read directly from the find
+// store via useFindStore selectors.
 export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
     const fg = useThemeColor('foreground')
     const muted = useThemeColor('muted-foreground')
@@ -237,4 +238,18 @@ function OptionToggle({ label, value, onChange }: OptionToggleProps) {
             <Text style={{ color: fg, fontSize: 11 }}>{label}</Text>
         </Pressable>
     )
+}
+
+interface FindReplaceDialogGateProps {
+    actions: FindActions
+}
+
+// Mounts FindReplaceDialog only while the find store's isOpen flips
+// true. Subscribing here (rather than in Grid) keeps the open/close
+// re-render scoped to this gate so the rest of GridInner doesn't
+// re-run on every keystroke into the dialog.
+export function FindReplaceDialogGate({ actions }: FindReplaceDialogGateProps) {
+    const isOpen = useFindStore(s => s.isOpen)
+    if (!isOpen) return null
+    return <FindReplaceDialog actions={actions} />
 }

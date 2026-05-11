@@ -410,3 +410,45 @@ function ConditionTab({ op, value, onChangeOp, onChangeValue, fg }: ConditionTab
         </View>
     )
 }
+
+interface FilterDropdownAnchorProps {
+    doc: Y.Doc | null
+    sheetId: string
+    colOffsets: Float64Array
+    scrollX: number
+}
+
+// Measures the screen position of the column header that owns the
+// open filter dropdown so the popover anchors to it. Subscribes to
+// filterDropdownCol locally so the rest of Grid doesn't re-render on
+// open/close. colOffsets / scrollX come from Grid because only Grid
+// has them.
+export function FilterDropdownAnchor({
+    doc,
+    sheetId,
+    colOffsets,
+    scrollX,
+}: FilterDropdownAnchorProps) {
+    const filterDropdownCol = useGridStore(s => s.filterDropdownCol)
+    if (filterDropdownCol == null)
+        return <FilterDropdown doc={doc} sheetId={sheetId} anchorRect={null} />
+    const left = colOffsets[filterDropdownCol - 1] ?? 0
+    const right = colOffsets[filterDropdownCol] ?? left
+    const width = right - left
+    // colOffsets is content-relative; subtract scrollX to land in the
+    // viewport coordinate space the dropdown's `position: absolute`
+    // expects. Header sits at top: TOOLBAR + FORMULA_BAR (~64px) — we
+    // approximate with a fixed offset since the dropdown doesn't need
+    // pixel-perfect anchoring (Body's grid flex layout pushes the
+    // headers down). Worst case the dropdown sits a hair below the
+    // visible header, which is the standard Sheets behaviour.
+    const screenLeft = left - scrollX + 40
+    const screenTop = 64
+    return (
+        <FilterDropdown
+            doc={doc}
+            sheetId={sheetId}
+            anchorRect={{ left: screenLeft, top: screenTop, width, height: 0 }}
+        />
+    )
+}

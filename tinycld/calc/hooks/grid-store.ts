@@ -31,7 +31,12 @@ import {
     formatRef,
     isRefAcceptable,
 } from '../lib/formula/cell-ref-insertion'
-import { effectiveRange } from '../lib/selection-range'
+import {
+    clampIndexForDelete,
+    effectiveRange,
+    shiftIndexForInsert,
+    shiftRangeForInsert,
+} from '../lib/selection-range'
 
 export interface SelectedCell {
     row: number
@@ -319,6 +324,9 @@ export interface GridActions {
     // the store has no Y.Doc dependency — Grid reads it from
     // useYSheets.
     selectRow: (row: number, colCount: number) => void
+    // selectColumn is the column-header mirror of selectRow: scope='column'
+    // with anchor=(1,col) and a range covering (1,col)..(rowCount,col).
+    selectColumn: (col: number, rowCount: number) => void
     editCell: (cell: SelectedCell, initialDraft?: string) => void
     setEditDraft: (row: number, col: number, draft: string) => void
     setEditSelection: (row: number, col: number, start: number, end: number) => void
@@ -621,6 +629,24 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 })
             },
 
+            selectColumn: (col, rowCount) => {
+                refs.lastRefSlice.current = null
+                const anchor = { row: 1, col }
+                commitInflight(anchor)
+                set({
+                    selected: anchor,
+                    selectionRange: {
+                        startRow: 1,
+                        endRow: Math.max(1, rowCount),
+                        startCol: col,
+                        endCol: col,
+                    },
+                    selectionScope: 'column',
+                    editSession: null,
+                    pendingSelection: null,
+                })
+            },
+
             extendSelectionTo: cell => {
                 // commitInflight FIRST: extending the selection ends
                 // any edit session on a different cell, and that draft
@@ -911,19 +937,13 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     position,
                     displayedRowCount,
                 })
-
-                const shifted = (r: number) => (r >= insertAt ? r + count : r)
                 set({
-                    selected: { row: shifted(state.selected.row), col: state.selected.col },
+                    selected: {
+                        row: shiftIndexForInsert(state.selected.row, insertAt, count),
+                        col: state.selected.col,
+                    },
                     selectionRange:
-                        range != null
-                            ? {
-                                  startRow: shifted(range.startRow),
-                                  endRow: shifted(range.endRow),
-                                  startCol: range.startCol,
-                                  endCol: range.endCol,
-                              }
-                            : null,
+                        range != null ? shiftRangeForInsert(range, 'row', insertAt, count) : null,
                     contextTarget: null,
                 })
             },
@@ -945,19 +965,13 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     position,
                     displayedColCount,
                 })
-
-                const shifted = (c: number) => (c >= insertAt ? c + count : c)
                 set({
-                    selected: { row: state.selected.row, col: shifted(state.selected.col) },
+                    selected: {
+                        row: state.selected.row,
+                        col: shiftIndexForInsert(state.selected.col, insertAt, count),
+                    },
                     selectionRange:
-                        range != null
-                            ? {
-                                  startRow: range.startRow,
-                                  endRow: range.endRow,
-                                  startCol: shifted(range.startCol),
-                                  endCol: shifted(range.endCol),
-                              }
-                            : null,
+                        range != null ? shiftRangeForInsert(range, 'col', insertAt, count) : null,
                     contextTarget: null,
                 })
             },
@@ -979,18 +993,12 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     return
                 }
                 deps.applyStructuralMutation({ kind: 'deleteRows', fromRow, count })
-
                 const newRowCount = Math.max(1, currentRowCount - count)
-                const clampRow = (r: number) => {
-                    if (r < fromRow) return r
-                    if (r >= fromRow + count) return r - count
-                    // Anchor was inside the deleted range: snap to the
-                    // first surviving row at the deletion site, clamped
-                    // into the new bounds.
-                    return Math.min(fromRow, newRowCount)
-                }
                 set({
-                    selected: { row: clampRow(state.selected.row), col: state.selected.col },
+                    selected: {
+                        row: clampIndexForDelete(state.selected.row, fromRow, count, newRowCount),
+                        col: state.selected.col,
+                    },
                     selectionRange: null,
                     selectionScope: 'cells',
                     contextTarget: null,
@@ -1011,15 +1019,12 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     return
                 }
                 deps.applyStructuralMutation({ kind: 'deleteColumns', fromCol, count })
-
                 const newColCount = Math.max(1, currentColCount - count)
-                const clampCol = (c: number) => {
-                    if (c < fromCol) return c
-                    if (c >= fromCol + count) return c - count
-                    return Math.min(fromCol, newColCount)
-                }
                 set({
-                    selected: { row: state.selected.row, col: clampCol(state.selected.col) },
+                    selected: {
+                        row: state.selected.row,
+                        col: clampIndexForDelete(state.selected.col, fromCol, count, newColCount),
+                    },
                     selectionRange: null,
                     selectionScope: 'cells',
                     contextTarget: null,
@@ -1037,20 +1042,17 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 })
                 const insertAt = position === 'above' ? index : index + 1
                 const state = get()
-                const shifted = (r: number) => (r >= insertAt ? r + 1 : r)
                 set({
                     selected:
                         state.selected != null
-                            ? { row: shifted(state.selected.row), col: state.selected.col }
+                            ? {
+                                  row: shiftIndexForInsert(state.selected.row, insertAt, 1),
+                                  col: state.selected.col,
+                              }
                             : state.selected,
                     selectionRange:
                         state.selectionRange != null
-                            ? {
-                                  startRow: shifted(state.selectionRange.startRow),
-                                  endRow: shifted(state.selectionRange.endRow),
-                                  startCol: state.selectionRange.startCol,
-                                  endCol: state.selectionRange.endCol,
-                              }
+                            ? shiftRangeForInsert(state.selectionRange, 'row', insertAt, 1)
                             : null,
                     handleMenu: null,
                 })
@@ -1067,20 +1069,17 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 })
                 const insertAt = position === 'left' ? index : index + 1
                 const state = get()
-                const shifted = (c: number) => (c >= insertAt ? c + 1 : c)
                 set({
                     selected:
                         state.selected != null
-                            ? { row: state.selected.row, col: shifted(state.selected.col) }
+                            ? {
+                                  row: state.selected.row,
+                                  col: shiftIndexForInsert(state.selected.col, insertAt, 1),
+                              }
                             : state.selected,
                     selectionRange:
                         state.selectionRange != null
-                            ? {
-                                  startRow: state.selectionRange.startRow,
-                                  endRow: state.selectionRange.endRow,
-                                  startCol: shifted(state.selectionRange.startCol),
-                                  endCol: shifted(state.selectionRange.endCol),
-                              }
+                            ? shiftRangeForInsert(state.selectionRange, 'col', insertAt, 1)
                             : null,
                     handleMenu: null,
                 })
@@ -1094,16 +1093,19 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 }
                 deps.applyStructuralMutation({ kind: 'deleteRows', fromRow: index, count: 1 })
                 const newRowCount = currentRowCount - 1
-                const clampRow = (r: number) => {
-                    if (r < index) return r
-                    if (r > index) return r - 1
-                    return Math.min(index, newRowCount)
-                }
                 const state = get()
                 set({
                     selected:
                         state.selected != null
-                            ? { row: clampRow(state.selected.row), col: state.selected.col }
+                            ? {
+                                  row: clampIndexForDelete(
+                                      state.selected.row,
+                                      index,
+                                      1,
+                                      newRowCount
+                                  ),
+                                  col: state.selected.col,
+                              }
                             : state.selected,
                     selectionRange: null,
                     selectionScope: 'cells',
@@ -1119,16 +1121,19 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 }
                 deps.applyStructuralMutation({ kind: 'deleteColumns', fromCol: index, count: 1 })
                 const newColCount = currentColCount - 1
-                const clampCol = (c: number) => {
-                    if (c < index) return c
-                    if (c > index) return c - 1
-                    return Math.min(index, newColCount)
-                }
                 const state = get()
                 set({
                     selected:
                         state.selected != null
-                            ? { row: state.selected.row, col: clampCol(state.selected.col) }
+                            ? {
+                                  row: state.selected.row,
+                                  col: clampIndexForDelete(
+                                      state.selected.col,
+                                      index,
+                                      1,
+                                      newColCount
+                                  ),
+                              }
                             : state.selected,
                     selectionRange: null,
                     selectionScope: 'cells',

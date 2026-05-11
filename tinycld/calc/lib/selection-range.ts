@@ -52,3 +52,57 @@ export function forEachCellInRange(range: CellRange, fn: (row: number, col: numb
         }
     }
 }
+
+// shiftIndexForInsert returns the new row/col index after `count` rows
+// or columns are inserted at `insertAt` (1-based). Indices < insertAt
+// stay put; indices >= insertAt shift right/down by `count`. Pure
+// arithmetic — caller decides whether to apply to anchor, range, or
+// both. `insertAt` is the absolute insert position: for "insert N rows
+// above row K", insertAt=K; for "below row K", insertAt=K+1.
+export function shiftIndexForInsert(index: number, insertAt: number, count: number): number {
+    return index >= insertAt ? index + count : index
+}
+
+// shiftRangeForInsert applies shiftIndexForInsert to a CellRange's
+// start/end on a single axis. Pass `axis: 'row'` to shift startRow /
+// endRow; 'col' for startCol / endCol. Returns a new range; the
+// untouched axis is copied through.
+export function shiftRangeForInsert(
+    range: CellRange,
+    axis: 'row' | 'col',
+    insertAt: number,
+    count: number
+): CellRange {
+    if (axis === 'row') {
+        return {
+            startRow: shiftIndexForInsert(range.startRow, insertAt, count),
+            endRow: shiftIndexForInsert(range.endRow, insertAt, count),
+            startCol: range.startCol,
+            endCol: range.endCol,
+        }
+    }
+    return {
+        startRow: range.startRow,
+        endRow: range.endRow,
+        startCol: shiftIndexForInsert(range.startCol, insertAt, count),
+        endCol: shiftIndexForInsert(range.endCol, insertAt, count),
+    }
+}
+
+// clampIndexForDelete returns the new row/col index after `count` rows
+// or columns are deleted starting at `fromIndex` (1-based) on a sheet
+// whose post-delete extent is `newAxisCount`. Indices before the
+// deletion site stay put; indices past the deleted range shift left /
+// up by `count`. Indices that fell *inside* the deleted range snap to
+// the first surviving slot at the deletion site, clamped into the new
+// bounds — same rule as the original handle/selection delete actions.
+export function clampIndexForDelete(
+    index: number,
+    fromIndex: number,
+    count: number,
+    newAxisCount: number
+): number {
+    if (index < fromIndex) return index
+    if (index >= fromIndex + count) return index - count
+    return Math.min(fromIndex, newAxisCount)
+}

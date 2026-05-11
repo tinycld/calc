@@ -1,13 +1,8 @@
 import { forwardRef, useCallback, useMemo } from 'react'
 import { View } from 'react-native'
-import type * as Y from 'yjs'
 import { useFindActions } from '../hooks/find/use-find-actions'
 import { createFindStore } from '../hooks/find/use-find-store'
-import {
-    FindStoreProvider,
-    useFindStore,
-    useFindStoreApi,
-} from '../hooks/find/use-find-store-context'
+import { FindStoreProvider, useFindStoreApi } from '../hooks/find/use-find-store-context'
 import { useCsvDownload } from '../hooks/grid/use-csv-download'
 import { useGridColumnResize } from '../hooks/grid/use-grid-column-resize'
 import { useGridFilterControls } from '../hooks/grid/use-grid-filter-controls'
@@ -25,14 +20,14 @@ import { useRefDragExtender } from '../hooks/grid/use-ref-drag-extender'
 import { useCalcShortcuts } from '../hooks/use-calc-shortcuts'
 import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
-import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
+import { GridStoreProvider } from '../hooks/use-grid-store'
 import { createPrintDialogStore, PrintDialogProvider } from '../hooks/use-print-dialog'
 import { usePresence } from '../hooks/use-presence'
 import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
 import { useYSheets } from '../hooks/use-y-sheets'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
-import { FindReplaceDialog } from './FindReplaceDialog'
+import { FindReplaceDialogGate } from './FindReplaceDialog'
 import { PrintDialog } from './PrintDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
@@ -42,7 +37,7 @@ import { ColumnHeader } from './grid/ColumnHeader'
 import { CommentPopover } from './grid/CommentPopover'
 import { CornerCell } from './grid/CornerCell'
 import { MIN_COLS, MIN_ROWS } from './grid/constants'
-import { FilterDropdown } from './grid/FilterDropdown'
+import { FilterDropdownAnchor } from './grid/FilterDropdown'
 import { HandleContextMenu } from './grid/HandleContextMenu'
 import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
@@ -369,7 +364,7 @@ function GridInner({
                 currentSheetId={sheetId}
                 currentSelection={printDialog.currentSelection}
             />
-            <GridFilterDropdownAnchor
+            <FilterDropdownAnchor
                 doc={doc}
                 sheetId={sheetId}
                 colOffsets={colOffsets}
@@ -393,59 +388,5 @@ function GridInner({
             />
             <FindReplaceDialogGate actions={findActions} />
         </View>
-    )
-}
-
-interface FindReplaceDialogGateProps {
-    actions: ReturnType<typeof useFindActions>
-}
-
-// Tiny wrapper so the dialog mount/unmount toggles based on the find
-// store's isOpen without forcing GridInner to re-render the whole
-// subtree on every keystroke into the dialog. Subscribing inside this
-// component keeps the churn local.
-function FindReplaceDialogGate({ actions }: FindReplaceDialogGateProps) {
-    const isOpen = useFindStore(s => s.isOpen)
-    if (!isOpen) return null
-    return <FindReplaceDialog actions={actions} />
-}
-
-interface GridFilterDropdownAnchorProps {
-    doc: Y.Doc | null
-    sheetId: string
-    colOffsets: Float64Array
-    scrollX: number
-}
-
-// GridFilterDropdownAnchor measures the screen position of the column
-// header that owns the open filter dropdown so the popover anchors to
-// it. Lives in Grid because only Grid has the colOffsets and scrollX.
-function GridFilterDropdownAnchor({
-    doc,
-    sheetId,
-    colOffsets,
-    scrollX,
-}: GridFilterDropdownAnchorProps) {
-    const filterDropdownCol = useGridStore(s => s.filterDropdownCol)
-    if (filterDropdownCol == null)
-        return <FilterDropdown doc={doc} sheetId={sheetId} anchorRect={null} />
-    const left = colOffsets[filterDropdownCol - 1] ?? 0
-    const right = colOffsets[filterDropdownCol] ?? left
-    const width = right - left
-    // colOffsets is content-relative; subtract scrollX to land in the
-    // viewport coordinate space the dropdown's `position: absolute`
-    // expects. Header sits at top: TOOLBAR + FORMULA_BAR (~64px) — we
-    // approximate with a fixed offset since the dropdown doesn't need
-    // pixel-perfect anchoring (Body's grid flex layout pushes the
-    // headers down). Worst case the dropdown sits a hair below the
-    // visible header, which is the standard Sheets behaviour.
-    const screenLeft = left - scrollX + 40
-    const screenTop = 64
-    return (
-        <FilterDropdown
-            doc={doc}
-            sheetId={sheetId}
-            anchorRect={{ left: screenLeft, top: screenTop, width, height: 0 }}
-        />
     )
 }
