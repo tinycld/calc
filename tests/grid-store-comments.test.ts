@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createGridStore, type GridStoreDeps } from '../tinycld/calc/hooks/grid-store'
+import { primaryAnchor } from '../tinycld/calc/lib/selection-range'
 
 // commentTarget mirrors contextTarget but lives independently so the
 // thread popover and the right-click menu don't collide. These tests
@@ -34,7 +35,7 @@ describe('grid-store comment popover', () => {
         // The opened cell becomes the active selection so any
         // toolbar-driven mutation targets the same cell the popover
         // is attached to.
-        expect(store.getState().selected).toEqual({ row: 3, col: 4 })
+        expect(primaryAnchor(store.getState().selection)).toEqual({ row: 3, col: 4 })
     })
 
     it('closeCommentPopover clears commentTarget', () => {

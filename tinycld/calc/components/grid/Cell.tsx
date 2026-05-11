@@ -16,6 +16,7 @@ import { useYCell } from '../../hooks/use-y-cell'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
 import { cellStyleToRenderProps } from '../../lib/cell-style-render'
 import { findMergeContaining } from '../../lib/merge'
+import { containsAny, primaryAnchor } from '../../lib/selection-range'
 import { columnLabel, formatCell } from '../../lib/workbook-types'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { CommentIndicator } from './CommentIndicator'
@@ -81,16 +82,18 @@ export const Cell = memo(function Cell({
     // false on every store update and short-circuit reference-equality
     // checks, so they don't re-render. This is the keystroke-perf
     // contract: 1 cell renders per keystroke, not N visible cells.
-    const isSelected = useGridStore(s => s.selected?.row === row && s.selected?.col === col)
-    // True when this cell sits inside a multi-cell selection range
-    // but isn't the anchor — used to render the range tint underneath
-    // the anchor's brighter outline. The selector still returns a
-    // boolean so cells outside the range short-circuit on equality.
-    const isInRange = useGridStore(s => {
-        const r = s.selectionRange
-        if (r == null) return false
-        return row >= r.startRow && row <= r.endRow && col >= r.startCol && col <= r.endCol
+    //
+    // isSelected reads the PRIMARY anchor (last sub-range). On a
+    // single-rectangle selection this is the only anchor; on a
+    // disjoint selection it's the most-recently-Ctrl-clicked cell.
+    const isSelected = useGridStore(s => {
+        const a = primaryAnchor(s.selection)
+        return a?.row === row && a?.col === col
     })
+    // True when this cell sits inside ANY sub-range of the selection
+    // (single or disjoint). Returns a boolean primitive so cells
+    // outside the selection short-circuit on equality.
+    const isInRange = useGridStore(s => containsAny(s.selection, row, col))
     const isEditing = useGridStore(s => s.editSession?.row === row && s.editSession?.col === col)
     const isAnyEditing = useGridStore(s => s.editSession != null)
 
@@ -163,7 +166,7 @@ export const Cell = memo(function Cell({
                 const gridY = top + (ev.clientY - drag.startRect.top)
                 const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
                 if (target == null) return
-                store.getState().extendSelectionTo(target)
+                store.getState().extendActiveRangeTo(target)
             }
             const cleanup = () => {
                 document.removeEventListener('pointermove', onMove)
@@ -256,7 +259,7 @@ export const Cell = memo(function Cell({
             if (activeDragMode === 'ref') {
                 store.getState().cellRefDragMove(target.row, target.col)
             } else if (activeDragMode === 'select') {
-                store.getState().extendSelectionTo(target)
+                store.getState().extendActiveRangeTo(target)
             }
         },
         onPanResponderRelease: () => {
@@ -342,7 +345,7 @@ export const Cell = memo(function Cell({
                           // range we just built.
                           e.preventDefault()
                           skipNextPressRef.current = true
-                          store.getState().extendSelectionTo({ row, col })
+                          store.getState().extendActiveRangeTo({ row, col })
                           return
                       }
                       if (isAnyEditing) {

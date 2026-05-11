@@ -6,6 +6,7 @@ import {
     ROW_HANDLE_VISUAL_HEIGHT,
     type RowDragState,
 } from '../../hooks/use-row-resize'
+import { primaryAnchor } from '../../lib/selection-range'
 import { ACTIVE_HEADER_INSET_STYLE, ROW_HEADER_WIDTH } from './constants'
 
 interface RowHeaderProps {
@@ -39,14 +40,19 @@ export function RowHeader({
     dragState,
 }: RowHeaderProps) {
     const borderColor = useThemeColor('border')
-    const activeRow = useGridStore(s => s.selected?.row ?? null)
+    const activeRow = useGridStore(s => primaryAnchor(s.selection)?.row ?? null)
     // Highlight the row label more strongly when the user has selected
-    // the WHOLE row (scope='row') vs. just clicking a body cell that
-    // happens to live in this row. Drives the bold/contrast styling
-    // below.
-    const rowScopeActive = useGridStore(
-        s => s.selectionScope === 'row' && s.selected?.row === activeRow
-    )
+    // the WHOLE row (any sub-range with scope='row' anchored at this
+    // row). Disjoint row selections light up every selected row
+    // header, matching Sheets.
+    const rowScopeActive = useGridStore(s => {
+        if (s.selection == null) return false
+        if (activeRow == null) return false
+        for (const sr of s.selection.ranges) {
+            if (sr.scope === 'row' && sr.anchor.row === activeRow) return true
+        }
+        return false
+    })
     const store = useGridStoreApi()
 
     const rows = rowOffsets.length - 1

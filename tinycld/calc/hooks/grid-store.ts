@@ -19,6 +19,14 @@
 // All side effects (Y.Doc writes, input.focus(), awareness publish)
 // flow through GridStoreDeps so the store stays pure and testable in
 // isolation — yjs is never imported here.
+//
+// Selection model: one ordered list of sub-ranges
+// (`selection: Selection`). A single-cell or single-rectangle
+// selection has `ranges.length === 1`; disjoint multi-selection has
+// `ranges.length > 1`. The LAST entry is the "primary" — its anchor
+// drives the formula bar, keyboard nav, and awareness; Shift-click
+// extends it. Ctrl-click appends a new entry (Sheets parity). See
+// `lib/selection-range.ts` for the helper layer call sites use.
 import { createStore as createVanillaStore, type StoreApi } from 'zustand/vanilla'
 import {
     applyFunctionInsertion,
@@ -32,10 +40,18 @@ import {
     isRefAcceptable,
 } from '../lib/formula/cell-ref-insertion'
 import {
-    clampIndexForDelete,
-    effectiveRange,
+    clampSubRangesForDelete,
+    isDisjoint as isDisjointSelection,
+    primaryAnchor as readPrimaryAnchor,
+    primaryRange as readPrimaryRange,
+    rangeContainsCell,
+    type Selection,
     shiftIndexForInsert,
-    shiftRangeForInsert,
+    shiftSubRangesForInsert,
+    singleCellSelection,
+    singleRectSelection,
+    type SubRange,
+    subRangeAtCell,
 } from '../lib/selection-range'
 
 export interface SelectedCell {
@@ -44,11 +60,6 @@ export interface SelectedCell {
 }
 
 // CellRange is always normalized: startRow ≤ endRow, startCol ≤ endCol.
-// The range describes a rectangle of cells that the user has selected
-// in addition to the single `selected` anchor cell. When the range is
-// null the selection is just the anchor (a single cell). The anchor is
-// always *inside* the range, so iterators can ignore it and just walk
-// the range.
 export interface CellRange {
     startRow: number
     startCol: number
@@ -66,34 +77,23 @@ export interface EditSession {
 // anchoring (formula bar coords vs. editing-cell coords).
 export type ActiveSurface = 'bar' | 'cell'
 
-// SelectionScope discriminates how the active selection should be
+// SelectionScope discriminates how a single SubRange should be
 // interpreted by mutation paths. 'cells' is the default body selection
 // (a rectangle of cells). 'row' / 'column' / 'sheet' indicate the user
 // clicked a row/column header or the corner cell — toolbar setters
 // route writes to per-row/per-col/per-sheet style metadata instead of
-// iterating cells. selectionRange still describes the visible-tint
-// rectangle, but scope is the source of truth for routing.
+// iterating cells. Stored per SubRange (not top-level), so a disjoint
+// selection can mix scopes (row 2 + column C).
 export type SelectionScope = 'cells' | 'row' | 'column' | 'sheet'
 
-// A ref drag in progress while a formula is being edited. anchor is
-// the first cell pressed; end tracks the cell currently under the
-// pointer/finger. lastSlice is the substring index range of the most
-// recent insertion in the draft, so the next pointer-move replaces it
-// instead of appending another address.
+// A ref drag in progress while a formula is being edited.
 export interface RefDrag {
     anchor: { row: number; col: number }
     end: { row: number; col: number }
     lastSlice: { start: number; end: number }
 }
 
-// Fill-handle drag in progress. sourceRange is the user's pre-drag
-// selection (captured at fillDragStart and never mutated). destRange
-// grows as the pointer moves and always contains sourceRange — the
-// rectangle is anchored at sourceRange's top-left and extends down or
-// right. direction is the dominant axis the drag is currently locked
-// to; until directionLocked flips true (on the first move strictly
-// past the source's bottom or right edge), the placeholder direction
-// has no effect because destRange == sourceRange.
+// Fill-handle drag in progress.
 export interface FillDrag {
     sourceRange: CellRange
     destRange: CellRange
@@ -113,123 +113,62 @@ export interface ContextTarget {
     cursor: { x: number; y: number }
 }
 
-// Anchor for the threaded-comment popover. cursor mirrors ContextTarget
-// — popover opens at the user's click point (right-click "Comment"
-// item) or the cell's screen rect (keyboard shortcut path).
 export interface CommentTarget {
     cell: SelectedCell
     cursor: { x: number; y: number }
 }
 
 export interface HandleMenuTarget {
-    // Discriminator: column-handle menu (right-click on column resize
-    // grip) vs. row-handle menu (right-click on row resize grip). Both
-    // use the same Menu component to keep the visual surface minimal;
-    // the action handlers branch on `axis`.
     axis: 'col' | 'row'
-    // Index of the column or row whose handle was clicked.
     index: number
     cursor: { x: number; y: number }
 }
 
+// Transient banner state — single union so future selection-level
+// status messages (e.g. "Can't sort disjoint selection") slot in
+// without growing the state surface. Today's only kind is the
+// clipboard refusal raised by useClipboard when copy/cut is invoked on
+// a disjoint selection.
+export type SelectionStatus = { kind: 'copy-disjoint-refused' } | null
+
 // GridState carries everything the Grid's UI subtree subscribes to.
-// Y.Doc data (cell raw/formula/style) is intentionally NOT here — that
-// stays behind useYCell so per-cell observers fire only when the
-// specific cell's CRDT entry changes. The store is for selection,
-// editing, ref-drag, suggestion-popover, and menu state.
+// Y.Doc data (cell raw/formula/style) is intentionally NOT here.
 export interface GridState {
-    // The anchor cell — drives the formula bar, header highlights, and
-    // the keyboard-nav origin. Always inside `selectionRange` when that
-    // is non-null. Existing call sites that use `selected` continue to
-    // see the active cell.
-    selected: SelectedCell | null
-    // Optional rectangle for multi-cell selection. `null` means the
-    // selection is just the single `selected` cell. When non-null the
-    // range is normalized (start ≤ end on both axes) and contains
-    // `selected`.
-    selectionRange: CellRange | null
-    // Discriminator for how the selection should be interpreted by
-    // mutation paths. 'cells' = body selection (per-cell writes).
-    // 'row'/'column'/'sheet' = lazy-style scope (writes to per-axis
-    // sheet metadata). Body interactions (selectCell, extendSelectionTo)
-    // reset to 'cells'. Header-click actions (selectRow/Column/Sheet)
-    // set the scope explicitly.
-    selectionScope: SelectionScope
+    // The ordered selection. null = nothing selected. Non-null has
+    // at least one SubRange. The last entry is the "primary" (its
+    // anchor drives formula bar / keyboard nav / awareness; Shift-
+    // click extends its range). Ctrl-click appends.
+    selection: Selection
     editSession: EditSession | null
-    // Programmatic-insert override for the input's selection prop.
-    // Cleared on the next onSelectionChange so subsequent typing
-    // doesn't snap the caret back. Only the editing cell reads this.
     pendingSelection: DraftSelection | null
     activeSurface: ActiveSurface
     refDrag: RefDrag | null
     suggestionIndex: number
-    // The draft at which the user last pressed Esc to dismiss the
-    // popover. Stays sticky until the next keystroke produces a
-    // different draft, matching standard autocomplete UX.
     dismissedDraft: string | null
     formulaBarRect: FormulaBarRect | null
     contextTarget: ContextTarget | null
     commentTarget: CommentTarget | null
     handleMenu: HandleMenuTarget | null
-    // Clipboard state, populated by the orchestrating useClipboard
-    // hook on copy/cut. `clipboardMarker` is the in-memory fidelity-
-    // store key the OS clipboard's HTML <meta> tag carries; the
-    // source range is preserved for the marching-ants overlay so the
-    // user can see what they copied. `cutPending` distinguishes a cut
-    // (clear-source-on-paste) from a copy (leave source intact).
-    // All three clear together when a paste consumes the cut, when
-    // the user presses Esc, or after a 30-second timeout.
     clipboardMarker: string | null
     copySourceRange: CellRange | null
     cutPending: boolean
-    // Active fill-handle drag, or null when the user isn't dragging
-    // the selection-handle dot. The preview overlay subscribes to this
-    // to paint the green extension rectangle, and fillDragEnd reads it
-    // to dispatch the commit through deps.applyFill.
     fillDrag: FillDrag | null
-    // Sort/Filter UI state. The persistent filter view definition
-    // lives on Y.Doc sheet metadata (lib/filter.ts FILTER_VIEW_KEY);
-    // these flags track only the transient dialog/dropdown visibility
-    // so a reload doesn't snap them open.
     sortDialogOpen: boolean
     filterDropdownCol: number | null
-    // Status banner shown after a sort dissolved merges. Cleared by
-    // the next user action via dismissSortStatus.
     sortStatus: { mergesBroken: number } | null
+    // Transient banner for selection-level status messages (e.g.
+    // refused copy on a disjoint selection). Consumers clear it via
+    // dismissSelectionStatus or the next selection-mutating action.
+    selectionStatus: SelectionStatus
 }
 
 // Live cursor position inside the editing input. Stored as a
-// ref-style mutable container, never as state — a fresh selection on
-// every keystroke would re-render every subscriber that depended on
-// it. Callbacks read .current to get the up-to-date value.
-//
-// `lastRefSlice` is the substring range of the most-recent ref-tap
-// insertion, so a follow-up tap on a different cell extends rather
-// than appending. Reset on commit/cancel/keystroke that isn't a ref
-// op.
+// ref-style mutable container, never as state.
 export interface GridRefs {
     editCursor: { current: DraftSelection }
     lastRefSlice: { current: { start: number; end: number } | null }
 }
 
-// GridStoreDeps are the side-effect callbacks the store invokes when
-// an action needs to touch something outside its own state. Provided
-// by the Grid component at create time. Keeping them injected (rather
-// than imported inside the store) means the store has no yjs/awareness
-// dependency and can be unit-tested with stubs.
-// StructuralOp describes a row/column insert or delete. The store
-// dispatches these to deps.applyStructuralMutation so the yjs writes
-// stay outside the store (mirrors writeCell). Position is implicit:
-// for insertRows, atRow is already the *insert position* (1-based row
-// index where the new rows go) — the store derives this from the
-// selection + 'above'/'below' so the dep just executes.
-// displayedRowCount / displayedColCount on insert ops carry the
-// rendered grid size (Grid.tsx clamps display dims up to MIN_ROWS /
-// MIN_COLS, so a fresh sheet shows 50×26 with stored counts of 0).
-// The structural mutation uses them to ensure the post-insert
-// row/colCount covers everything the user could see *plus* the
-// inserted rows/columns — otherwise inserting at a position past the
-// stored count leaves part of the visible grid outside the sheet.
 export type StructuralOp =
     | {
           kind: 'insertRows'
@@ -250,58 +189,23 @@ export type StructuralOp =
 
 export interface GridStoreDeps {
     readOnly: boolean
-    // Persist a cell's user-typed string to the Y.Doc. Empty string
-    // clears the cell. The store calls this from commitEdit and from
-    // the click-away path inside selectCell when an edit on a
-    // different cell is in flight.
     writeCell: (row: number, col: number, value: string) => void
-    // Focus the input the user most recently interacted with. Used by
-    // ref-drag end so the pan gesture doesn't leave the input blurred
-    // (which would commit the half-typed formula).
     focusActiveInput: () => void
-    // Apply a structural row/column insert or delete to the Y.Doc.
-    // Provided by Grid (which holds the doc + sheetId). The store
-    // dispatches this from insert*/delete* actions and updates its
-    // selection state in the same set() so the highlight follows the
-    // shifted cells in one render.
     applyStructuralMutation: (op: StructuralOp) => void
-    // Commit a fill-handle drag to the Y.Doc. The store calls this
-    // from fillDragEnd with the captured source range, the final dest
-    // rectangle, and the dominant axis. Series detection + projection
-    // happens inside the dep so the store stays free of yjs and the
-    // detection lib.
     applyFill: (opts: {
         sourceRange: CellRange
         destRange: CellRange
         direction: 'down' | 'right'
     }) => void
-    // Resolve a (row, col) to its merge anchor when the cell sits
-    // inside a merged rectangle, otherwise echo back the input. Lets
-    // selection actions snap a click on a covered cell to the anchor
-    // without giving the store a Y.Doc dependency.
     resolveMergeAnchor: (row: number, col: number) => { row: number; col: number }
-    // Grow `range` so every merge it touches is fully contained.
-    // Returns the input range when no merges intersect.
     expandRangeOverMerges: (range: CellRange) => CellRange
-    // List the merges that intersect the given range. Used by
-    // unmergeSelection to iterate merges in the range.
     findMergesInRange: (range: CellRange) => MergeAnchor[]
-    // Merge / unmerge primitives that touch the Y.Doc. The store
-    // dispatches these from mergeSelection / unmergeSelection so it
-    // can stay yjs-free.
     mergeRange: (range: CellRange) => void
     unmergeAt: (anchorRow: number, anchorCol: number) => void
-    // Persist a freeze count to the sheet's metadata. Count <= 0
-    // unfreezes the axis. Wired in use-grid-store-instance to
-    // setFrozenRows/setFrozenCols so the store stays free of yjs.
     setFrozenRows: (n: number) => void
     setFrozenCols: (n: number) => void
 }
 
-// MergeAnchor is the store-side view of one merged-cell rectangle.
-// Keeps the store free of any direct merge.ts import; the dep
-// implementation in use-grid-store-instance maps the lib's MergeRange
-// to this shape (which happens to be structurally identical).
 export interface MergeAnchor {
     anchorRow: number
     anchorCol: number
@@ -311,76 +215,60 @@ export interface MergeAnchor {
 
 export interface GridActions {
     selectCell: (cell: SelectedCell) => void
-    // Extend the current selection to include `cell` while keeping the
-    // anchor (`selected`) fixed. Computes the bounding rectangle from
-    // the anchor to `cell` and stores it in `selectionRange`. If there
-    // is no anchor yet, this is equivalent to selectCell. Used by
-    // shift-click and drag-select.
-    extendSelectionTo: (cell: SelectedCell) => void
-    // selectRow sets scope='row' with anchor=(row,1) and a range
-    // covering (row,1)..(row,colCount). Triggered by clicking a row
-    // header. Toolbar setters dispatch to per-row metadata writes
-    // instead of iterating cells. The caller passes colCount because
-    // the store has no Y.Doc dependency — Grid reads it from
-    // useYSheets.
+    // Extend the active (last) sub-range from its anchor to `cell`.
+    // If there is no anchor, this is equivalent to selectCell.
+    extendActiveRangeTo: (cell: SelectedCell) => void
     selectRow: (row: number, colCount: number) => void
-    // selectColumn is the column-header mirror of selectRow: scope='column'
-    // with anchor=(1,col) and a range covering (1,col)..(rowCount,col).
     selectColumn: (col: number, rowCount: number) => void
+    // Ctrl-click append: starts a new sub-range at `cell` (body
+    // scope). The new sub-range becomes the primary. No-op when
+    // `cell` is inside an existing sub-range but isn't an anchor;
+    // when it IS an existing anchor, removes that sub-range (case
+    // (a) in the plan §6). See addSubRange comments below.
+    addSubRange: (cell: SelectedCell) => void
+    // Ctrl-click on column header: appends a column-scope sub-range
+    // (full-height column rectangle). Same hole-punch and pop-anchor
+    // semantics as addSubRange.
+    addColumnSubRange: (col: number, rowCount: number) => void
+    addRowSubRange: (row: number, colCount: number) => void
+    // Shift-click on column header: if active sub-range is column-
+    // scope, extend it by columns; otherwise treat as plain
+    // selectColumn (replace selection).
+    extendActiveColumnTo: (col: number, rowCount: number) => void
+    extendActiveRowTo: (row: number, colCount: number) => void
+    // Arrow-key collapse: replace a disjoint selection with a single-
+    // cell selection at the primary anchor. Called by Cell.tsx's
+    // onCellKeyDown when an arrow key is pressed on a disjoint
+    // selection; focus traversal continues afterward.
+    collapseToPrimary: () => void
     editCell: (cell: SelectedCell, initialDraft?: string) => void
     setEditDraft: (row: number, col: number, draft: string) => void
     setEditSelection: (row: number, col: number, start: number, end: number) => void
     commitEdit: (row: number, col: number, value: string) => void
     cancelEdit: () => void
     clearCellAt: (row: number, col: number) => void
-    // clearSelection clears every cell in the active selection — the
-    // current range when one is set, otherwise just the anchor. Used
-    // by the Delete/Backspace path on focused cells so a multi-cell
-    // selection clears in one keystroke (Sheets / Excel parity).
     clearSelection: () => void
     setActiveSurface: (surface: ActiveSurface) => void
     setFormulaBarRect: (rect: FormulaBarRect) => void
-    // Ref-insertion. Returns true when the gesture was handled (cursor
-    // was in a ref-acceptable position and the address spliced into
-    // the draft). Cells use the boolean to skip their normal
-    // select/edit fallback.
     cellRefTap: (row: number, col: number) => boolean
     cellRefDragStart: (row: number, col: number) => boolean
     cellRefDragMove: (row: number, col: number) => void
     cellRefDragEnd: () => void
-    // Used by the ref-drag tracking effect to write the live range
-    // into the draft. Internal-ish; exposed because the effect runs in
-    // Grid.
     extendRefDragDraft: (nextDraft: string, nextSlice: { start: number; end: number }) => void
-    // Suggestion popover.
     moveSuggestion: (delta: number, total: number) => void
     setSuggestionIndex: (index: number) => void
     dismissSuggestions: () => void
     insertFunction: (name: string) => void
-    // Context menus.
     openCellContextMenu: (row: number, col: number, x: number, y: number) => void
     closeCellContextMenu: () => void
     openCommentPopover: (row: number, col: number, x: number, y: number) => void
     closeCommentPopover: () => void
     openHandleMenu: (axis: 'col' | 'row', index: number, x: number, y: number) => void
     closeHandleMenu: () => void
-    // Structural mutations driven by the cell context menu. Derive
-    // from/count from the active selection (collapsed to 1 row/col when
-    // there is no range). Selection state is updated in the same
-    // set() so the highlight follows the shifted cells. Insert actions
-    // take the *displayed* row/colCount (max of stored count and the
-    // grid's MIN_ROWS/MIN_COLS floor) so the post-insert sheet expands
-    // to cover everything the user can see — see StructuralOp comment.
     insertRowsAtSelection: (position: 'above' | 'below', displayedRowCount: number) => void
     insertColumnsAtSelection: (position: 'left' | 'right', displayedColCount: number) => void
-    // Delete actions need the *current* row/colCount so the post-delete
-    // anchor can be clamped into the new bounds. Caller passes it from
-    // useYSheets — mirrors selectRow/Column.
     deleteSelectedRows: (currentRowCount: number) => void
     deleteSelectedColumns: (currentColCount: number) => void
-    // Structural mutations driven by the row/column header context
-    // menu. The index is the row or column whose handle was clicked
-    // (resolved via state.handleMenu.index in the caller).
     insertRowAtHandle: (
         index: number,
         position: 'above' | 'below',
@@ -393,53 +281,24 @@ export interface GridActions {
     ) => void
     deleteRowAtHandle: (index: number, currentRowCount: number) => void
     deleteColumnAtHandle: (index: number, currentColCount: number) => void
-    // Freeze panes. n=0 unfreezes the axis. Independent: setting one
-    // axis leaves the other untouched. setFrozenRows(0) and
-    // setFrozenCols(0) are equivalent to unfreeze() for that single
-    // axis; unfreeze() clears both in one call.
     setFrozenRows: (n: number) => void
     setFrozenCols: (n: number) => void
     unfreeze: () => void
-    // Clipboard lifecycle. setClipboardMarker is called by useClipboard
-    // on copy (isCut=false) and cut (isCut=true); it schedules a 30s
-    // timeout that auto-clears the marker so an abandoned cut doesn't
-    // leak the marching-ants overlay forever. clearClipboardMarker is
-    // called on Esc, after a paste consumes a cut, when a 30s timeout
-    // fires, or when the source range is overwritten.
     setClipboardMarker: (markerId: string, sourceRange: CellRange, isCut: boolean) => void
     clearClipboardMarker: () => void
-    // Fill-handle drag lifecycle. Start captures the current effective
-    // range as the immutable source; move grows the dest rectangle and
-    // locks the axis on the first move past the source's edge; end
-    // dispatches deps.applyFill and snaps the post-fill selection to
-    // the dest rectangle (Sheets behavior). Returns false from start
-    // when there's nothing to fill from (no selection or readOnly), so
-    // the overlay can fall back to selection-extend.
     fillDragStart: () => boolean
     fillDragMove: (target: { row: number; col: number }) => void
     fillDragEnd: () => void
-    // Sort dialog open/close. Pure UI state — the actual sort runs via
-    // a sort.ts call wired from the SortDialog's Apply button.
     openSortDialog: () => void
     closeSortDialog: () => void
-    // Filter dropdown anchored on a specific column header. Null when
-    // closed. Only one dropdown is open at a time.
     openFilterDropdown: (col: number) => void
     closeFilterDropdown: () => void
-    // Status banner after a sort dissolved one or more merges.
     setSortStatus: (status: { mergesBroken: number } | null) => void
-    // Merge the current selection into a single merged cell. If the
-    // selection touches existing merges, the range first expands to
-    // fully contain them so the resulting merge is well-defined.
+    setSelectionStatus: (status: SelectionStatus) => void
+    dismissSelectionStatus: () => void
     mergeSelection: () => void
-    // Variant that splits the selection into one horizontal merge per
-    // row (so a 3×3 selection becomes 3 horizontal merges of 3 cells
-    // each). No-op when the selection is a single column.
     mergeSelectionHorizontal: () => void
-    // Variant that splits the selection into one vertical merge per
-    // column. No-op when the selection is a single row.
     mergeSelectionVertical: () => void
-    // Unmerge every merge that touches the current selection.
     unmergeSelection: () => void
 }
 
@@ -447,19 +306,8 @@ export interface GridStore extends GridState, GridActions {}
 
 export type GridStoreApi = StoreApi<GridStore> & { refs: GridRefs }
 
-// Local helper — duplicated rather than importing from
-// lib/selection-range.ts to avoid a circular import (the lib imports
-// CellRange from this file).
-function rangeContainsCell(range: CellRange, row: number, col: number): boolean {
-    return (
-        row >= range.startRow && row <= range.endRow && col >= range.startCol && col <= range.endCol
-    )
-}
-
 // Bounds-equality on a CellRange, used by fillDragMove to short-
-// circuit redundant set() calls. Cheaper than JSON.stringify and
-// avoids the object-identity false-negative we'd hit comparing
-// instances by reference.
+// circuit redundant set() calls.
 function rangesEqual(a: CellRange, b: CellRange): boolean {
     return (
         a.startRow === b.startRow &&
@@ -470,9 +318,7 @@ function rangesEqual(a: CellRange, b: CellRange): boolean {
 }
 
 const initialState: GridState = {
-    selected: null,
-    selectionRange: null,
-    selectionScope: 'cells',
+    selection: null,
     editSession: null,
     pendingSelection: null,
     activeSurface: 'cell',
@@ -490,12 +336,9 @@ const initialState: GridState = {
     sortDialogOpen: false,
     filterDropdownCol: null,
     sortStatus: null,
+    selectionStatus: null,
 }
 
-// Auto-clear an abandoned cut/copy marker after 30 seconds so the
-// marching-ants overlay doesn't outlive its usefulness. The timeout
-// closure lives at module level so each store can hold a single
-// outstanding timer and replace it on every fresh setClipboardMarker.
 const CLIPBOARD_MARKER_TTL_MS = 30_000
 
 export function createGridStore(deps: GridStoreDeps): GridStoreApi {
@@ -504,16 +347,12 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
         lastRefSlice: { current: null },
     }
 
-    // Per-store timeout id for the auto-clear on abandoned cut/copy.
-    // Held in a closure so each store has its own and a fresh
-    // setClipboardMarker cancels the previous timer cleanly.
     let clipboardTimeout: ReturnType<typeof setTimeout> | null = null
 
     const store = createVanillaStore<GridStore>()((set, get) => {
         // commitInflight: when something else needs to take focus
         // (selectCell on a different cell, openCellContextMenu),
-        // commit any pending edit on the prior cell. Mirrors the
-        // click-away semantics of pressing Enter/blur.
+        // commit any pending edit on the prior cell.
         const commitInflight = (target: SelectedCell | null) => {
             const current = get().editSession
             if (current == null) return
@@ -522,30 +361,20 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             deps.writeCell(current.row, current.col, current.draft)
         }
 
-        // currentSelectionRange returns the active selection rectangle
-        // (range when set, otherwise the single anchor cell) or null
-        // when nothing is selected. Shared by mergeSelection variants
-        // and unmergeSelection so the "what's currently selected" rule
-        // lives in one place.
-        const currentSelectionRange = (): CellRange | null => {
-            const state = get()
-            if (state.selected == null) return null
-            if (state.selectionRange != null) return state.selectionRange
-            return {
-                startRow: state.selected.row,
-                endRow: state.selected.row,
-                startCol: state.selected.col,
-                endCol: state.selected.col,
-            }
-        }
+        // currentPrimaryRange returns the active selection rectangle
+        // (primary sub-range's range) or null when nothing is
+        // selected. Shared by mergeSelection variants and
+        // unmergeSelection.
+        const currentPrimaryRange = (): CellRange | null => readPrimaryRange(get().selection)
 
-        // runMerge dispatches the three merge variants (all / per-row /
-        // per-col). 'all' commits the whole expanded rectangle; the
-        // per-axis variants iterate the perpendicular axis and emit one
-        // single-row or single-col merge per step.
         const runMerge = (mode: 'all' | 'horizontal' | 'vertical') => {
             if (deps.readOnly) return
-            const baseRange = currentSelectionRange()
+            // Disjoint selections are unsupported for merge — Sheets
+            // disables the action entirely. The CellContextMenu's
+            // isDisabled flag is the primary affordance; this is
+            // defense in depth.
+            if (isDisjointSelection(get().selection)) return
+            const baseRange = currentPrimaryRange()
             if (baseRange == null) return
             const expanded = deps.expandRangeOverMerges(baseRange)
             if (mode === 'all') {
@@ -577,10 +406,12 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     })
                 }
             }
+            // Post-merge selection collapses to the merged cell.
             set({
-                selected: { row: expanded.startRow, col: expanded.startCol },
-                selectionRange: null,
-                selectionScope: 'cells',
+                selection: singleCellSelection({
+                    row: expanded.startRow,
+                    col: expanded.startCol,
+                }),
                 contextTarget: null,
             })
         }
@@ -590,26 +421,18 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
 
             selectCell: cell => {
                 // Snap to the merge anchor when the click landed on a
-                // covered cell — covered cells render nothing of their
-                // own and only the anchor is interactable.
+                // covered cell.
                 const snapped = deps.resolveMergeAnchor(cell.row, cell.col)
                 const target: SelectedCell = { row: snapped.row, col: snapped.col }
                 commitInflight(target)
                 refs.lastRefSlice.current = null
-                // If a comment popover is open and the user picks a
-                // different cell, dismiss it — the popover is anchored
-                // to a single cell and the new selection means the user
-                // moved on. Same cell click is still a no-op for the
-                // popover.
                 const prevCommentTarget = get().commentTarget
                 const closeComment =
                     prevCommentTarget != null &&
                     (prevCommentTarget.cell.row !== target.row ||
                         prevCommentTarget.cell.col !== target.col)
                 set({
-                    selected: target,
-                    selectionRange: null,
-                    selectionScope: 'cells',
+                    selection: singleCellSelection(target),
                     editSession: null,
                     pendingSelection: null,
                     commentTarget: closeComment ? null : prevCommentTarget,
@@ -621,14 +444,16 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 const anchor = { row, col: 1 }
                 commitInflight(anchor)
                 set({
-                    selected: anchor,
-                    selectionRange: {
-                        startRow: row,
-                        endRow: row,
-                        startCol: 1,
-                        endCol: Math.max(1, colCount),
-                    },
-                    selectionScope: 'row',
+                    selection: singleRectSelection(
+                        anchor,
+                        {
+                            startRow: row,
+                            endRow: row,
+                            startCol: 1,
+                            endCol: Math.max(1, colCount),
+                        },
+                        'row'
+                    ),
                     editSession: null,
                     pendingSelection: null,
                 })
@@ -639,60 +464,340 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 const anchor = { row: 1, col }
                 commitInflight(anchor)
                 set({
-                    selected: anchor,
-                    selectionRange: {
-                        startRow: 1,
-                        endRow: Math.max(1, rowCount),
-                        startCol: col,
-                        endCol: col,
-                    },
-                    selectionScope: 'column',
+                    selection: singleRectSelection(
+                        anchor,
+                        {
+                            startRow: 1,
+                            endRow: Math.max(1, rowCount),
+                            startCol: col,
+                            endCol: col,
+                        },
+                        'column'
+                    ),
                     editSession: null,
                     pendingSelection: null,
                 })
             },
 
-            extendSelectionTo: cell => {
-                // commitInflight FIRST: extending the selection ends
-                // any edit session on a different cell, and that draft
-                // must be persisted (mirror of selectCell — the gate
-                // would silently drop the user's typing otherwise).
-                // Calling unconditionally is safe: commitInflight
-                // no-ops when there is no edit session, when
-                // readOnly, or when the edit target equals `cell`.
-                commitInflight(cell)
+            addSubRange: cell => {
+                // Ctrl-click on a body cell. Three cases:
+                //   1. Nothing selected → equivalent to selectCell.
+                //   2. Cell IS the anchor of some existing sub-range
+                //      AND ranges.length > 1 → drop that sub-range
+                //      (Sheets-style deselect, plan §6.a).
+                //   3. Cell is inside any sub-range but isn't an
+                //      anchor → no-op (plan §6.b — we don't
+                //      implement hole-punching; Sheets does but the
+                //      UX is widely disliked).
+                //   4. Otherwise → append a new single-cell sub-range
+                //      and snap it to merge bounds. Primary anchor
+                //      moves to the just-clicked cell.
                 refs.lastRefSlice.current = null
-                const anchor = get().selected
-                if (anchor == null) {
-                    // No anchor yet — fall through to a plain
-                    // single-cell select so the gesture isn't lost.
+                const snapped = deps.resolveMergeAnchor(cell.row, cell.col)
+                const target: SelectedCell = { row: snapped.row, col: snapped.col }
+                commitInflight(target)
+                const state = get()
+                if (state.selection == null) {
                     set({
-                        selected: cell,
-                        selectionRange: null,
-                        selectionScope: 'cells',
+                        selection: singleCellSelection(target),
                         editSession: null,
                         pendingSelection: null,
                     })
                     return
                 }
+                // Case 2: clicked the anchor of an existing sub-range
+                // and we have more than one — remove that sub-range.
+                const ranges = state.selection.ranges
+                const anchorIdx = ranges.findIndex(
+                    sr => sr.anchor.row === target.row && sr.anchor.col === target.col
+                )
+                if (anchorIdx >= 0 && ranges.length > 1) {
+                    const next: SubRange[] = ranges.slice(0, anchorIdx).concat(ranges.slice(anchorIdx + 1))
+                    set({
+                        selection: { ranges: next },
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                // Case 3: inside any sub-range but not an anchor — no-op.
+                if (subRangeAtCell(state.selection, target.row, target.col) != null) {
+                    return
+                }
+                // Case 4: append a new sub-range. Expand over merges
+                // so a Ctrl-click on a covered cell gets the full
+                // merge footprint (see plan Risk 4).
+                const singleRange: CellRange = {
+                    startRow: target.row,
+                    endRow: target.row,
+                    startCol: target.col,
+                    endCol: target.col,
+                }
+                const expanded = deps.expandRangeOverMerges(singleRange)
+                const newSubRange: SubRange = {
+                    anchor: target,
+                    range: expanded,
+                    scope: 'cells',
+                }
+                set({
+                    selection: { ranges: [...ranges, newSubRange] },
+                    editSession: null,
+                    pendingSelection: null,
+                })
+            },
+
+            addColumnSubRange: (col, rowCount) => {
+                refs.lastRefSlice.current = null
+                const anchor: SelectedCell = { row: 1, col }
+                commitInflight(anchor)
+                const state = get()
+                const range: CellRange = {
+                    startRow: 1,
+                    endRow: Math.max(1, rowCount),
+                    startCol: col,
+                    endCol: col,
+                }
+                if (state.selection == null) {
+                    set({
+                        selection: singleRectSelection(anchor, range, 'column'),
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                const ranges = state.selection.ranges
+                const anchorIdx = ranges.findIndex(
+                    sr => sr.anchor.row === 1 && sr.anchor.col === col && sr.scope === 'column'
+                )
+                if (anchorIdx >= 0 && ranges.length > 1) {
+                    const next = ranges.slice(0, anchorIdx).concat(ranges.slice(anchorIdx + 1))
+                    set({
+                        selection: { ranges: next },
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                // Re-Ctrl-clicking the same column header on a
+                // single-rectangle selection is a no-op (same as
+                // body Ctrl-click on the sole anchor).
+                if (anchorIdx >= 0) return
+                const newSubRange: SubRange = { anchor, range, scope: 'column' }
+                set({
+                    selection: { ranges: [...ranges, newSubRange] },
+                    editSession: null,
+                    pendingSelection: null,
+                })
+            },
+
+            addRowSubRange: (row, colCount) => {
+                refs.lastRefSlice.current = null
+                const anchor: SelectedCell = { row, col: 1 }
+                commitInflight(anchor)
+                const state = get()
+                const range: CellRange = {
+                    startRow: row,
+                    endRow: row,
+                    startCol: 1,
+                    endCol: Math.max(1, colCount),
+                }
+                if (state.selection == null) {
+                    set({
+                        selection: singleRectSelection(anchor, range, 'row'),
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                const ranges = state.selection.ranges
+                const anchorIdx = ranges.findIndex(
+                    sr => sr.anchor.row === row && sr.anchor.col === 1 && sr.scope === 'row'
+                )
+                if (anchorIdx >= 0 && ranges.length > 1) {
+                    const next = ranges.slice(0, anchorIdx).concat(ranges.slice(anchorIdx + 1))
+                    set({
+                        selection: { ranges: next },
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                if (anchorIdx >= 0) return
+                const newSubRange: SubRange = { anchor, range, scope: 'row' }
+                set({
+                    selection: { ranges: [...ranges, newSubRange] },
+                    editSession: null,
+                    pendingSelection: null,
+                })
+            },
+
+            extendActiveColumnTo: (col, rowCount) => {
+                refs.lastRefSlice.current = null
+                const state = get()
+                commitInflight({ row: 1, col })
+                if (state.selection == null || state.selection.ranges.length === 0) {
+                    // No anchor — treat as plain selectColumn.
+                    set({
+                        selection: singleRectSelection(
+                            { row: 1, col },
+                            {
+                                startRow: 1,
+                                endRow: Math.max(1, rowCount),
+                                startCol: col,
+                                endCol: col,
+                            },
+                            'column'
+                        ),
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                const ranges = state.selection.ranges
+                const last = ranges[ranges.length - 1]
+                if (last.scope !== 'column') {
+                    // Cross-scope Shift-extend isn't supported in
+                    // Sheets either — fall back to a fresh column
+                    // selection that replaces the whole selection.
+                    set({
+                        selection: singleRectSelection(
+                            { row: 1, col },
+                            {
+                                startRow: 1,
+                                endRow: Math.max(1, rowCount),
+                                startCol: col,
+                                endCol: col,
+                            },
+                            'column'
+                        ),
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                const anchorCol = last.anchor.col
+                const startCol = Math.min(anchorCol, col)
+                const endCol = Math.max(anchorCol, col)
+                const newRange: CellRange = {
+                    startRow: 1,
+                    endRow: Math.max(1, rowCount),
+                    startCol,
+                    endCol,
+                }
+                const next = ranges.slice(0, -1)
+                next.push({ anchor: last.anchor, range: newRange, scope: 'column' })
+                set({
+                    selection: { ranges: next },
+                    editSession: null,
+                    pendingSelection: null,
+                })
+            },
+
+            extendActiveRowTo: (row, colCount) => {
+                refs.lastRefSlice.current = null
+                const state = get()
+                commitInflight({ row, col: 1 })
+                if (state.selection == null || state.selection.ranges.length === 0) {
+                    set({
+                        selection: singleRectSelection(
+                            { row, col: 1 },
+                            {
+                                startRow: row,
+                                endRow: row,
+                                startCol: 1,
+                                endCol: Math.max(1, colCount),
+                            },
+                            'row'
+                        ),
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                const ranges = state.selection.ranges
+                const last = ranges[ranges.length - 1]
+                if (last.scope !== 'row') {
+                    set({
+                        selection: singleRectSelection(
+                            { row, col: 1 },
+                            {
+                                startRow: row,
+                                endRow: row,
+                                startCol: 1,
+                                endCol: Math.max(1, colCount),
+                            },
+                            'row'
+                        ),
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                const anchorRow = last.anchor.row
+                const startRow = Math.min(anchorRow, row)
+                const endRow = Math.max(anchorRow, row)
+                const newRange: CellRange = {
+                    startRow,
+                    endRow,
+                    startCol: 1,
+                    endCol: Math.max(1, colCount),
+                }
+                const next = ranges.slice(0, -1)
+                next.push({ anchor: last.anchor, range: newRange, scope: 'row' })
+                set({
+                    selection: { ranges: next },
+                    editSession: null,
+                    pendingSelection: null,
+                })
+            },
+
+            extendActiveRangeTo: cell => {
+                commitInflight(cell)
+                refs.lastRefSlice.current = null
+                const state = get()
+                if (state.selection == null || state.selection.ranges.length === 0) {
+                    // No anchor — fall through to a plain single-cell
+                    // select so the gesture isn't lost.
+                    set({
+                        selection: singleCellSelection(cell),
+                        editSession: null,
+                        pendingSelection: null,
+                    })
+                    return
+                }
+                const ranges = state.selection.ranges
+                const last = ranges[ranges.length - 1]
+                const anchor = last.anchor
                 const naive: CellRange = {
                     startRow: Math.min(anchor.row, cell.row),
                     endRow: Math.max(anchor.row, cell.row),
                     startCol: Math.min(anchor.col, cell.col),
                     endCol: Math.max(anchor.col, cell.col),
                 }
-                // Grow over any merges the rectangle straddles so a
-                // shift-click into the middle of a merged cell still
-                // selects the full merge footprint.
                 const range = deps.expandRangeOverMerges(naive)
-                // Single-cell range collapses to null so the rest of the
-                // store stays in the canonical "no range" form.
-                const single = range.startRow === range.endRow && range.startCol === range.endCol
+                const next = ranges.slice(0, -1)
+                next.push({ anchor, range, scope: last.scope })
                 set({
-                    selectionRange: single ? null : range,
-                    selectionScope: 'cells',
+                    selection: { ranges: next },
                     editSession: null,
                     pendingSelection: null,
+                })
+            },
+
+            collapseToPrimary: () => {
+                const state = get()
+                const anchor = readPrimaryAnchor(state.selection)
+                if (anchor == null) return
+                if (state.selection != null && state.selection.ranges.length === 1) {
+                    // Already collapsed — verify it's a single-cell
+                    // range. If not, leave alone; this action is only
+                    // meaningful for "collapse disjoint to single
+                    // cell" per plan §6.c.
+                    const r = state.selection.ranges[0].range
+                    if (r.startRow === r.endRow && r.startCol === r.endCol) return
+                }
+                set({
+                    selection: singleCellSelection(anchor),
                 })
             },
 
@@ -702,9 +807,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 refs.editCursor.current = { start: cursor, end: cursor }
                 refs.lastRefSlice.current = null
                 set({
-                    selected: cell,
-                    selectionRange: null,
-                    selectionScope: 'cells',
+                    selection: singleCellSelection(cell),
                     editSession: { row: cell.row, col: cell.col, draft: initialDraft },
                     pendingSelection: { start: cursor, end: cursor },
                     activeSurface: 'cell',
@@ -712,19 +815,8 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             },
 
             setEditDraft: (row, col, draft) => {
-                // Manual typing supersedes any pending ref-tap
-                // insertion; the slice memo would otherwise mis-replace
-                // user text.
                 refs.lastRefSlice.current = null
                 const prev = get().editSession
-                // When this is the first draft change for a fresh edit
-                // session (no prior session, or session targeted a
-                // different cell), snap the cursor to the end of the
-                // draft. Without this the cursor ref carries the
-                // position from a previous edit and downstream
-                // consumers (autocomplete dropdown, cell-ref insertion)
-                // read a stale value before the browser's
-                // selectionchange event refreshes it.
                 const isFreshSession = prev == null || prev.row !== row || prev.col !== col
                 if (isFreshSession || refs.editCursor.current.end > draft.length) {
                     refs.editCursor.current = { start: draft.length, end: draft.length }
@@ -735,11 +827,6 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             },
 
             setEditSelection: (row, col, start, end) => {
-                // Update the cursor ref so callbacks read the live
-                // value, but don't store in state — selection-only
-                // changes shouldn't re-render every cell. Clear any
-                // pending controlled-selection override now that the
-                // input has reported its actual cursor.
                 const cur = get().editSession
                 if (cur == null || cur.row !== row || cur.col !== col) return
                 refs.editCursor.current = { start, end }
@@ -750,9 +837,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 if (!deps.readOnly) deps.writeCell(row, col, value)
                 refs.lastRefSlice.current = null
                 set({
-                    selected: { row, col },
-                    selectionRange: null,
-                    selectionScope: 'cells',
+                    selection: singleCellSelection({ row, col }),
                     editSession: null,
                     pendingSelection: null,
                 })
@@ -770,11 +855,13 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
 
             clearSelection: () => {
                 if (deps.readOnly) return
-                const range = currentSelectionRange()
-                if (range == null) return
-                for (let r = range.startRow; r <= range.endRow; r++) {
-                    for (let c = range.startCol; c <= range.endCol; c++) {
-                        deps.writeCell(r, c, '')
+                const selection = get().selection
+                if (selection == null) return
+                for (const sr of selection.ranges) {
+                    for (let r = sr.range.startRow; r <= sr.range.endRow; r++) {
+                        for (let c = sr.range.startCol; c <= sr.range.endCol; c++) {
+                            deps.writeCell(r, c, '')
+                        }
                     }
                 }
             },
@@ -881,28 +968,20 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             },
 
             openCellContextMenu: (row, col, x, y) => {
-                // Right-clicking inside an existing multi-cell range
-                // keeps the range alive so range-targeted menu items
-                // (clear contents, etc.) still apply to the whole
-                // selection. Right-clicking outside the range collapses
-                // to a single-cell selection on the clicked cell.
-                //
-                // Read-then-commit ordering matters: we capture the
-                // pre-commit selectionRange BEFORE commitInflight,
-                // because today commitInflight only writes the cell
-                // and doesn't touch selectionRange — but if that ever
-                // changes (e.g. an auto-deselect on commit), this
-                // branch would silently lose the range. The captured
-                // `state` snapshot keeps the contract explicit.
+                // Right-clicking inside an existing sub-range keeps
+                // the whole selection alive (including disjoint sub-
+                // ranges) so range-targeted menu items still apply.
+                // Right-clicking outside any sub-range collapses to
+                // a single-cell selection on the clicked cell.
                 const state = get()
-                const insideRange =
-                    state.selectionRange != null &&
-                    rangeContainsCell(state.selectionRange, row, col)
+                const insideAny =
+                    state.selection != null &&
+                    subRangeAtCell(state.selection, row, col) != null
                 commitInflight({ row, col })
                 set({
-                    selected: insideRange ? state.selected : { row, col },
-                    selectionRange: insideRange ? state.selectionRange : null,
-                    selectionScope: insideRange ? state.selectionScope : 'cells',
+                    selection: insideAny
+                        ? state.selection
+                        : singleCellSelection({ row, col }),
                     editSession: null,
                     contextTarget: { cell: { row, col }, cursor: { x, y } },
                 })
@@ -913,9 +992,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             openCommentPopover: (row, col, x, y) => {
                 commitInflight({ row, col })
                 set({
-                    selected: { row, col },
-                    selectionRange: null,
-                    selectionScope: 'cells',
+                    selection: singleCellSelection({ row, col }),
                     editSession: null,
                     contextTarget: null,
                     commentTarget: { cell: { row, col }, cursor: { x, y } },
@@ -930,19 +1007,17 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             },
             closeHandleMenu: () => set({ handleMenu: null }),
 
-            // Structural mutations. After an insert above row N,
-            // anything previously at row >= N now lives at row +count;
-            // shift the anchor and range to follow. After a delete
-            // starting at row F covering C rows: rows in [F, F+C) are
-            // gone, rows >= F+C shift down by C, and the anchor clamps
-            // into the new bounds.
+            // Structural mutations route by the primary (last) sub-
+            // range. Other sub-ranges follow the same shift via
+            // shiftSubRangesForInsert / clampSubRangesForDelete so a
+            // disjoint selection remains coherent post-mutation.
             insertRowsAtSelection: (position, displayedRowCount) => {
                 if (deps.readOnly) return
                 const state = get()
-                if (state.selected == null) return
-                const range = state.selectionRange
-                const startRow = range?.startRow ?? state.selected.row
-                const endRow = range?.endRow ?? state.selected.row
+                const primary = readPrimaryRange(state.selection)
+                if (primary == null) return
+                const startRow = primary.startRow
+                const endRow = primary.endRow
                 const atRow = position === 'above' ? startRow : endRow
                 const count = endRow - startRow + 1
                 const insertAt = position === 'above' ? atRow : atRow + 1
@@ -954,12 +1029,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     displayedRowCount,
                 })
                 set({
-                    selected: {
-                        row: shiftIndexForInsert(state.selected.row, insertAt, count),
-                        col: state.selected.col,
-                    },
-                    selectionRange:
-                        range != null ? shiftRangeForInsert(range, 'row', insertAt, count) : null,
+                    selection: shiftSubRangesForInsert(state.selection, 'row', insertAt, count),
                     contextTarget: null,
                 })
             },
@@ -967,10 +1037,10 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             insertColumnsAtSelection: (position, displayedColCount) => {
                 if (deps.readOnly) return
                 const state = get()
-                if (state.selected == null) return
-                const range = state.selectionRange
-                const startCol = range?.startCol ?? state.selected.col
-                const endCol = range?.endCol ?? state.selected.col
+                const primary = readPrimaryRange(state.selection)
+                if (primary == null) return
+                const startCol = primary.startCol
+                const endCol = primary.endCol
                 const atCol = position === 'left' ? startCol : endCol
                 const count = endCol - startCol + 1
                 const insertAt = position === 'left' ? atCol : atCol + 1
@@ -982,12 +1052,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     displayedColCount,
                 })
                 set({
-                    selected: {
-                        row: state.selected.row,
-                        col: shiftIndexForInsert(state.selected.col, insertAt, count),
-                    },
-                    selectionRange:
-                        range != null ? shiftRangeForInsert(range, 'col', insertAt, count) : null,
+                    selection: shiftSubRangesForInsert(state.selection, 'col', insertAt, count),
                     contextTarget: null,
                 })
             },
@@ -995,13 +1060,10 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             deleteSelectedRows: currentRowCount => {
                 if (deps.readOnly) return
                 const state = get()
-                if (state.selected == null) return
-                const range = state.selectionRange
-                const fromRow = range?.startRow ?? state.selected.row
-                const requestedCount = range != null ? range.endRow - range.startRow + 1 : 1
-                // Mirror the floor-at-1 logic in deleteRows so the
-                // selection update uses the same effective `count` the
-                // mutation will apply.
+                const primary = readPrimaryRange(state.selection)
+                if (primary == null) return
+                const fromRow = primary.startRow
+                const requestedCount = primary.endRow - primary.startRow + 1
                 const maxDeletable = Math.max(0, currentRowCount - 1)
                 const count = Math.min(requestedCount, maxDeletable, currentRowCount - fromRow + 1)
                 if (count <= 0) {
@@ -1010,13 +1072,19 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 }
                 deps.applyStructuralMutation({ kind: 'deleteRows', fromRow, count })
                 const newRowCount = Math.max(1, currentRowCount - count)
+                // Collapse to the clamped anchor of the primary sub-
+                // range — matches old single-rectangle behavior.
+                const primaryAnchor = readPrimaryAnchor(state.selection)
+                const nextRow = primaryAnchor == null
+                    ? 1
+                    : primaryAnchor.row < fromRow
+                        ? primaryAnchor.row
+                        : primaryAnchor.row >= fromRow + count
+                            ? primaryAnchor.row - count
+                            : Math.min(fromRow, newRowCount)
+                const nextCol = primaryAnchor?.col ?? 1
                 set({
-                    selected: {
-                        row: clampIndexForDelete(state.selected.row, fromRow, count, newRowCount),
-                        col: state.selected.col,
-                    },
-                    selectionRange: null,
-                    selectionScope: 'cells',
+                    selection: singleCellSelection({ row: nextRow, col: nextCol }),
                     contextTarget: null,
                 })
             },
@@ -1024,10 +1092,10 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             deleteSelectedColumns: currentColCount => {
                 if (deps.readOnly) return
                 const state = get()
-                if (state.selected == null) return
-                const range = state.selectionRange
-                const fromCol = range?.startCol ?? state.selected.col
-                const requestedCount = range != null ? range.endCol - range.startCol + 1 : 1
+                const primary = readPrimaryRange(state.selection)
+                if (primary == null) return
+                const fromCol = primary.startCol
+                const requestedCount = primary.endCol - primary.startCol + 1
                 const maxDeletable = Math.max(0, currentColCount - 1)
                 const count = Math.min(requestedCount, maxDeletable, currentColCount - fromCol + 1)
                 if (count <= 0) {
@@ -1036,13 +1104,17 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 }
                 deps.applyStructuralMutation({ kind: 'deleteColumns', fromCol, count })
                 const newColCount = Math.max(1, currentColCount - count)
+                const primaryAnchor = readPrimaryAnchor(state.selection)
+                const nextCol = primaryAnchor == null
+                    ? 1
+                    : primaryAnchor.col < fromCol
+                        ? primaryAnchor.col
+                        : primaryAnchor.col >= fromCol + count
+                            ? primaryAnchor.col - count
+                            : Math.min(fromCol, newColCount)
+                const nextRow = primaryAnchor?.row ?? 1
                 set({
-                    selected: {
-                        row: state.selected.row,
-                        col: clampIndexForDelete(state.selected.col, fromCol, count, newColCount),
-                    },
-                    selectionRange: null,
-                    selectionScope: 'cells',
+                    selection: singleCellSelection({ row: nextRow, col: nextCol }),
                     contextTarget: null,
                 })
             },
@@ -1059,17 +1131,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 const insertAt = position === 'above' ? index : index + 1
                 const state = get()
                 set({
-                    selected:
-                        state.selected != null
-                            ? {
-                                  row: shiftIndexForInsert(state.selected.row, insertAt, 1),
-                                  col: state.selected.col,
-                              }
-                            : state.selected,
-                    selectionRange:
-                        state.selectionRange != null
-                            ? shiftRangeForInsert(state.selectionRange, 'row', insertAt, 1)
-                            : null,
+                    selection: shiftSubRangesForInsert(state.selection, 'row', insertAt, 1),
                     handleMenu: null,
                 })
             },
@@ -1086,17 +1148,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 const insertAt = position === 'left' ? index : index + 1
                 const state = get()
                 set({
-                    selected:
-                        state.selected != null
-                            ? {
-                                  row: state.selected.row,
-                                  col: shiftIndexForInsert(state.selected.col, insertAt, 1),
-                              }
-                            : state.selected,
-                    selectionRange:
-                        state.selectionRange != null
-                            ? shiftRangeForInsert(state.selectionRange, 'col', insertAt, 1)
-                            : null,
+                    selection: shiftSubRangesForInsert(state.selection, 'col', insertAt, 1),
                     handleMenu: null,
                 })
             },
@@ -1110,21 +1162,18 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 deps.applyStructuralMutation({ kind: 'deleteRows', fromRow: index, count: 1 })
                 const newRowCount = currentRowCount - 1
                 const state = get()
+                // Header-handle deletes don't operate from the
+                // selection — they target a specific row index — but
+                // the *current* selection should still follow the
+                // shift so the highlight stays meaningful.
                 set({
-                    selected:
-                        state.selected != null
-                            ? {
-                                  row: clampIndexForDelete(
-                                      state.selected.row,
-                                      index,
-                                      1,
-                                      newRowCount
-                                  ),
-                                  col: state.selected.col,
-                              }
-                            : state.selected,
-                    selectionRange: null,
-                    selectionScope: 'cells',
+                    selection: clampSubRangesForDelete(
+                        state.selection,
+                        'row',
+                        index,
+                        1,
+                        newRowCount
+                    ),
                     handleMenu: null,
                 })
             },
@@ -1139,20 +1188,13 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 const newColCount = currentColCount - 1
                 const state = get()
                 set({
-                    selected:
-                        state.selected != null
-                            ? {
-                                  row: state.selected.row,
-                                  col: clampIndexForDelete(
-                                      state.selected.col,
-                                      index,
-                                      1,
-                                      newColCount
-                                  ),
-                              }
-                            : state.selected,
-                    selectionRange: null,
-                    selectionScope: 'cells',
+                    selection: clampSubRangesForDelete(
+                        state.selection,
+                        'col',
+                        index,
+                        1,
+                        newColCount
+                    ),
                     handleMenu: null,
                 })
             },
@@ -1207,31 +1249,17 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             openFilterDropdown: col => set({ filterDropdownCol: col, contextTarget: null }),
             closeFilterDropdown: () => set({ filterDropdownCol: null }),
             setSortStatus: status => set({ sortStatus: status }),
+            setSelectionStatus: status => set({ selectionStatus: status }),
+            dismissSelectionStatus: () => set({ selectionStatus: null }),
 
-            // Fill-handle drag actions. The interesting bit is the
-            // *direction lock*: the dot can be dragged into either of
-            // four quadrants relative to the source's bottom-right
-            // corner, but v1 only fills down or right. Until the user
-            // moves strictly past the source's bottom or right edge,
-            // the drag is a no-op (destRange == sourceRange) and the
-            // direction stays "unlocked" — the placeholder 'down' has
-            // no observable effect because no cells are written. On
-            // the first move that escapes the source rectangle in a
-            // positive axis, we lock direction to whichever axis is
-            // larger (ties pick 'down', matching the placeholder).
-            // Once locked, the OTHER axis is pinned to the source's
-            // bounds for the rest of the drag — Sheets refuses to
-            // switch axes mid-drag, and so do we. A drag-back into
-            // the source collapses destRange to sourceRange but keeps
-            // the lock; if the user then drags out again on the same
-            // axis, the existing lock applies; on the perpendicular
-            // axis, the lock holds and the drag is ignored on that
-            // axis until they restart the gesture.
             fillDragStart: () => {
                 if (deps.readOnly) return false
                 const state = get()
-                if (state.selected == null) return false
-                const sourceRange = effectiveRange(state.selected, state.selectionRange)
+                // Fill on disjoint selection is unsupported — Sheets
+                // hides the handle and so do we. The overlay's own
+                // hide guard is primary; this is defense in depth.
+                if (isDisjointSelection(state.selection)) return false
+                const sourceRange = readPrimaryRange(state.selection)
                 if (sourceRange == null) return false
                 set({
                     fillDrag: {
@@ -1251,8 +1279,6 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 const dRow = target.row - sourceRange.endRow
                 const dCol = target.col - sourceRange.endCol
 
-                // Drag-back into source (or above/left of it) — clamp
-                // dest to source. Direction lock, if any, is preserved.
                 if (dRow <= 0 && dCol <= 0) {
                     if (rangesEqual(drag.destRange, sourceRange)) return
                     set({ fillDrag: { ...drag, destRange: { ...sourceRange } } })
@@ -1262,17 +1288,10 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 let nextDirection = direction
                 let nextLocked = directionLocked
                 if (!directionLocked) {
-                    // First escape from the source rectangle: lock to
-                    // the dominant axis. Ties go to 'down', matching
-                    // the placeholder.
                     nextDirection = dRow >= dCol ? 'down' : 'right'
                     nextLocked = true
                 }
 
-                // Once locked, the perpendicular axis is pinned to
-                // source bounds. If the locked axis isn't extended
-                // (e.g. user is dragging right but we're locked to
-                // 'down'), the drag is a no-op on this axis.
                 let destRange: CellRange
                 if (nextDirection === 'down') {
                     if (dRow <= 0) {
@@ -1352,18 +1371,18 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     return
                 }
                 deps.applyFill({ sourceRange, destRange, direction })
-                // Post-fill selection covers the entire dest
-                // rectangle; collapse to a null range when dest is
-                // somehow a single cell so the rest of the store
-                // stays in canonical form (matches selectCell /
-                // extendSelectionTo).
-                const single =
-                    destRange.startRow === destRange.endRow &&
-                    destRange.startCol === destRange.endCol
+                // Post-fill selection covers the entire dest rectangle.
+                const next: Selection = {
+                    ranges: [
+                        {
+                            anchor: { row: destRange.startRow, col: destRange.startCol },
+                            range: { ...destRange },
+                            scope: 'cells',
+                        },
+                    ],
+                }
                 set({
-                    selected: { row: destRange.startRow, col: destRange.startCol },
-                    selectionRange: single ? null : { ...destRange },
-                    selectionScope: 'cells',
+                    selection: next,
                     fillDrag: null,
                 })
             },
@@ -1382,7 +1401,8 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
 
             unmergeSelection: () => {
                 if (deps.readOnly) return
-                const baseRange = currentSelectionRange()
+                if (isDisjointSelection(get().selection)) return
+                const baseRange = currentPrimaryRange()
                 if (baseRange == null) return
                 for (const m of deps.findMergesInRange(baseRange)) {
                     deps.unmergeAt(m.anchorRow, m.anchorCol)
@@ -1393,7 +1413,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
     })
 
     // Reset suggestionIndex and dismissedDraft when the edit session
-    // ends — these are tied to a live edit and shouldn't carry over.
+    // ends.
     store.subscribe((state, prev) => {
         if (state.editSession == null && prev.editSession != null) {
             const patch: Partial<GridState> = {}
@@ -1407,10 +1427,14 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             state.dismissedDraft != null &&
             state.dismissedDraft !== state.editSession.draft
         ) {
-            // User typed past the dismissed point — re-arm the popover.
             store.setState({ dismissedDraft: null })
         }
     })
 
     return Object.assign(store, { refs })
 }
+
+// Re-export helpers for callers that historically imported them from
+// the store module. The helpers live in lib/selection-range.ts; this
+// keeps the public surface where consumers already look.
+export { rangeContainsCell }

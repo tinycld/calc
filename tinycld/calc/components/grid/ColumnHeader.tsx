@@ -8,6 +8,7 @@ import {
 } from '../../hooks/use-column-resize'
 import type { GridStoreApi } from '../../hooks/grid-store'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
+import { primaryAnchor } from '../../lib/selection-range'
 import { columnLabel } from '../../lib/workbook-types'
 import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT } from './constants'
 
@@ -52,13 +53,19 @@ export function ColumnHeader({
     activeFilterCols,
 }: ColumnHeaderProps) {
     const borderColor = useThemeColor('border')
-    const activeCol = useGridStore(s => s.selected?.col ?? null)
+    const activeCol = useGridStore(s => primaryAnchor(s.selection)?.col ?? null)
     // Mirror of RowHeader: bolden the column label when the user
-    // selected the WHOLE column (scope='column') vs. clicking a body
-    // cell that happens to live in this column.
-    const colScopeActive = useGridStore(
-        s => s.selectionScope === 'column' && s.selected?.col === activeCol
-    )
+    // selected the WHOLE column (any sub-range with scope='column'
+    // anchored at this col). Disjoint column selections light up
+    // every selected column header, matching Sheets.
+    const colScopeActive = useGridStore(s => {
+        if (s.selection == null) return false
+        if (activeCol == null) return false
+        for (const sr of s.selection.ranges) {
+            if (sr.scope === 'column' && sr.anchor.col === activeCol) return true
+        }
+        return false
+    })
     const store = useGridStoreApi()
     const muted = useThemeColor('muted-foreground')
     const accent = useThemeColor('accent')

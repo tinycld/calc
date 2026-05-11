@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { PrintSelection } from '../../lib/print/snapshot'
+import { isDisjoint, primaryRange } from '../../lib/selection-range'
 import { usePrintDialog } from '../use-print-dialog'
 import { useGridStore } from '../use-grid-store'
 
@@ -17,19 +18,34 @@ export function useGridPrintDialog(sheetId: string): GridPrintDialog {
     const isOpen = usePrintDialog(s => s.isOpen)
     const open = usePrintDialog(s => s.open)
     const close = usePrintDialog(s => s.close)
-    const selectionRange = useGridStore(s => s.selectionRange)
+    // Tier B: "current selection" option is meaningful only for a
+    // single contiguous rectangle. On a disjoint selection
+    // currentSelection is null and the dialog hides the option.
+    const selection = useGridStore(s => s.selection)
+    const disjoint = useGridStore(s => isDisjoint(s.selection))
     const currentSelection = useMemo<PrintSelection | null>(() => {
-        if (selectionRange == null) return null
+        if (disjoint) return null
+        const range = primaryRange(selection)
+        if (range == null) return null
+        // Single-cell ranges fall through with no current-selection
+        // option (matches the legacy behavior: only multi-cell
+        // ranges produce a meaningful print rectangle).
+        if (
+            range.startRow === range.endRow &&
+            range.startCol === range.endCol
+        ) {
+            return null
+        }
         return {
             sheetId,
             rect: {
-                startRow: selectionRange.startRow,
-                startCol: selectionRange.startCol,
-                endRow: selectionRange.endRow,
-                endCol: selectionRange.endCol,
+                startRow: range.startRow,
+                startCol: range.startCol,
+                endRow: range.endRow,
+                endCol: range.endCol,
             },
         }
-    }, [selectionRange, sheetId])
+    }, [selection, disjoint, sheetId])
 
     return { isOpen, open, close, currentSelection }
 }

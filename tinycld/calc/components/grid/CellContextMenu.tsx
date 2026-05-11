@@ -9,7 +9,11 @@ import { setYCell } from '../../hooks/use-y-cell'
 import { useYSheets } from '../../hooks/use-y-sheets'
 import { applyFilter, clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
-import { effectiveRange, forEachCellInRange } from '../../lib/selection-range'
+import {
+    forEachCellInSelection,
+    isDisjoint,
+    primaryRange,
+} from '../../lib/selection-range'
 import { detectHeaderRow, sortRange } from '../../lib/sort'
 import { columnLabel } from '../../lib/workbook-types'
 import { MIN_COLS, MIN_ROWS } from './constants'
@@ -31,10 +35,10 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     // Read the live selection so range-aware menu actions (clear,
     // toggle bold/italic) cover every cell currently highlighted.
     // openCellContextMenu has already collapsed the range to a single
-    // cell when the right-click landed outside any prior range, so
-    // this naturally reduces to single-cell when there's no range.
-    const selected = useGridStore(s => s.selected)
-    const selectionRange = useGridStore(s => s.selectionRange)
+    // cell when the right-click landed outside any prior sub-range,
+    // so this naturally reduces to single-cell when there's no range.
+    const selection = useGridStore(s => s.selection)
+    const disjoint = useGridStore(s => isDisjoint(s.selection))
     const store = useGridStoreApi()
     const onClose = useCallback(() => store.getState().closeCellContextMenu(), [store])
     const contentRef = useRef<View | null>(null)
@@ -74,7 +78,10 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
         [onClose]
     )
 
-    const range = effectiveRange(selected, selectionRange)
+    // Tier B consumer: structural insert/delete and sort/filter
+    // route by the primary sub-range (last). Disjoint sub-ranges
+    // come along for the shift but the primary drives the op.
+    const range = primaryRange(selection)
     const rowSpan = range != null ? range.endRow - range.startRow + 1 : 1
     const colSpan = range != null ? range.endCol - range.startCol + 1 : 1
 
@@ -115,11 +122,11 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     )
 
     const onClear = useCallback(() => {
-        if (range == null || doc == null) return
-        forEachCellInRange(range, (row, col) => {
+        if (selection == null || doc == null) return
+        forEachCellInSelection(selection, (row, col) => {
             setYCell(doc, sheetId, row, col, '')
         })
-    }, [doc, sheetId, range])
+    }, [doc, sheetId, selection])
 
     const clipboard = useClipboard({ doc, sheetId, store })
     // Fire-and-forget wrappers — async errors are swallowed inside the
@@ -156,21 +163,32 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     const frozenRows = sheet?.frozenRows ?? 0
     const frozenCols = sheet?.frozenCols ?? 0
     const hasFreeze = frozenRows > 0 || frozenCols > 0
-    const bottomRow = range?.endRow ?? selected?.row ?? null
-    const rightCol = range?.endCol ?? selected?.col ?? null
+    const bottomRow = range?.endRow ?? null
+    const rightCol = range?.endCol ?? null
 
+    // Phase 5: iterate every sub-range so a disjoint selection
+    // bold/italic toggles all rectangles. The mixed-toggle semantic
+    // (any-off → all-on) is preserved per sub-range; cross-sub-range
+    // mixed-state is acceptable v1 behavior — Sheets behaves the
+    // same way.
     const onToggleBold = useCallback(() => {
-        if (range == null) return
-        toggleCellFontAttrInRange(doc, sheetId, range, 'bold')
-    }, [doc, sheetId, range])
+        if (selection == null) return
+        for (const sr of selection.ranges) {
+            toggleCellFontAttrInRange(doc, sheetId, sr.range, 'bold')
+        }
+    }, [doc, sheetId, selection])
 
     const onToggleItalic = useCallback(() => {
-        if (range == null) return
-        toggleCellFontAttrInRange(doc, sheetId, range, 'italic')
-    }, [doc, sheetId, range])
+        if (selection == null) return
+        for (const sr of selection.ranges) {
+            toggleCellFontAttrInRange(doc, sheetId, sr.range, 'italic')
+        }
+    }, [doc, sheetId, selection])
 
     const filterView = useFilterView(doc, sheetId)
-    const hasMultiCellRange = range != null && (rowSpan > 1 || colSpan > 1)
+    // Sort/filter only make sense on a single contiguous rectangle —
+    // hide the entries when the selection is disjoint (plan Tier B).
+    const hasMultiCellRange = range != null && !disjoint && (rowSpan > 1 || colSpan > 1)
 
     // Sort uses the active range's first column as the key. The
     // hasHeader flag is detected automatically — a one-shot sort menu
@@ -359,7 +377,10 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                         </>
                     ) : null}
                     {filterView == null ? (
-                        <Menu.Item onPress={onCreateFilter} isDisabled={range == null}>
+                        <Menu.Item
+                            onPress={onCreateFilter}
+                            isDisabled={range == null || disjoint}
+                        >
                             <Menu.ItemTitle>Create filter</Menu.ItemTitle>
                         </Menu.Item>
                     ) : (
@@ -368,10 +389,10 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                         </Menu.Item>
                     )}
                     <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onMergeAll}>
+                    <Menu.Item onPress={onMergeAll} isDisabled={disjoint}>
                         <Menu.ItemTitle>Merge cells</Menu.ItemTitle>
                     </Menu.Item>
-                    <Menu.Item onPress={onUnmergeMenuAction}>
+                    <Menu.Item onPress={onUnmergeMenuAction} isDisabled={disjoint}>
                         <Menu.ItemTitle>Unmerge</Menu.ItemTitle>
                     </Menu.Item>
                 </Menu.Content>

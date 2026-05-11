@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import type * as Y from 'yjs'
 import { applyFilter, clearFilter, type FilterDefinition } from '../../lib/filter'
-import { effectiveRange } from '../../lib/selection-range'
+import { isDisjoint, primaryRange } from '../../lib/selection-range'
 import { useFilterView } from '../use-filter-view'
 import type { GridStoreApi } from '../grid-store'
 
@@ -49,7 +49,12 @@ export function useGridFilterControls({
             clearFilter(doc, sheetId)
             return
         }
-        const range = effectiveRange(state.selected, state.selectionRange)
+        // Filter views are a single contiguous rectangle on yjs
+        // metadata — disjoint doesn't apply. Per plan Tier B, use
+        // primary sub-range; the UI affordance hides on disjoint
+        // (see CellContextMenu).
+        if (isDisjoint(state.selection)) return
+        const range = primaryRange(state.selection)
         if (range == null) return
         applyFilter(doc, sheetId, { range, criteria: {} })
     }, [doc, sheetId, store, filterView])

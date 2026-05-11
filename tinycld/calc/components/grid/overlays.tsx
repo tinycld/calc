@@ -4,6 +4,11 @@ import type { DragState } from '../../hooks/use-column-resize'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
 import type { RowDragState } from '../../hooks/use-row-resize'
+import {
+    isDisjoint,
+    primaryAnchor,
+    primaryRange,
+} from '../../lib/selection-range'
 import { locateCellAtGridCoord } from './style-helpers'
 
 interface RemoteOverlaysProps {
@@ -53,87 +58,88 @@ interface LocalSelectionOverlayProps {
     rowOffsets: Float64Array
 }
 
-// Renders the green selection rectangle. When a multi-cell range is
-// active the overlay paints a single outline around the whole
-// rectangle, plus a thinner inner outline on the anchor cell so the
-// user can still tell which cell is "primary" (the one that drives
-// the formula bar and toolbar indicators). When no range is active
-// the overlay collapses to the single anchor cell — same behavior as
-// the original single-cell selection ring.
+// Renders the green selection rectangles. One outer outline per
+// sub-range; the primary (last) sub-range additionally gets a thinner
+// inner anchor outline so the user can tell which cell drives the
+// formula bar / toolbar indicators. On a single-rectangle selection
+// (the N=1 case) the visual collapses to the original single-cell
+// ring and rectangle.
+//
+// Sub-ranges are painted in insertion order so the primary (last)
+// outline z-orders on top of any earlier overlapping outlines — see
+// plan Risk 6.
 //
 // Hidden during an edit session: the CellEditor's own border is the
 // active-edit affordance.
 export function LocalSelectionOverlay({ colOffsets, rowOffsets }: LocalSelectionOverlayProps) {
-    const selected = useGridStore(s => (s.editSession == null ? s.selected : null))
-    const range = useGridStore(s => (s.editSession == null ? s.selectionRange : null))
-    if (selected == null) return null
+    const selection = useGridStore(s => (s.editSession == null ? s.selection : null))
+    if (selection == null || selection.ranges.length === 0) return null
 
-    // Range bounds when a multi-cell range is active, otherwise the
-    // single anchor cell. The math is identical either way — a
-    // single-cell rectangle just degenerates to one cell's worth of
-    // width and height.
-    const startCol = range?.startCol ?? selected.col
-    const endCol = range?.endCol ?? selected.col
-    const startRow = range?.startRow ?? selected.row
-    const endRow = range?.endRow ?? selected.row
-
-    const left = colOffsets[startCol - 1] ?? 0
-    const right = colOffsets[endCol] ?? left
-    const width = right - left
-    if (width <= 0) return null
-    const top = rowOffsets[startRow - 1] ?? 0
-    const bottom = rowOffsets[endRow] ?? top
-    const height = bottom - top
-    if (height <= 0) return null
-
-    // Outer rectangle outline. When the range is just the anchor this
-    // is the only thing we draw — visually identical to the previous
-    // single-cell ring.
-    const outer = (
-        <View
-            pointerEvents="none"
-            style={{
-                position: 'absolute',
-                left,
-                top,
-                width,
-                height,
-                borderWidth: 2,
-                borderColor: '#22a06b',
-            }}
-        />
-    )
-
-    if (range == null) return outer
-
-    // Inner outline on the anchor — slightly thicker so it reads as
-    // "the primary cell within the range". Skipped when no range is
-    // active because the outer rectangle is already on the anchor.
-    const anchorLeft = colOffsets[selected.col - 1] ?? 0
-    const anchorRight = colOffsets[selected.col] ?? anchorLeft
-    const anchorWidth = anchorRight - anchorLeft
-    const anchorTop = rowOffsets[selected.row - 1] ?? 0
-    const anchorBottom = rowOffsets[selected.row] ?? anchorTop
-    const anchorHeight = anchorBottom - anchorTop
-    if (anchorWidth <= 0 || anchorHeight <= 0) return outer
-    return (
-        <>
-            {outer}
+    const primaryIdx = selection.ranges.length - 1
+    const overlays: React.ReactNode[] = []
+    for (let i = 0; i < selection.ranges.length; i++) {
+        const sr = selection.ranges[i]
+        const left = colOffsets[sr.range.startCol - 1] ?? 0
+        const right = colOffsets[sr.range.endCol] ?? left
+        const width = right - left
+        if (width <= 0) continue
+        const top = rowOffsets[sr.range.startRow - 1] ?? 0
+        const bottom = rowOffsets[sr.range.endRow] ?? top
+        const height = bottom - top
+        if (height <= 0) continue
+        overlays.push(
             <View
+                key={`sel-${i}`}
                 pointerEvents="none"
                 style={{
                     position: 'absolute',
-                    left: anchorLeft,
-                    top: anchorTop,
-                    width: anchorWidth,
-                    height: anchorHeight,
+                    left,
+                    top,
+                    width,
+                    height,
                     borderWidth: 2,
-                    borderColor: '#1a8757',
-                    backgroundColor: 'rgba(255, 255, 255, 0.0)',
+                    borderColor: '#22a06b',
                 }}
             />
-        </>
-    )
+        )
+    }
+
+    // Inner outline on the primary anchor — only meaningful when the
+    // primary sub-range is bigger than 1 cell (matches the original
+    // single-cell behavior of NOT double-drawing). The anchor sits
+    // inside the primary sub-range by invariant.
+    const primary = selection.ranges[primaryIdx]
+    const primaryAnchorCell = primary.anchor
+    const primaryRangeCovers1Cell =
+        primary.range.startRow === primary.range.endRow &&
+        primary.range.startCol === primary.range.endCol
+    if (!primaryRangeCovers1Cell) {
+        const anchorLeft = colOffsets[primaryAnchorCell.col - 1] ?? 0
+        const anchorRight = colOffsets[primaryAnchorCell.col] ?? anchorLeft
+        const anchorWidth = anchorRight - anchorLeft
+        const anchorTop = rowOffsets[primaryAnchorCell.row - 1] ?? 0
+        const anchorBottom = rowOffsets[primaryAnchorCell.row] ?? anchorTop
+        const anchorHeight = anchorBottom - anchorTop
+        if (anchorWidth > 0 && anchorHeight > 0) {
+            overlays.push(
+                <View
+                    key="sel-anchor"
+                    pointerEvents="none"
+                    style={{
+                        position: 'absolute',
+                        left: anchorLeft,
+                        top: anchorTop,
+                        width: anchorWidth,
+                        height: anchorHeight,
+                        borderWidth: 2,
+                        borderColor: '#1a8757',
+                        backgroundColor: 'rgba(255, 255, 255, 0.0)',
+                    }}
+                />
+            )
+        }
+    }
+    return <>{overlays}</>
 }
 
 interface RefDragOverlayProps {
@@ -410,33 +416,28 @@ export function SelectionHandleOverlay({
     rowOffsets,
     readOnly,
 }: SelectionHandleOverlayProps) {
-    const selected = useGridStore(s => (s.editSession == null ? s.selected : null))
-    const range = useGridStore(s => (s.editSession == null ? s.selectionRange : null))
+    // Read the primary sub-range — that's where the fill handle
+    // anchors (bottom-right corner). Disjoint selections hide the
+    // handle entirely (plan §6.e); the fill operation is
+    // fundamentally a single-rectangle extension.
+    const selection = useGridStore(s => (s.editSession == null ? s.selection : null))
+    const disjoint = useGridStore(s => isDisjoint(s.selection))
     const store = useGridStoreApi()
 
-    // Drag origin captured at gesture start. Refs (not state) so
-    // every pixel of drag doesn't trigger a re-render that would
-    // break the gesture mid-move.
     const startGridX = useRef(0)
     const startGridY = useRef(0)
     const startClientX = useRef(0)
     const startClientY = useRef(0)
 
-    // captureStart records the grid-space origin of this drag —
-    // shared between the web pointer-down and the native PanResponder
-    // grant callbacks so the move math is identical on both
-    // platforms. Returns false when there's nothing to drag from
-    // (no selection); callers should bail without bootstrapping any
-    // listeners.
     const captureStart = (clientX: number, clientY: number) => {
         const s = store.getState()
-        const anchor = s.selected
-        const r = s.selectionRange
-        if (anchor == null) return false
-        const endCol = r?.endCol ?? anchor.col
-        const endRow = r?.endRow ?? anchor.row
-        startGridX.current = colOffsets[endCol] ?? 0
-        startGridY.current = rowOffsets[endRow] ?? 0
+        // Defense in depth: refuse the gesture if the selection went
+        // disjoint between the render and the mousedown.
+        if (isDisjoint(s.selection)) return false
+        const r = primaryRange(s.selection)
+        if (r == null) return false
+        startGridX.current = colOffsets[r.endCol] ?? 0
+        startGridY.current = rowOffsets[r.endRow] ?? 0
         startClientX.current = clientX
         startClientY.current = clientY
         return true
@@ -450,7 +451,7 @@ export function SelectionHandleOverlay({
         const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
         if (target == null) return
         if (shiftKey) {
-            store.getState().extendSelectionTo(target)
+            store.getState().extendActiveRangeTo(target)
             return
         }
         store.getState().fillDragMove(target)
@@ -534,10 +535,15 @@ export function SelectionHandleOverlay({
         document.addEventListener('pointercancel', cleanup)
     }
 
-    if (selected == null || readOnly) return null
-
-    const endCol = range?.endCol ?? selected.col
-    const endRow = range?.endRow ?? selected.row
+    if (selection == null || readOnly) return null
+    // Hide handle on disjoint selections — plan §6.e and Risk 5.
+    if (disjoint) return null
+    const primary = primaryRange(selection)
+    if (primary == null) return null
+    const primaryAnchorCell = primaryAnchor(selection)
+    if (primaryAnchorCell == null) return null
+    const endCol = primary.endCol
+    const endRow = primary.endRow
     const right = colOffsets[endCol] ?? 0
     const bottom = rowOffsets[endRow] ?? 0
     if (right <= 0 || bottom <= 0) return null

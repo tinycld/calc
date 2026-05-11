@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { createGridStore, type GridStoreDeps } from '../tinycld/calc/hooks/grid-store'
+import { overallScope, primaryAnchor, primaryRange } from '../tinycld/calc/lib/selection-range'
 
-// Selection scope is the discriminator that drives the format-control
-// dispatch path: 'cells' is the default body selection, while 'row'
-// (and later 'column'/'sheet') indicate header-click selections that
-// route style writes to per-axis sheet metadata. Body interactions
-// reset to 'cells'.
+// Per-sub-range scope is the discriminator that drives the format-
+// control dispatch path: 'cells' is the default body selection while
+// 'row'/'column'/'sheet' indicate header-click selections that route
+// style writes to per-axis sheet metadata. Body interactions reset
+// the active sub-range scope to 'cells'.
+//
+// `overallScope(selection)` collapses every sub-range's scope to a
+// single enum or 'mixed' for UI consumers that want the high-level
+// "what kind of selection is this?" answer.
 
 function makeStubDeps(opts: { readOnly?: boolean } = {}): GridStoreDeps {
     return {
@@ -29,9 +34,9 @@ describe('selectRow', () => {
         const store = createGridStore(makeStubDeps())
         store.getState().selectRow(7, 26)
         const s = store.getState()
-        expect(s.selectionScope).toBe('row')
-        expect(s.selected).toEqual({ row: 7, col: 1 })
-        expect(s.selectionRange).toEqual({
+        expect(overallScope(s.selection)).toBe('row')
+        expect(primaryAnchor(s.selection)).toEqual({ row: 7, col: 1 })
+        expect(primaryRange(s.selection)).toEqual({
             startRow: 7,
             endRow: 7,
             startCol: 1,
@@ -40,12 +45,9 @@ describe('selectRow', () => {
     })
 
     it('clamps endCol to at least 1 even when colCount is 0', () => {
-        // Defensive: a freshly-created sheet may briefly report
-        // colCount=0 before bootstrap. selectRow should produce a
-        // valid range regardless.
         const store = createGridStore(makeStubDeps())
         store.getState().selectRow(2, 0)
-        expect(store.getState().selectionRange?.endCol).toBe(1)
+        expect(primaryRange(store.getState().selection)?.endCol).toBe(1)
     })
 
     it('clears any in-flight edit session', () => {
@@ -57,44 +59,78 @@ describe('selectRow', () => {
     })
 })
 
-describe('selectionScope reset by body interactions', () => {
+describe('selectColumn', () => {
+    it('sets scope to column, anchor to (1, col), and a full-column range', () => {
+        const store = createGridStore(makeStubDeps())
+        store.getState().selectColumn(4, 100)
+        const s = store.getState()
+        expect(overallScope(s.selection)).toBe('column')
+        expect(primaryAnchor(s.selection)).toEqual({ row: 1, col: 4 })
+        expect(primaryRange(s.selection)).toEqual({
+            startRow: 1,
+            endRow: 100,
+            startCol: 4,
+            endCol: 4,
+        })
+    })
+})
+
+describe('overallScope reset by body interactions', () => {
     it('selectCell resets scope from row back to cells', () => {
         const store = createGridStore(makeStubDeps())
         store.getState().selectRow(7, 26)
-        expect(store.getState().selectionScope).toBe('row')
+        expect(overallScope(store.getState().selection)).toBe('row')
         store.getState().selectCell({ row: 3, col: 3 })
-        expect(store.getState().selectionScope).toBe('cells')
+        expect(overallScope(store.getState().selection)).toBe('cells')
     })
 
-    it('extendSelectionTo resets scope from row back to cells', () => {
+    it('extendActiveRangeTo resets scope from row back to cells', () => {
         const store = createGridStore(makeStubDeps())
-        // Seed an anchor first so extendSelectionTo follows the
-        // range-extend branch, not the no-anchor fallback.
         store.getState().selectCell({ row: 1, col: 1 })
         store.getState().selectRow(7, 26)
-        expect(store.getState().selectionScope).toBe('row')
-        store.getState().extendSelectionTo({ row: 5, col: 5 })
-        expect(store.getState().selectionScope).toBe('cells')
+        expect(overallScope(store.getState().selection)).toBe('row')
+        store.getState().extendActiveRangeTo({ row: 5, col: 5 })
+        // extendActiveRangeTo on a row-scope sub-range stays row-
+        // scope (it shifts the active rectangle); only selectCell
+        // resets to cells. Match Sheets parity.
+        expect(overallScope(store.getState().selection)).toBe('row')
     })
 
     it('editCell resets scope to cells', () => {
         const store = createGridStore(makeStubDeps())
         store.getState().selectRow(7, 26)
         store.getState().editCell({ row: 1, col: 1 })
-        expect(store.getState().selectionScope).toBe('cells')
+        expect(overallScope(store.getState().selection)).toBe('cells')
     })
 
     it('commitEdit resets scope to cells', () => {
         const store = createGridStore(makeStubDeps())
         store.getState().selectRow(7, 26)
         store.getState().commitEdit(1, 1, 'value')
-        expect(store.getState().selectionScope).toBe('cells')
+        expect(overallScope(store.getState().selection)).toBe('cells')
     })
 })
 
 describe('initial state', () => {
-    it('starts in scope=cells', () => {
+    it('starts with no selection', () => {
         const store = createGridStore(makeStubDeps())
-        expect(store.getState().selectionScope).toBe('cells')
+        expect(store.getState().selection).toBeNull()
+        expect(overallScope(store.getState().selection)).toBe('cells')
+    })
+})
+
+describe('overallScope with disjoint sub-ranges', () => {
+    it("returns 'mixed' when sub-ranges disagree on scope", () => {
+        const store = createGridStore(makeStubDeps())
+        store.getState().selectRow(2, 26)
+        store.getState().addColumnSubRange(5, 100)
+        expect(overallScope(store.getState().selection)).toBe('mixed')
+    })
+
+    it('returns the shared scope when all sub-ranges agree', () => {
+        const store = createGridStore(makeStubDeps())
+        store.getState().selectRow(2, 26)
+        store.getState().addRowSubRange(5, 26)
+        expect(overallScope(store.getState().selection)).toBe('row')
     })
 })

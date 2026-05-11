@@ -4,6 +4,11 @@ import {
     createGridStore,
     type GridStoreDeps,
 } from '../tinycld/calc/hooks/grid-store'
+import {
+    overallScope,
+    primaryAnchor,
+    primaryRange,
+} from '../tinycld/calc/lib/selection-range'
 
 // Fill-handle drag actions. Source range is captured at fillDragStart
 // and never mutated; destRange grows under the pointer. Direction
@@ -31,6 +36,8 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
             findMergesInRange: () => [],
             mergeRange: () => {},
             unmergeAt: () => {},
+            setFrozenRows: () => {},
+            setFrozenCols: () => {},
         },
         applyFill,
     }
@@ -100,7 +107,7 @@ describe('grid-store fill drag', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
-            store.getState().extendSelectionTo({ row: 2, col: 1 })
+            store.getState().extendActiveRangeTo({ row: 2, col: 1 })
             const ok = store.getState().fillDragStart()
             expect(ok).toBe(true)
             expect(store.getState().fillDrag?.sourceRange).toEqual(TWO_BY_ONE_RANGE)
@@ -120,7 +127,7 @@ describe('grid-store fill drag', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
-            store.getState().extendSelectionTo({ row: 2, col: 1 })
+            store.getState().extendActiveRangeTo({ row: 2, col: 1 })
             store.getState().fillDragStart()
             store.getState().fillDragMove({ row: 5, col: 1 })
             const drag = store.getState().fillDrag
@@ -262,14 +269,14 @@ describe('grid-store fill drag', () => {
             expect(stub.applyFill).not.toHaveBeenCalled()
             expect(store.getState().fillDrag).toBeNull()
             // Selection isn't touched by the no-op end.
-            expect(store.getState().selected).toEqual({ row: 2, col: 3 })
+            expect(primaryAnchor(store.getState().selection)).toEqual({ row: 2, col: 3 })
         })
 
         it('calls applyFill once with the captured source/dest/direction when extended', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
-            store.getState().extendSelectionTo({ row: 2, col: 1 })
+            store.getState().extendActiveRangeTo({ row: 2, col: 1 })
             store.getState().fillDragStart()
             store.getState().fillDragMove({ row: 5, col: 1 })
             store.getState().fillDragEnd()
@@ -294,14 +301,14 @@ describe('grid-store fill drag', () => {
             store.getState().fillDragMove({ row: 1, col: 5 })
             store.getState().fillDragEnd()
             const s = store.getState()
-            expect(s.selected).toEqual({ row: 1, col: 1 })
-            expect(s.selectionRange).toEqual({
+            expect(primaryAnchor(s.selection)).toEqual({ row: 1, col: 1 })
+            expect(primaryRange(s.selection)).toEqual({
                 startRow: 1,
                 endRow: 1,
                 startCol: 1,
                 endCol: 5,
             })
-            expect(s.selectionScope).toBe('cells')
+            expect(overallScope(s.selection)).toBe('cells')
             expect(s.fillDrag).toBeNull()
         })
 

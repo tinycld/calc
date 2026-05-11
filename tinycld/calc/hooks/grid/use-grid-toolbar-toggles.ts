@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import type * as Y from 'yjs'
-import { toggleCellFontAttrInRange } from '../../components/grid/style-helpers'
-import { effectiveRange } from '../../lib/selection-range'
+import { toggleCellFontAttrAcrossRanges } from '../../components/grid/style-helpers'
+import { allRanges, primaryAnchor } from '../../lib/selection-range'
 import { useGridStore, useGridStoreApi } from '../use-grid-store'
 import { useYCell } from '../use-y-cell'
 
@@ -53,8 +53,8 @@ export function useGridToolbarToggles({
     sheetId,
     readOnly,
 }: UseGridToolbarTogglesArgs): GridToolbarToggles {
-    const selectedRow = useGridStore(s => s.selected?.row ?? null)
-    const selectedCol = useGridStore(s => s.selected?.col ?? null)
+    const selectedRow = useGridStore(s => primaryAnchor(s.selection)?.row ?? null)
+    const selectedCol = useGridStore(s => primaryAnchor(s.selection)?.col ?? null)
     const hasSelection = selectedRow != null && selectedCol != null
     const store = useGridStoreApi()
 
@@ -71,12 +71,13 @@ export function useGridToolbarToggles({
     const toggleAttr = useCallback(
         (attr: 'bold' | 'italic' | 'underline' | 'strike') => {
             if (readOnly || doc == null) return
-            const state = store.getState()
-            const anchor = state.selected
-            if (anchor == null) return
-            const range = effectiveRange(anchor, state.selectionRange)
-            if (range == null) return
-            toggleCellFontAttrInRange(doc, sheetId, range, attr)
+            const ranges = allRanges(store.getState().selection)
+            if (ranges.length === 0) return
+            // toggleCellFontAttrAcrossRanges computes the "any-off →
+            // all-on" decision once over the union of every sub-
+            // range, then applies the chosen value inside a single
+            // doc.transact so the disjoint write is one undo step.
+            toggleCellFontAttrAcrossRanges(doc, sheetId, ranges, attr)
         },
         [doc, sheetId, readOnly, store]
     )

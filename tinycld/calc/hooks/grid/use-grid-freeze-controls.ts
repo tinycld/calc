@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { primaryRange } from '../../lib/selection-range'
 import type { GridStoreApi } from '../grid-store'
 import { useGridStore } from '../use-grid-store'
 
@@ -19,12 +20,11 @@ export interface GridFreezeControls {
 // store-passthrough actions. Stable identities so memo'd Toolbar
 // doesn't churn.
 export function useGridFreezeControls(store: GridStoreApi): GridFreezeControls {
-    const selectionBottomRow = useGridStore(
-        s => s.selectionRange?.endRow ?? s.selected?.row ?? null
-    )
-    const selectionRightCol = useGridStore(
-        s => s.selectionRange?.endCol ?? s.selected?.col ?? null
-    )
+    // Tier B: freeze is single-axis and per-sheet; disjoint doesn't
+    // apply. Read the primary sub-range; on a disjoint selection
+    // that's the most-recently-Ctrl-clicked rectangle.
+    const selectionBottomRow = useGridStore(s => primaryRange(s.selection)?.endRow ?? null)
+    const selectionRightCol = useGridStore(s => primaryRange(s.selection)?.endCol ?? null)
 
     const actions = useMemo(() => {
         const s = () => store.getState()

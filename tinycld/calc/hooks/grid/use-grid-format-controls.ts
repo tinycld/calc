@@ -1,10 +1,11 @@
+import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import { useCallback } from 'react'
 import type * as Y from 'yjs'
 import { applyStyleToRange } from '../../components/grid/style-helpers'
 import { applyBorderPreset, type BorderPresetId } from '../../lib/border-presets'
 import { stepDecimals } from '../../lib/number-format/decimal-step'
 import { findPresetById } from '../../lib/number-format/presets'
-import { effectiveRange } from '../../lib/selection-range'
+import { allRanges } from '../../lib/selection-range'
 import type { CellAlignment, CellBorders } from '../../lib/workbook-types'
 import type { CellRange } from '../grid-store'
 import { useGridStoreApi } from '../use-grid-store'
@@ -79,26 +80,44 @@ export function useGridFormatControls({
 
     const store = useGridStoreApi()
 
-    // Resolves the live effective range from the store at call time.
-    // Returns null when there's no selection — callers early-return.
-    const resolveRange = useCallback((): CellRange | null => {
-        const s = store.getState()
-        if (s.selected == null) return null
-        return effectiveRange(s.selected, s.selectionRange)
+    // Resolves every sub-range's rectangle from the store at call
+    // time. Returns [] when there's no selection — callers early-
+    // return. On a single-rectangle selection the array has one
+    // entry (N=1 case); on a disjoint selection it has every sub-
+    // range's `range` (plan Tier A — apply the patch to all).
+    const resolveRanges = useCallback((): CellRange[] => {
+        return allRanges(store.getState().selection)
     }, [store])
+
+    // applyToRanges wraps N applyStyleToRange calls in a single
+    // doc.transact so a disjoint write is one undo step. The wrapped
+    // operation matches the original behavior when N=1.
+    const applyToRanges = useCallback(
+        (ranges: CellRange[], apply: (range: CellRange) => void) => {
+            if (doc == null) return
+            doc.transact(() => {
+                for (const range of ranges) {
+                    apply(range)
+                }
+            }, LOCAL_ORIGIN)
+        },
+        [doc]
+    )
 
     const writeNumFmt = useCallback(
         (numFmt: string | undefined) => {
             if (readOnly || doc == null) return
-            const range = resolveRange()
-            if (range == null) return
+            const ranges = resolveRanges()
+            if (ranges.length === 0) return
             // setYCellStyle skips undefined values; pass an empty string to
             // explicitly clear a previously-applied numFmt (matches the
             // "Automatic" preset's null pattern semantics elsewhere).
             const value = numFmt ?? ''
-            applyStyleToRange(doc, sheetId, range, { numFmt: value })
+            applyToRanges(ranges, range =>
+                applyStyleToRange(doc, sheetId, range, { numFmt: value })
+            )
         },
-        [doc, sheetId, resolveRange, readOnly]
+        [doc, sheetId, resolveRanges, applyToRanges, readOnly]
     )
 
     const applyPreset = useCallback(
@@ -137,55 +156,67 @@ export function useGridFormatControls({
         (size: number) => {
             if (readOnly || doc == null) return
             if (!Number.isFinite(size)) return
-            const range = resolveRange()
-            if (range == null) return
+            const ranges = resolveRanges()
+            if (ranges.length === 0) return
             const clamped = Math.max(6, Math.min(96, Math.round(size)))
-            applyStyleToRange(doc, sheetId, range, { font: { size: clamped } })
+            applyToRanges(ranges, range =>
+                applyStyleToRange(doc, sheetId, range, { font: { size: clamped } })
+            )
         },
-        [doc, sheetId, resolveRange, readOnly]
+        [doc, sheetId, resolveRanges, applyToRanges, readOnly]
     )
 
     const setFontColor = useCallback(
         (color: string) => {
             if (readOnly || doc == null) return
-            const range = resolveRange()
-            if (range == null) return
-            applyStyleToRange(doc, sheetId, range, { font: { color } })
+            const ranges = resolveRanges()
+            if (ranges.length === 0) return
+            applyToRanges(ranges, range =>
+                applyStyleToRange(doc, sheetId, range, { font: { color } })
+            )
         },
-        [doc, sheetId, resolveRange, readOnly]
+        [doc, sheetId, resolveRanges, applyToRanges, readOnly]
     )
 
     const setFillColor = useCallback(
         (color: string) => {
             if (readOnly || doc == null) return
-            const range = resolveRange()
-            if (range == null) return
+            const ranges = resolveRanges()
+            if (ranges.length === 0) return
             // Write fgColor as the canonical fill — the render path
             // also reads bgColor as a fallback, so we don't need to
             // touch both.
-            applyStyleToRange(doc, sheetId, range, { fill: { fgColor: color } })
+            applyToRanges(ranges, range =>
+                applyStyleToRange(doc, sheetId, range, { fill: { fgColor: color } })
+            )
         },
-        [doc, sheetId, resolveRange, readOnly]
+        [doc, sheetId, resolveRanges, applyToRanges, readOnly]
     )
 
     const setBorders = useCallback(
         (presetId: BorderPresetId) => {
             if (readOnly || doc == null) return
-            const range = resolveRange()
-            if (range == null) return
-            applyBorderPreset(doc, sheetId, range, presetId)
+            const ranges = resolveRanges()
+            if (ranges.length === 0) return
+            // applyBorderPreset already wraps its writes in a transact.
+            // Nested transacts on the same doc + same origin are
+            // flattened by yjs, so wrapping our outer loop here keeps
+            // the disjoint write as a single undo step.
+            applyToRanges(ranges, range => applyBorderPreset(doc, sheetId, range, presetId))
         },
-        [doc, sheetId, resolveRange, readOnly]
+        [doc, sheetId, resolveRanges, applyToRanges, readOnly]
     )
 
     const setHorizontalAlign = useCallback(
         (align: HorizontalAlign) => {
             if (readOnly || doc == null) return
-            const range = resolveRange()
-            if (range == null) return
-            applyStyleToRange(doc, sheetId, range, { alignment: { horizontal: align } })
+            const ranges = resolveRanges()
+            if (ranges.length === 0) return
+            applyToRanges(ranges, range =>
+                applyStyleToRange(doc, sheetId, range, { alignment: { horizontal: align } })
+            )
         },
-        [doc, sheetId, resolveRange, readOnly]
+        [doc, sheetId, resolveRanges, applyToRanges, readOnly]
     )
 
     return {

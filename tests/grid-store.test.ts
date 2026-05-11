@@ -4,16 +4,13 @@ import {
     type GridStoreDeps,
     type StructuralOp,
 } from '../tinycld/calc/hooks/grid-store'
+import { primaryAnchor, primaryRange } from '../tinycld/calc/lib/selection-range'
 
 // The Grid's per-instance store carries selection, edit-session,
 // ref-drag, suggestion popover, and menu state. These tests pin the
-// state-transition contract so the stable identity of action functions
-// — the perf-critical property that lets cells stop re-rendering on
-// every keystroke — can't silently regress.
-//
-// Y.Doc writes flow through GridStoreDeps so this test stays free of
-// yjs setup. The deps stub records calls and returns them for
-// assertions.
+// state-transition contract — the new selection model (one ordered
+// list of SubRanges) collapses to single-rectangle behavior when
+// ranges.length === 1.
 
 interface StubDeps {
     deps: GridStoreDeps
@@ -59,14 +56,14 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
 
 describe('createGridStore', () => {
     describe('selectCell', () => {
-        it('sets selected and clears edit/pendingSelection', () => {
+        it('sets the primary anchor and clears edit/pendingSelection', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().editCell({ row: 1, col: 1 })
             store.getState().setEditDraft(1, 1, 'foo')
             store.getState().selectCell({ row: 2, col: 3 })
             const s = store.getState()
-            expect(s.selected).toEqual({ row: 2, col: 3 })
+            expect(primaryAnchor(s.selection)).toEqual({ row: 2, col: 3 })
             expect(s.editSession).toBeNull()
             expect(s.pendingSelection).toBeNull()
         })
@@ -104,18 +101,18 @@ describe('createGridStore', () => {
         })
     })
 
-    describe('extendSelectionTo', () => {
-        // Multi-cell selection: anchor stays as `selected`, the
-        // additional rectangle lives in `selectionRange`. Normalization
-        // (start ≤ end) and single-cell collapse are the contract
-        // pinned here.
+    describe('extendActiveRangeTo', () => {
+        // Multi-cell selection: the active (last) sub-range's range
+        // grows to bound (anchor, target). Normalization (start ≤
+        // end) is pinned here.
         it('builds a normalized range from the anchor to the target', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 2, col: 3 })
-            store.getState().extendSelectionTo({ row: 5, col: 7 })
-            expect(store.getState().selected).toEqual({ row: 2, col: 3 })
-            expect(store.getState().selectionRange).toEqual({
+            store.getState().extendActiveRangeTo({ row: 5, col: 7 })
+            const s = store.getState()
+            expect(primaryAnchor(s.selection)).toEqual({ row: 2, col: 3 })
+            expect(primaryRange(s.selection)).toEqual({
                 startRow: 2,
                 endRow: 5,
                 startCol: 3,
@@ -127,8 +124,8 @@ describe('createGridStore', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 5, col: 7 })
-            store.getState().extendSelectionTo({ row: 2, col: 3 })
-            expect(store.getState().selectionRange).toEqual({
+            store.getState().extendActiveRangeTo({ row: 2, col: 3 })
+            expect(primaryRange(store.getState().selection)).toEqual({
                 startRow: 2,
                 endRow: 5,
                 startCol: 3,
@@ -136,47 +133,50 @@ describe('createGridStore', () => {
             })
         })
 
-        it('collapses to null when the extended target equals the anchor', () => {
+        it('collapses to a single-cell range when target equals anchor', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 4, col: 4 })
-            store.getState().extendSelectionTo({ row: 4, col: 4 })
-            expect(store.getState().selectionRange).toBeNull()
+            store.getState().extendActiveRangeTo({ row: 4, col: 4 })
+            expect(primaryRange(store.getState().selection)).toEqual({
+                startRow: 4,
+                endRow: 4,
+                startCol: 4,
+                endCol: 4,
+            })
         })
 
         it('falls through to selectCell when there is no anchor yet', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
-            store.getState().extendSelectionTo({ row: 3, col: 3 })
-            expect(store.getState().selected).toEqual({ row: 3, col: 3 })
-            expect(store.getState().selectionRange).toBeNull()
+            store.getState().extendActiveRangeTo({ row: 3, col: 3 })
+            const s = store.getState()
+            expect(primaryAnchor(s.selection)).toEqual({ row: 3, col: 3 })
+            expect(primaryRange(s.selection)).toEqual({
+                startRow: 3,
+                endRow: 3,
+                startCol: 3,
+                endCol: 3,
+            })
         })
 
         it('commits an in-flight edit on a different cell before extending', () => {
-            // Mirror of selectCell's commit-before-move contract.
-            // Without this commit, shift-dragging or shift-clicking
-            // from a cell currently being edited would silently
-            // discard the user's typing.
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
             store.getState().editCell({ row: 1, col: 1 }, 'abc')
             store.getState().setEditDraft(1, 1, 'value')
-            store.getState().extendSelectionTo({ row: 3, col: 3 })
+            store.getState().extendActiveRangeTo({ row: 3, col: 3 })
             expect(stub.writeCalls).toEqual([{ row: 1, col: 1, value: 'value' }])
             expect(store.getState().editSession).toBeNull()
         })
 
         it('does not commit when extending to the same cell that is being edited', () => {
-            // Anchor and edit target are the same cell: extending to
-            // that same cell collapses the range and ends the
-            // session without writing (the user hasn't actually
-            // moved away).
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 4, col: 4 })
             store.getState().editCell({ row: 4, col: 4 }, 'live')
-            store.getState().extendSelectionTo({ row: 4, col: 4 })
+            store.getState().extendActiveRangeTo({ row: 4, col: 4 })
             expect(stub.writeCalls).toHaveLength(0)
             expect(store.getState().editSession).toBeNull()
         })
@@ -184,31 +184,34 @@ describe('createGridStore', () => {
         it('does not commit when readOnly even with an in-flight edit', () => {
             const stub = makeStubDeps({ readOnly: true })
             const store = createGridStore(stub.deps)
-            // editCell is a no-op when readOnly, so seed the session
-            // directly.
             store.setState({
-                selected: { row: 1, col: 1 },
+                selection: {
+                    ranges: [
+                        {
+                            anchor: { row: 1, col: 1 },
+                            range: { startRow: 1, endRow: 1, startCol: 1, endCol: 1 },
+                            scope: 'cells',
+                        },
+                    ],
+                },
                 editSession: { row: 1, col: 1, draft: 'value' },
             })
-            store.getState().extendSelectionTo({ row: 3, col: 3 })
+            store.getState().extendActiveRangeTo({ row: 3, col: 3 })
             expect(stub.writeCalls).toHaveLength(0)
         })
     })
 
     describe('drag-select gesture sequence', () => {
-        // Mirrors what Cell.tsx's PanResponder does: anchor with
-        // selectCell on grant, then call extendSelectionTo on each
-        // pointer move. The store should track the changing target
-        // cell without losing the anchor.
-        it('anchor stays fixed across many extendSelectionTo calls', () => {
+        it('anchor stays fixed across many extendActiveRangeTo calls', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 2, col: 2 })
-            store.getState().extendSelectionTo({ row: 3, col: 3 })
-            store.getState().extendSelectionTo({ row: 5, col: 5 })
-            store.getState().extendSelectionTo({ row: 4, col: 6 })
-            expect(store.getState().selected).toEqual({ row: 2, col: 2 })
-            expect(store.getState().selectionRange).toEqual({
+            store.getState().extendActiveRangeTo({ row: 3, col: 3 })
+            store.getState().extendActiveRangeTo({ row: 5, col: 5 })
+            store.getState().extendActiveRangeTo({ row: 4, col: 6 })
+            const s = store.getState()
+            expect(primaryAnchor(s.selection)).toEqual({ row: 2, col: 2 })
+            expect(primaryRange(s.selection)).toEqual({
                 startRow: 2,
                 endRow: 4,
                 startCol: 2,
@@ -220,9 +223,9 @@ describe('createGridStore', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
-            store.getState().extendSelectionTo({ row: 5, col: 5 })
-            store.getState().extendSelectionTo({ row: 3, col: 3 })
-            expect(store.getState().selectionRange).toEqual({
+            store.getState().extendActiveRangeTo({ row: 5, col: 5 })
+            store.getState().extendActiveRangeTo({ row: 3, col: 3 })
+            expect(primaryRange(store.getState().selection)).toEqual({
                 startRow: 1,
                 endRow: 3,
                 startCol: 1,
@@ -230,65 +233,70 @@ describe('createGridStore', () => {
             })
         })
 
-        it('collapses to null when the drag ends back on the anchor', () => {
+        it('collapses to a single-cell range when the drag ends back on the anchor', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 4, col: 4 })
-            store.getState().extendSelectionTo({ row: 6, col: 6 })
-            store.getState().extendSelectionTo({ row: 4, col: 4 })
-            expect(store.getState().selectionRange).toBeNull()
-            expect(store.getState().selected).toEqual({ row: 4, col: 4 })
+            store.getState().extendActiveRangeTo({ row: 6, col: 6 })
+            store.getState().extendActiveRangeTo({ row: 4, col: 4 })
+            const s = store.getState()
+            expect(primaryRange(s.selection)).toEqual({
+                startRow: 4,
+                endRow: 4,
+                startCol: 4,
+                endCol: 4,
+            })
+            expect(primaryAnchor(s.selection)).toEqual({ row: 4, col: 4 })
         })
     })
 
-    describe('selection range collapse on single-cell actions', () => {
+    describe('selection collapse on single-cell actions', () => {
         // Any action that anchors a single cell — selectCell, editCell,
-        // commitEdit — must clear selectionRange so subsequent actions
-        // don't accidentally apply across a stale rectangle.
-        it('selectCell clears an existing range', () => {
+        // commitEdit — must collapse the selection to a single sub-
+        // range so subsequent actions don't accidentally apply across
+        // a stale rectangle.
+        it('selectCell collapses an existing multi-cell range', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
-            store.getState().extendSelectionTo({ row: 3, col: 3 })
-            expect(store.getState().selectionRange).not.toBeNull()
+            store.getState().extendActiveRangeTo({ row: 3, col: 3 })
             store.getState().selectCell({ row: 5, col: 5 })
-            expect(store.getState().selectionRange).toBeNull()
+            const r = primaryRange(store.getState().selection)
+            expect(r).toEqual({ startRow: 5, endRow: 5, startCol: 5, endCol: 5 })
         })
 
-        it('editCell clears an existing range', () => {
+        it('editCell collapses an existing multi-cell range', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
-            store.getState().extendSelectionTo({ row: 3, col: 3 })
+            store.getState().extendActiveRangeTo({ row: 3, col: 3 })
             store.getState().editCell({ row: 1, col: 1 }, '')
-            expect(store.getState().selectionRange).toBeNull()
+            const r = primaryRange(store.getState().selection)
+            expect(r).toEqual({ startRow: 1, endRow: 1, startCol: 1, endCol: 1 })
         })
 
-        it('commitEdit clears an existing range', () => {
+        it('commitEdit collapses an existing multi-cell range', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
-            store.getState().extendSelectionTo({ row: 3, col: 3 })
-            // Seed an edit session inside the range so commitEdit has
-            // something to commit.
+            store.getState().extendActiveRangeTo({ row: 3, col: 3 })
             store.setState({ editSession: { row: 1, col: 1, draft: 'x' } })
             store.getState().commitEdit(1, 1, 'x')
-            expect(store.getState().selectionRange).toBeNull()
+            const r = primaryRange(store.getState().selection)
+            expect(r).toEqual({ startRow: 1, endRow: 1, startCol: 1, endCol: 1 })
         })
     })
 
     describe('openCellContextMenu range preservation', () => {
-        // Right-clicking inside an existing multi-cell range keeps the
-        // range alive so range-targeted menu items act on the whole
-        // selection. Right-clicking outside collapses to single-cell.
         it('preserves the range when the click lands inside it', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 2, col: 2 })
-            store.getState().extendSelectionTo({ row: 4, col: 4 })
+            store.getState().extendActiveRangeTo({ row: 4, col: 4 })
             store.getState().openCellContextMenu(3, 3, 0, 0)
-            expect(store.getState().selected).toEqual({ row: 2, col: 2 })
-            expect(store.getState().selectionRange).toEqual({
+            const s = store.getState()
+            expect(primaryAnchor(s.selection)).toEqual({ row: 2, col: 2 })
+            expect(primaryRange(s.selection)).toEqual({
                 startRow: 2,
                 endRow: 4,
                 startCol: 2,
@@ -300,10 +308,16 @@ describe('createGridStore', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 2, col: 2 })
-            store.getState().extendSelectionTo({ row: 4, col: 4 })
+            store.getState().extendActiveRangeTo({ row: 4, col: 4 })
             store.getState().openCellContextMenu(9, 9, 0, 0)
-            expect(store.getState().selected).toEqual({ row: 9, col: 9 })
-            expect(store.getState().selectionRange).toBeNull()
+            const s = store.getState()
+            expect(primaryAnchor(s.selection)).toEqual({ row: 9, col: 9 })
+            expect(primaryRange(s.selection)).toEqual({
+                startRow: 9,
+                endRow: 9,
+                startCol: 9,
+                endCol: 9,
+            })
         })
     })
 
@@ -340,10 +354,6 @@ describe('createGridStore', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().editCell({ row: 1, col: 1 }, 'foo')
-            // editCell already placed cursor at 3.
-            // Simulate the prior session being on a different cell and
-            // no editCell call (e.g. an action sequence the formula bar
-            // routes through). setEditDraft should snap the cursor.
             store.setState({ editSession: { row: 2, col: 2, draft: '' } })
             store.refs.editCursor.current = { start: 999, end: 999 }
             store.getState().setEditDraft(2, 2, 'hello')
@@ -355,8 +365,6 @@ describe('createGridStore', () => {
             const store = createGridStore(stub.deps)
             store.getState().editCell({ row: 1, col: 1 }, 'abcdef')
             store.getState().setEditSelection(1, 1, 6, 6)
-            // User backspaces past the cursor — cursor.end (6) > new
-            // draft length (3), so the action snaps cursor to end.
             store.getState().setEditDraft(1, 1, 'abc')
             expect(store.refs.editCursor.current).toEqual({ start: 3, end: 3 })
         })
@@ -367,8 +375,6 @@ describe('createGridStore', () => {
             store.getState().editCell({ row: 1, col: 1 }, 'abc')
             store.getState().setEditSelection(1, 1, 2, 2)
             store.getState().setEditDraft(1, 1, 'abcdef')
-            // Cursor was at 2, new draft length 6, in-session — input
-            // event will report the new cursor next tick.
             expect(store.refs.editCursor.current).toEqual({ start: 2, end: 2 })
         })
     })
@@ -382,7 +388,7 @@ describe('createGridStore', () => {
             store.getState().commitEdit(7, 8, 'final')
             expect(stub.writeCalls).toEqual([{ row: 7, col: 8, value: 'final' }])
             expect(store.getState().editSession).toBeNull()
-            expect(store.getState().selected).toEqual({ row: 7, col: 8 })
+            expect(primaryAnchor(store.getState().selection)).toEqual({ row: 7, col: 8 })
         })
 
         it('does not write when readOnly', () => {
@@ -404,7 +410,6 @@ describe('createGridStore', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().editCell({ row: 1, col: 1 }, '=')
-            // After editCell with '=', cursor sits at index 1.
             const handled = store.getState().cellRefTap(5, 2) // B5
             expect(handled).toBe(true)
             expect(store.getState().editSession?.draft).toBe('=B5')
@@ -414,7 +419,6 @@ describe('createGridStore', () => {
         it('returns false when the cursor is not in a ref-acceptable position', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
-            // 'foo' is not a formula, so isRefAcceptable rejects.
             store.getState().editCell({ row: 1, col: 1 }, 'foo')
             expect(store.getState().cellRefTap(5, 2)).toBe(false)
         })
@@ -440,7 +444,6 @@ describe('createGridStore', () => {
             const draftBefore = store.getState().editSession?.draft
             store.getState().cellRefDragMove(7, 4)
             expect(store.getState().refDrag?.end).toEqual({ row: 7, col: 4 })
-            // Draft is left alone — the Grid effect is what extends it.
             expect(store.getState().editSession?.draft).toBe(draftBefore)
         })
 
@@ -471,7 +474,6 @@ describe('createGridStore', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().editCell({ row: 1, col: 1 }, '=LE')
-            // Cursor is at the end of '=LE' i.e. index 3.
             store.getState().insertFunction('LEFT')
             expect(store.getState().editSession?.draft).toBe('=LEFT(')
         })
@@ -509,21 +511,15 @@ describe('createGridStore', () => {
         // Per-cell selectors return primitives so cells can short-
         // circuit on equality. These tests pin the identity behavior
         // of the underlying state slots.
-        it('selecting the same cell coordinates produces a NEW selected object', () => {
+        it('selecting the same cell coordinates produces a NEW selection object', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
-            const before = store.getState().selected
+            const before = store.getState().selection
             store.getState().selectCell({ row: 1, col: 1 })
-            const after = store.getState().selected
-            // Each selectCell call passes a fresh object; identity
-            // changes even when coordinates are equal. The
-            // primitive-selector pattern in <Cell> compares isSelected
-            // booleans, not the object identity, so this is fine —
-            // documented here so a future refactor doesn't try to
-            // optimize this away.
+            const after = store.getState().selection
             expect(before).not.toBe(after)
-            expect(after).toEqual({ row: 1, col: 1 })
+            expect(primaryAnchor(after)).toEqual({ row: 1, col: 1 })
         })
 
         it('action identities are stable across getState() calls', () => {
@@ -538,10 +534,8 @@ describe('createGridStore', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             const fired = vi.fn()
-            // Mirror the Grid's awareness-publish subscriber: only
-            // care about selected and editSession.
             store.subscribe((state, prev) => {
-                if (state.selected !== prev.selected || state.editSession !== prev.editSession) {
+                if (state.selection !== prev.selection || state.editSession !== prev.editSession) {
                     fired()
                 }
             })
@@ -565,9 +559,8 @@ describe('createGridStore', () => {
             const stub = makeStubDeps()
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 2, col: 2 })
-            store.getState().extendSelectionTo({ row: 3, col: 4 })
+            store.getState().extendActiveRangeTo({ row: 3, col: 4 })
             store.getState().clearSelection()
-            // 2 rows × 3 cols = 6 writes; order is row-major, all value=''.
             expect(stub.writeCalls).toEqual([
                 { row: 2, col: 2, value: '' },
                 { row: 2, col: 3, value: '' },
@@ -589,7 +582,7 @@ describe('createGridStore', () => {
             const stub = makeStubDeps({ readOnly: true })
             const store = createGridStore(stub.deps)
             store.getState().selectCell({ row: 1, col: 1 })
-            store.getState().extendSelectionTo({ row: 2, col: 2 })
+            store.getState().extendActiveRangeTo({ row: 2, col: 2 })
             store.getState().clearSelection()
             expect(stub.writeCalls).toEqual([])
         })

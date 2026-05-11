@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Platform } from 'react-native'
+import { primaryAnchor } from '../lib/selection-range'
 import type { GridStoreApi } from './grid-store'
 
 // Cmd/Ctrl+Alt+M opens the comment popover on the currently-selected
@@ -22,7 +23,8 @@ export function useCommentShortcut(store: GridStoreApi, readOnly: boolean) {
             if (!e.altKey) return
             if (e.key !== 'm' && e.key !== 'M') return
             const state = store.getState()
-            if (state.selected == null) return
+            const anchor = primaryAnchor(state.selection)
+            if (anchor == null) return
             // Avoid intercepting when the user is typing in the cell
             // editor or formula bar — Cmd+Alt+M during an edit should
             // belong to whatever the input wants to do (or, more
@@ -31,7 +33,7 @@ export function useCommentShortcut(store: GridStoreApi, readOnly: boolean) {
             e.preventDefault()
             const x = window.innerWidth / 2
             const y = window.innerHeight / 2
-            store.getState().openCommentPopover(state.selected.row, state.selected.col, x, y)
+            store.getState().openCommentPopover(anchor.row, anchor.col, x, y)
         }
         window.addEventListener('keydown', onKeyDown)
         return () => {

@@ -42,7 +42,7 @@ export function buildCalcShortcuts({
     const when = () => {
         const s = store.getState()
         if (findStore.getState().isOpen) return false
-        return s.selected != null && s.editSession == null
+        return s.selection != null && s.editSession == null
     }
     const whenFindOpen = () => findStore.getState().isOpen
 

@@ -99,6 +99,43 @@ export function applyStyleToRange(
     }, LOCAL_ORIGIN)
 }
 
+// toggleCellFontAttrAcrossRanges is the disjoint-aware variant of
+// toggleCellFontAttrInRange. It computes the mixed-toggle decision
+// (any-off → all-on; otherwise all-off) once over the UNION of every
+// passed range, then applies the chosen value inside a single
+// doc.transact so the whole write is one undo step and observers
+// fire once per cell.
+//
+// The read pass and write pass both walk every range in order. The
+// read race-condition concern (see toggleCellFontAttrInRange) applies
+// the same way; the union scope is the same as a single rectangle
+// for the purposes of optimistic-CRDT semantics.
+export function toggleCellFontAttrAcrossRanges(
+    doc: Y.Doc | null,
+    sheetId: string,
+    ranges: CellRange[],
+    attr: FontToggleAttr
+): void {
+    if (doc == null) return
+    if (ranges.length === 0) return
+    let anyOff = false
+    for (const range of ranges) {
+        forEachCellInRange(range, (row, col) => {
+            const style = readCellStyle(doc, sheetId, row, col)
+            if (style?.font?.[attr] !== true) anyOff = true
+        })
+        if (anyOff) break
+    }
+    const next = anyOff
+    doc.transact(() => {
+        for (const range of ranges) {
+            forEachCellInRange(range, (row, col) => {
+                setYCellStyle(doc, sheetId, row, col, { font: { [attr]: next } })
+            })
+        }
+    }, LOCAL_ORIGIN)
+}
+
 // locateCellAtGridCoord maps an (x, y) inside the grid body to the
 // 1-based (row, col) of the cell at that point. Used by the cell
 // PanResponder to translate pointer-move locations into the cell the

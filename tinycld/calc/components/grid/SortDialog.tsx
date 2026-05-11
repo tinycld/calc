@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Dimensions, Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import type * as Y from 'yjs'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
-import { effectiveRange } from '../../lib/selection-range'
+import { isDisjoint, primaryRange } from '../../lib/selection-range'
 import { detectHeaderRow, sortRange } from '../../lib/sort'
 import { columnLabel } from '../../lib/workbook-types'
 
@@ -22,12 +22,15 @@ interface SortDialogProps {
 // CellContextMenu pattern; native uses a Pressable scrim.
 export function SortDialog({ doc, sheetId }: SortDialogProps) {
     const isOpen = useGridStore(s => s.sortDialogOpen)
-    const selected = useGridStore(s => s.selected)
-    const selectionRange = useGridStore(s => s.selectionRange)
+    const selection = useGridStore(s => s.sortDialogOpen ? s.selection : null)
     const store = useGridStoreApi()
     const onClose = useCallback(() => store.getState().closeSortDialog(), [store])
 
-    const range = effectiveRange(selected, selectionRange)
+    // Sort operates on a single contiguous rectangle. On a disjoint
+    // selection the action falls through with range=null, which the
+    // early-return at the bottom of this component renders nothing
+    // (Tier B policy from the plan).
+    const range = isDisjoint(selection) ? null : primaryRange(selection)
     const fg = useThemeColor('foreground')
 
     const columns = useMemo(() => {

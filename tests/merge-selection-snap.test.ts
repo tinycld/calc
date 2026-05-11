@@ -4,6 +4,7 @@ import {
     createGridStore,
     type GridStoreDeps,
 } from '../tinycld/calc/hooks/grid-store'
+import { primaryAnchor, primaryRange } from '../tinycld/calc/lib/selection-range'
 
 // The store delegates merge-aware selection logic to deps. These
 // tests pin the contract: clicking a covered cell snaps the selection
@@ -32,6 +33,9 @@ function makeDepsWithMerges(merges: FakeMerge[]): GridStoreDeps {
         writeCell: () => {},
         focusActiveInput: () => {},
         applyStructuralMutation: () => {},
+        applyFill: () => {},
+        setFrozenRows: () => {},
+        setFrozenCols: () => {},
         resolveMergeAnchor: (row, col) => {
             for (const m of merges) {
                 if (
@@ -95,7 +99,7 @@ describe('grid-store merge-aware selection', () => {
         ])
         const store = createGridStore(deps)
         store.getState().selectCell({ row: 4, col: 4 })
-        expect(store.getState().selected).toEqual({ row: 2, col: 2 })
+        expect(primaryAnchor(store.getState().selection)).toEqual({ row: 2, col: 2 })
     })
 
     it('selectCell on a free cell stays put', () => {
@@ -104,7 +108,7 @@ describe('grid-store merge-aware selection', () => {
         ])
         const store = createGridStore(deps)
         store.getState().selectCell({ row: 7, col: 7 })
-        expect(store.getState().selected).toEqual({ row: 7, col: 7 })
+        expect(primaryAnchor(store.getState().selection)).toEqual({ row: 7, col: 7 })
     })
 
     it('extendSelectionTo through a merge expands the range to fully contain it', () => {
@@ -117,8 +121,8 @@ describe('grid-store merge-aware selection', () => {
         // Shift-click to (5,5) — naive range would be (1..5, 1..5) but
         // it touches the merge anchored at (4,4) spanning to (6,6),
         // so it should grow to include the full merge.
-        store.getState().extendSelectionTo({ row: 5, col: 5 })
-        expect(store.getState().selectionRange).toEqual({
+        store.getState().extendActiveRangeTo({ row: 5, col: 5 })
+        expect(primaryRange(store.getState().selection)).toEqual({
             startRow: 1,
             endRow: 6,
             startCol: 1,
@@ -132,8 +136,8 @@ describe('grid-store merge-aware selection', () => {
         ])
         const store = createGridStore(deps)
         store.getState().selectCell({ row: 10, col: 10 })
-        store.getState().extendSelectionTo({ row: 12, col: 12 })
-        expect(store.getState().selectionRange).toEqual({
+        store.getState().extendActiveRangeTo({ row: 12, col: 12 })
+        expect(primaryRange(store.getState().selection)).toEqual({
             startRow: 10,
             endRow: 12,
             startCol: 10,

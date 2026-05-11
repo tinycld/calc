@@ -13,7 +13,7 @@ import type { ClipboardActions } from '../tinycld/calc/hooks/use-clipboard'
 // predicates without rendering React.
 
 interface FakeStoreState {
-    selected: { row: number; col: number } | null
+    selection: { ranges: Array<unknown> } | null
     editSession: { draft: string } | null
     cutPending: boolean
     clearClipboardMarker: () => void
@@ -21,7 +21,15 @@ interface FakeStoreState {
 
 function makeStore(overrides: Partial<FakeStoreState> = {}): GridStoreApi {
     const state: FakeStoreState = {
-        selected: { row: 1, col: 1 },
+        selection: {
+            ranges: [
+                {
+                    anchor: { row: 1, col: 1 },
+                    range: { startRow: 1, endRow: 1, startCol: 1, endCol: 1 },
+                    scope: 'cells',
+                },
+            ],
+        },
         editSession: null,
         cutPending: false,
         clearClipboardMarker: vi.fn(),
@@ -162,7 +170,7 @@ describe('buildCalcShortcuts — format shortcuts', () => {
 
     it('format shortcuts are gated off when no cell is selected', () => {
         const list = buildCalcShortcuts({
-            store: makeStore({ selected: null }),
+            store: makeStore({ selection: null }),
             clipboard: makeClipboard(),
             format: makeFormatCallbacks(),
             find: makeFind(),

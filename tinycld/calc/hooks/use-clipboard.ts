@@ -14,7 +14,12 @@ import {
 import { applyPayloadToDoc } from '../lib/clipboard/deserialize'
 import { serializeRange } from '../lib/clipboard/serialize'
 import type { ClipboardPayload, PasteMode } from '../lib/clipboard/types'
-import { effectiveRange, forEachCellInRange } from '../lib/selection-range'
+import {
+    forEachCellInRange,
+    isDisjoint,
+    primaryAnchor,
+    primaryRange,
+} from '../lib/selection-range'
 import type { CellRange, GridStoreApi } from './grid-store'
 import { deleteYCell } from './use-y-cell'
 
@@ -83,15 +88,18 @@ export function useClipboard({
         async (isCut: boolean): Promise<void> => {
             if (doc == null) return
             const state = store.getState()
-            const range = effectiveRange(state.selected, state.selectionRange)
+            // Plan §6.d: refuse copy/cut on a disjoint selection.
+            // Sheets behaves the same way; we surface a transient
+            // banner via setSelectionStatus that the Phase 6 banner
+            // UI consumes.
+            if (isDisjoint(state.selection)) {
+                state.setSelectionStatus({ kind: 'copy-disjoint-refused' })
+                return
+            }
+            const range = primaryRange(state.selection)
             if (range == null) return
             const payload = serializeRange(doc, sheetId, range)
             const { markerId } = await platformWrite(payload)
-            // Reflect the active marker + source range onto the store
-            // so the marching-ants overlay can paint and the paste
-            // action can detect cut-pending state. Even when osWriteOk
-            // is false (permission denial), markerId is non-null —
-            // same-process paste via the fidelity store still works.
             state.setClipboardMarker(markerId, range, isCut)
         },
         [doc, sheetId, store]
@@ -109,7 +117,11 @@ export function useClipboard({
             const result = await platformRead()
             if (result == null) return
             const state = store.getState()
-            const anchor = state.selected
+            // Paste targets the primary anchor (last sub-range). On a
+            // disjoint selection paste still works — the primary
+            // anchor is the just-Ctrl-clicked cell which is what
+            // Sheets pastes into.
+            const anchor = primaryAnchor(state.selection)
             if (anchor == null) return
 
             const cutContext = computeCutContext(state, result.markerId)
