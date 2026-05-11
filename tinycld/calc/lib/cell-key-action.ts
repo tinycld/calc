@@ -19,25 +19,35 @@ export type CellKeyAction =
     | { kind: 'ignore' }
     | { kind: 'clear' }
     | { kind: 'startEdit'; seed: string }
+    | { kind: 'arrow' }
 
 // classifyCellKey returns the action to take for a keypress on a
 // focused, non-editing cell. Modifier-combo keys (Cmd+B, Ctrl+C, …)
 // always ignore here — they belong to the global shortcut registry.
 //
+// Arrow keys produce an 'arrow' action so Cell.tsx can collapse a
+// disjoint selection to a single cell before letting the browser's
+// focus traversal walk to the neighbor cell (plan §6.c). On a
+// single-rectangle selection the collapse is a no-op and arrow nav
+// continues unchanged via the Pressable focus order.
+//
 // Printable single-character keys trigger startEdit with the typed
 // character as the seed, matching Sheets / Excel's "start typing to
-// replace" behavior. Shift on its own is fine: shifted letters
-// already come through e.key as their uppercase form, so we don't
-// need to special-case it.
+// replace" behavior.
 export function classifyCellKey(e: CellKeyEvent): CellKeyAction {
     const key = e.key
     if (key == null) return { kind: 'ignore' }
     if (key === 'Delete' || key === 'Backspace') return { kind: 'clear' }
+    if (
+        key === 'ArrowUp' ||
+        key === 'ArrowDown' ||
+        key === 'ArrowLeft' ||
+        key === 'ArrowRight'
+    ) {
+        return { kind: 'arrow' }
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return { kind: 'ignore' }
-    // Single-character printable keys only. Filters Enter/Tab/F2/
-    // ArrowUp (length > 1), control chars (key < ' '), and pure-
-    // modifier events ('Shift', 'Control'). " " (space) is included
-    // — it's a valid first character of a cell value.
+    // Single-character printable keys only.
     if (key.length !== 1 || key < ' ') return { kind: 'ignore' }
     return { kind: 'startEdit', seed: key }
 }

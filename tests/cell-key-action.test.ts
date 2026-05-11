@@ -46,15 +46,24 @@ describe('classifyCellKey', () => {
         })
     })
 
+    describe('arrow (collapse disjoint on arrow nav)', () => {
+        // Arrow keys produce the 'arrow' action so the cell can
+        // collapse a disjoint selection to a single cell before
+        // focus traversal walks to the neighbor. On a single-
+        // rectangle selection the collapse is a no-op.
+        it.each([['ArrowUp'], ['ArrowDown'], ['ArrowLeft'], ['ArrowRight']])(
+            'maps %j to arrow',
+            key => {
+                expect(classifyCellKey({ key })).toEqual({ kind: 'arrow' })
+            }
+        )
+    })
+
     describe('ignore', () => {
         it.each([
             ['Enter'],
             ['Tab'],
             ['Escape'],
-            ['ArrowUp'],
-            ['ArrowDown'],
-            ['ArrowLeft'],
-            ['ArrowRight'],
             ['F2'],
             ['Home'],
             ['End'],

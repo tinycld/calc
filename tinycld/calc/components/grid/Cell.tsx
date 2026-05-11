@@ -181,6 +181,52 @@ export const Cell = memo(function Cell({
         [store, row, col, left, top, colOffsets, rowOffsets, readOnly, isAnyEditing]
     )
 
+    // Ctrl-drag variant of webDragStart. The mousedown handler has
+    // already called addSubRange to append a new sub-range; this
+    // function only handles subsequent pointermove → extend the
+    // active (just-added) sub-range from ITS anchor. No selectCell
+    // bootstrap.
+    const webDragStartCtrl = useCallback(
+        (clientX: number, clientY: number, rect: { left: number; top: number }) => {
+            if (Platform.OS !== 'web' || readOnly) return
+            if (typeof document === 'undefined') return
+            if (isAnyEditing) return
+            webDragRef.current = {
+                startX: clientX,
+                startY: clientY,
+                startRect: rect,
+                dragging: false,
+            }
+            const onMove = (ev: PointerEvent) => {
+                const drag = webDragRef.current
+                if (drag == null) return
+                const dx = ev.clientX - drag.startX
+                const dy = ev.clientY - drag.startY
+                if (!drag.dragging) {
+                    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+                    drag.dragging = true
+                    // The new sub-range was already added on
+                    // mousedown — no selectCell to call here.
+                }
+                const gridX = left + (ev.clientX - drag.startRect.left)
+                const gridY = top + (ev.clientY - drag.startRect.top)
+                const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
+                if (target == null) return
+                store.getState().extendActiveRangeTo(target)
+            }
+            const cleanup = () => {
+                document.removeEventListener('pointermove', onMove)
+                document.removeEventListener('pointerup', cleanup)
+                document.removeEventListener('pointercancel', cleanup)
+                webDragRef.current = null
+            }
+            document.addEventListener('pointermove', onMove)
+            document.addEventListener('pointerup', cleanup)
+            document.addEventListener('pointercancel', cleanup)
+        },
+        [store, left, top, colOffsets, rowOffsets, readOnly, isAnyEditing]
+    )
+
     if (isMergedCovered) return null
 
     if (isEditing) {
@@ -324,6 +370,8 @@ export const Cell = memo(function Cell({
                   onMouseDown: (e: {
                       preventDefault: () => void
                       shiftKey?: boolean
+                      ctrlKey?: boolean
+                      metaKey?: boolean
                       button?: number
                       clientX?: number
                       clientY?: number
@@ -334,15 +382,41 @@ export const Cell = memo(function Cell({
                       // Right-click is handled by onContextMenu; don't
                       // intercept here.
                       if (e.button != null && e.button !== 0) return
+                      const isCtrl = e.ctrlKey || e.metaKey
+                      // Ctrl/Cmd-click (with or without Shift) appends
+                      // a new sub-range and bootstraps a drag from it
+                      // — Sheets parity. Ctrl+Shift falls through to
+                      // the Ctrl branch (most-recent additive
+                      // gesture wins, plan §5).
+                      if (isCtrl && !isAnyEditing && !readOnly) {
+                          e.preventDefault()
+                          skipNextPressRef.current = true
+                          store.getState().addSubRange({ row, col })
+                          // After addSubRange the just-added sub-
+                          // range is active; if the user starts
+                          // dragging, extendActiveRangeTo will grow
+                          // THAT sub-range from its anchor.
+                          const clientX = typeof e.clientX === 'number' ? e.clientX : 0
+                          const clientY = typeof e.clientY === 'number' ? e.clientY : 0
+                          const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
+                              left: 0,
+                              top: 0,
+                          }
+                          webDragStartCtrl(clientX, clientY, {
+                              left: rect.left,
+                              top: rect.top,
+                          })
+                          return
+                      }
                       if (e.shiftKey && !isAnyEditing && !readOnly) {
-                          // Shift-extend: stretch the existing range
-                          // (or single-cell selection) to include this
-                          // cell. preventDefault on mousedown blocks
-                          // the focus shift but NOT the synthetic
-                          // click that fires after mouseup, so we
-                          // also flag skipNextPressRef so onPress
-                          // doesn't run selectCell and collapse the
-                          // range we just built.
+                          // Shift-extend: stretch the active (last)
+                          // sub-range from its anchor to this cell.
+                          // preventDefault on mousedown blocks the
+                          // focus shift but NOT the synthetic click
+                          // that fires after mouseup, so we also
+                          // flag skipNextPressRef so onPress doesn't
+                          // run selectCell and collapse the range we
+                          // just built.
                           e.preventDefault()
                           skipNextPressRef.current = true
                           store.getState().extendActiveRangeTo({ row, col })
@@ -350,17 +424,12 @@ export const Cell = memo(function Cell({
                       }
                       if (isAnyEditing) {
                           e.preventDefault()
-                          // Don't bootstrap drag listeners while the
-                          // formula bar / cell editor is active —
-                          // dragging during a formula edit belongs to
-                          // the ref-drag path on native, which has its
-                          // own gesture wiring.
                           return
                       }
-                      // Kick off potential drag-select. The first
-                      // pointermove past the threshold turns this into
-                      // an actual range-extend; pure clicks fall
-                      // through to onPress (single-cell select).
+                      // Plain drag-select. The first pointermove past
+                      // the threshold turns this into an actual range-
+                      // extend; pure clicks fall through to onPress
+                      // (single-cell select).
                       const clientX = typeof e.clientX === 'number' ? e.clientX : 0
                       const clientY = typeof e.clientY === 'number' ? e.clientY : 0
                       const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
@@ -382,6 +451,18 @@ export const Cell = memo(function Cell({
         if (readOnly) return
         const action = classifyCellKey(e)
         if (action.kind === 'ignore') return
+        if (action.kind === 'arrow') {
+            // Plan §6.c: arrow on a disjoint selection collapses to a
+            // single cell at the primary anchor. The focus traversal
+            // then continues normally so the neighbor cell takes
+            // focus. On a single-rectangle selection collapseToPrimary
+            // is a no-op when already single-cell; on a multi-cell
+            // rectangle it shrinks to the anchor — matches Sheets.
+            store.getState().collapseToPrimary()
+            // Don't preventDefault — the browser still needs to move
+            // focus to the neighbor cell.
+            return
+        }
         e.preventDefault?.()
         if (action.kind === 'clear') {
             store.getState().clearSelection()
