@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { ChevronDown } from 'lucide-react-native'
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
@@ -11,15 +12,6 @@ import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { primaryAnchor } from '../../lib/selection-range'
 import { columnLabel } from '../../lib/workbook-types'
 import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT } from './constants'
-
-// Module-level skip flag for the synthetic click after a modifier
-// mousedown. Set by the modifier-aware onMouseDown handler and
-// consumed by the very next onPress. preventDefault on mousedown
-// blocks the focus shift but NOT the synthetic click on web, so
-// without this gate a Ctrl-click would land on a Pressable.onPress
-// that calls selectColumn and collapses the disjoint selection.
-// One flag is sufficient — clicks are serial.
-let skipNextHeaderPress = false
 
 interface ColumnHeaderProps {
     scrollRef: React.RefObject<ScrollView | null>
@@ -78,6 +70,12 @@ export function ColumnHeader({
     const store = useGridStoreApi()
     const muted = useThemeColor('muted-foreground')
     const accent = useThemeColor('accent')
+    // Skip the synthetic onPress after a modifier mousedown.
+    // preventDefault on mousedown blocks the focus shift but NOT the
+    // synthetic click on web, so without this gate a Ctrl-click would
+    // land on the Pressable.onPress that calls selectColumn and
+    // collapse the disjoint selection.
+    const skipNextPressRef = useRef(false)
 
     const cols = colOffsets.length - 1
     const fCols = Math.min(Math.max(0, frozenCols), cols)
@@ -91,6 +89,7 @@ export function ColumnHeader({
         store,
         muted,
         accent,
+        skipNextPressRef,
     }
 
     const frozenCells: React.ReactNode[] = []
@@ -186,6 +185,7 @@ interface HeaderFilterCtx {
     store: GridStoreApi
     muted: string
     accent: string
+    skipNextPressRef: React.MutableRefObject<boolean>
 }
 
 // appendHeaderCells emits one column-header label cell + one resize
@@ -248,7 +248,7 @@ function appendHeaderCells(
                               const isCtrl = e.ctrlKey || e.metaKey
                               if (isCtrl && !e.shiftKey) {
                                   e.preventDefault()
-                                  skipNextHeaderPress = true
+                                  filter.skipNextPressRef.current = true
                                   filter.store
                                       .getState()
                                       .addColumnSubRange(col, rowCount)
@@ -256,7 +256,7 @@ function appendHeaderCells(
                               }
                               if (e.shiftKey && !isCtrl) {
                                   e.preventDefault()
-                                  skipNextHeaderPress = true
+                                  filter.skipNextPressRef.current = true
                                   filter.store
                                       .getState()
                                       .extendActiveColumnTo(col, rowCount)
@@ -267,7 +267,7 @@ function appendHeaderCells(
                                   // (most-recent additive gesture
                                   // wins; documented in plan §5).
                                   e.preventDefault()
-                                  skipNextHeaderPress = true
+                                  filter.skipNextPressRef.current = true
                                   filter.store
                                       .getState()
                                       .addColumnSubRange(col, rowCount)
@@ -276,8 +276,8 @@ function appendHeaderCells(
                       }
                     : null
             const onPlainPress = () => {
-                if (skipNextHeaderPress) {
-                    skipNextHeaderPress = false
+                if (filter.skipNextPressRef.current) {
+                    filter.skipNextPressRef.current = false
                     return
                 }
                 filter.store.getState().selectColumn(col, rowCount)

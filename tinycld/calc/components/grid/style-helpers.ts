@@ -118,13 +118,21 @@ export function toggleCellFontAttrAcrossRanges(
 ): void {
     if (doc == null) return
     if (ranges.length === 0) return
+    // Inlined read loop with labelled break so the inner per-cell
+    // walk stops as soon as we find a single OFF cell — the union
+    // mixed-toggle decision needs only one OFF cell to be made, and
+    // forEachCellInRange has no early-exit callback contract.
     let anyOff = false
-    for (const range of ranges) {
-        forEachCellInRange(range, (row, col) => {
-            const style = readCellStyle(doc, sheetId, row, col)
-            if (style?.font?.[attr] !== true) anyOff = true
-        })
-        if (anyOff) break
+    outer: for (const range of ranges) {
+        for (let row = range.startRow; row <= range.endRow; row++) {
+            for (let col = range.startCol; col <= range.endCol; col++) {
+                const style = readCellStyle(doc, sheetId, row, col)
+                if (style?.font?.[attr] !== true) {
+                    anyOff = true
+                    break outer
+                }
+            }
+        }
     }
     const next = anyOff
     doc.transact(() => {

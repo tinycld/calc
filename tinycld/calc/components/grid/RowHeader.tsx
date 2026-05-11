@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
@@ -8,10 +9,6 @@ import {
 } from '../../hooks/use-row-resize'
 import { primaryAnchor } from '../../lib/selection-range'
 import { ACTIVE_HEADER_INSET_STYLE, ROW_HEADER_WIDTH } from './constants'
-
-// Skip flag for the synthetic click after a modifier mousedown.
-// See the matching comment in ColumnHeader.tsx for rationale.
-let skipNextHeaderPress = false
 
 interface RowHeaderProps {
     scrollRef: React.RefObject<ScrollView | null>
@@ -58,6 +55,9 @@ export function RowHeader({
         return false
     })
     const store = useGridStoreApi()
+    // Skip the synthetic onPress after a modifier mousedown — see the
+    // matching ref in ColumnHeader.tsx for the rationale.
+    const skipNextPressRef = useRef(false)
 
     const rows = rowOffsets.length - 1
     const fRows = Math.min(Math.max(0, frozenRows), rows)
@@ -78,7 +78,8 @@ export function RowHeader({
             store,
             colCount,
             makeHandleProps,
-            dragState
+            dragState,
+            skipNextPressRef
         )
     }
     const scrollableCells: React.ReactNode[] = []
@@ -93,7 +94,8 @@ export function RowHeader({
         store,
         colCount,
         makeHandleProps,
-        dragState
+        dragState,
+        skipNextPressRef
     )
 
     if (fRows <= 0) {
@@ -160,7 +162,8 @@ function appendRowHeaderCells(
     store: ReturnType<typeof useGridStoreApi>,
     colCount: number,
     makeHandleProps: (row: number) => Record<string, unknown>,
-    dragState: RowDragState | null
+    dragState: RowDragState | null,
+    skipNextPressRef: React.MutableRefObject<boolean>
 ): void {
     for (let row = first; row <= last; row++) {
         const isActive = row === activeRow
@@ -186,27 +189,27 @@ function appendRowHeaderCells(
                               const isCtrl = e.ctrlKey || e.metaKey
                               if (isCtrl && !e.shiftKey) {
                                   e.preventDefault()
-                                  skipNextHeaderPress = true
+                                  skipNextPressRef.current = true
                                   store.getState().addRowSubRange(row, colCount)
                                   return
                               }
                               if (e.shiftKey && !isCtrl) {
                                   e.preventDefault()
-                                  skipNextHeaderPress = true
+                                  skipNextPressRef.current = true
                                   store.getState().extendActiveRowTo(row, colCount)
                                   return
                               }
                               if (isCtrl && e.shiftKey) {
                                   e.preventDefault()
-                                  skipNextHeaderPress = true
+                                  skipNextPressRef.current = true
                                   store.getState().addRowSubRange(row, colCount)
                               }
                           },
                       }
                     : null
             const onPlainPress = () => {
-                if (skipNextHeaderPress) {
-                    skipNextHeaderPress = false
+                if (skipNextPressRef.current) {
+                    skipNextPressRef.current = false
                     return
                 }
                 store.getState().selectRow(row, colCount)

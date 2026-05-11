@@ -17,7 +17,7 @@ import {
 import { detectHeaderRow, sortRange } from '../../lib/sort'
 import { columnLabel } from '../../lib/workbook-types'
 import { MIN_COLS, MIN_ROWS } from './constants'
-import { readCellStyle, toggleCellFontAttrInRange } from './style-helpers'
+import { readCellStyle, toggleCellFontAttrAcrossRanges } from './style-helpers'
 
 interface CellContextMenuProps {
     doc: Y.Doc | null
@@ -166,23 +166,29 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     const bottomRow = range?.endRow ?? null
     const rightCol = range?.endCol ?? null
 
-    // Phase 5: iterate every sub-range so a disjoint selection
-    // bold/italic toggles all rectangles. The mixed-toggle semantic
-    // (any-off → all-on) is preserved per sub-range; cross-sub-range
-    // mixed-state is acceptable v1 behavior — Sheets behaves the
-    // same way.
+    // Route through the union helper so the mixed-toggle decision
+    // (any-off → all-on; otherwise all-off) is computed once across
+    // every sub-range — matching the toolbar's behavior. A per-range
+    // decision would split the toggle on disjoint selections, which
+    // diverges from the toolbar's union semantic.
     const onToggleBold = useCallback(() => {
         if (selection == null) return
-        for (const sr of selection.ranges) {
-            toggleCellFontAttrInRange(doc, sheetId, sr.range, 'bold')
-        }
+        toggleCellFontAttrAcrossRanges(
+            doc,
+            sheetId,
+            selection.ranges.map(sr => sr.range),
+            'bold'
+        )
     }, [doc, sheetId, selection])
 
     const onToggleItalic = useCallback(() => {
         if (selection == null) return
-        for (const sr of selection.ranges) {
-            toggleCellFontAttrInRange(doc, sheetId, sr.range, 'italic')
-        }
+        toggleCellFontAttrAcrossRanges(
+            doc,
+            sheetId,
+            selection.ranges.map(sr => sr.range),
+            'italic'
+        )
     }, [doc, sheetId, selection])
 
     const filterView = useFilterView(doc, sheetId)
