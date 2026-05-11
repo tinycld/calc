@@ -387,3 +387,50 @@ export function singleRectSelection(
         ],
     }
 }
+
+// computeShiftArrowTarget returns the (row, col) the active sub-
+// range's "far corner" (the corner opposite the anchor) should move
+// to under a Shift+arrow keypress. Caller feeds the result to
+// extendActiveRangeTo to grow or shrink the range by one cell in that
+// direction.
+//
+// Falls back to (fallbackRow, fallbackCol) — the focused cell — when
+// the selection is empty, so the action still has an anchor to extend
+// from. Clamps to [1, rowCount] / [1, colCount] so a Shift+arrow at a
+// sheet edge stays in-bounds (Sheets / Excel parity).
+export function computeShiftArrowTarget(
+    selection: Selection,
+    direction: 'up' | 'down' | 'left' | 'right',
+    fallbackRow: number,
+    fallbackCol: number,
+    rowCount: number,
+    colCount: number
+): SelectedCell {
+    const active = activeSubRange(selection)
+    let farRow = fallbackRow
+    let farCol = fallbackCol
+    if (active != null) {
+        const { anchor, range } = active
+        farRow = range.startRow === anchor.row ? range.endRow : range.startRow
+        farCol = range.startCol === anchor.col ? range.endCol : range.startCol
+    }
+    switch (direction) {
+        case 'up':
+            farRow -= 1
+            break
+        case 'down':
+            farRow += 1
+            break
+        case 'left':
+            farCol -= 1
+            break
+        case 'right':
+            farCol += 1
+            break
+    }
+    if (farRow < 1) farRow = 1
+    if (farCol < 1) farCol = 1
+    if (rowCount > 0 && farRow > rowCount) farRow = rowCount
+    if (colCount > 0 && farCol > colCount) farCol = colCount
+    return { row: farRow, col: farCol }
+}

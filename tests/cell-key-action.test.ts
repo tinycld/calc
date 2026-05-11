@@ -50,13 +50,44 @@ describe('classifyCellKey', () => {
         // Arrow keys produce the 'arrow' action so the cell can
         // collapse a disjoint selection to a single cell before
         // focus traversal walks to the neighbor. On a single-
-        // rectangle selection the collapse is a no-op.
-        it.each([['ArrowUp'], ['ArrowDown'], ['ArrowLeft'], ['ArrowRight']])(
-            'maps %j to arrow',
-            key => {
-                expect(classifyCellKey({ key })).toEqual({ kind: 'arrow' })
-            }
-        )
+        // rectangle selection the collapse is a no-op. Direction
+        // travels with the action so callers that care (currently
+        // only the Shift+arrow extend branch) don't need a separate
+        // round of string matching.
+        it.each([
+            ['ArrowUp', 'up'],
+            ['ArrowDown', 'down'],
+            ['ArrowLeft', 'left'],
+            ['ArrowRight', 'right'],
+        ] as const)('maps %j to arrow %j', (key, direction) => {
+            expect(classifyCellKey({ key })).toEqual({ kind: 'arrow', direction })
+        })
+
+        it('ignores Ctrl/Cmd/Alt+arrow — those belong to the shortcut registry', () => {
+            expect(classifyCellKey({ key: 'ArrowDown', ctrlKey: true })).toEqual({
+                kind: 'ignore',
+            })
+            expect(classifyCellKey({ key: 'ArrowDown', metaKey: true })).toEqual({
+                kind: 'ignore',
+            })
+            expect(classifyCellKey({ key: 'ArrowDown', altKey: true })).toEqual({
+                kind: 'ignore',
+            })
+        })
+    })
+
+    describe('extend (Shift+arrow grows the active sub-range)', () => {
+        it.each([
+            ['ArrowUp', 'up'],
+            ['ArrowDown', 'down'],
+            ['ArrowLeft', 'left'],
+            ['ArrowRight', 'right'],
+        ] as const)('Shift+%j maps to extend %j', (key, direction) => {
+            expect(classifyCellKey({ key, shiftKey: true })).toEqual({
+                kind: 'extend',
+                direction,
+            })
+        })
     })
 
     describe('ignore', () => {

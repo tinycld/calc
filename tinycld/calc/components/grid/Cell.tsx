@@ -16,7 +16,11 @@ import { useYCell } from '../../hooks/use-y-cell'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
 import { cellStyleToRenderProps } from '../../lib/cell-style-render'
 import { findMergeContaining } from '../../lib/merge'
-import { containsAny, primaryAnchor } from '../../lib/selection-range'
+import {
+    computeShiftArrowTarget,
+    containsAny,
+    primaryAnchor,
+} from '../../lib/selection-range'
 import { columnLabel, formatCell } from '../../lib/workbook-types'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { CommentIndicator } from './CommentIndicator'
@@ -477,6 +481,25 @@ export const Cell = memo(function Cell({
             store.getState().collapseToPrimary()
             // Don't preventDefault — the browser still needs to move
             // focus to the neighbor cell.
+            return
+        }
+        if (action.kind === 'extend') {
+            // Sheets/Excel parity: Shift+arrow grows or shrinks the
+            // active sub-range by one cell along the chosen axis. The
+            // anchor stays put; the corner opposite the anchor moves.
+            // preventDefault so the browser doesn't also walk focus
+            // off the anchor cell.
+            e.preventDefault?.()
+            const state = store.getState()
+            const next = computeShiftArrowTarget(
+                state.selection,
+                action.direction,
+                row,
+                col,
+                rowOffsets.length - 1,
+                colOffsets.length - 1
+            )
+            store.getState().extendActiveRangeTo(next)
             return
         }
         e.preventDefault?.()

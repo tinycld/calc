@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
     allRanges,
     clampSubRangesForDelete,
+    computeShiftArrowTarget,
     containsAny,
     forEachCellInRange,
     forEachCellInSelection,
@@ -394,5 +395,88 @@ describe('clampSubRangesForDelete', () => {
         )
         const next = clampSubRangesForDelete(s, 'row', 1, 100, 5)
         expect(next).toBeNull()
+    })
+})
+
+describe('computeShiftArrowTarget', () => {
+    // Shift+arrow grows or shrinks the active sub-range's far corner
+    // (the corner opposite the anchor) by one cell. The store's
+    // extendActiveRangeTo then rewrites the range from anchor to the
+    // returned cell. Single-rectangle and disjoint cases share the
+    // same code path — only the *active* (last) sub-range matters.
+
+    it('extends a single-cell selection down by one cell', () => {
+        const s = singleCellSelection({ row: 3, col: 2 })
+        expect(computeShiftArrowTarget(s, 'down', 3, 2, 100, 26)).toEqual({ row: 4, col: 2 })
+    })
+
+    it('extends a single-cell selection right by one cell', () => {
+        const s = singleCellSelection({ row: 3, col: 2 })
+        expect(computeShiftArrowTarget(s, 'right', 3, 2, 100, 26)).toEqual({ row: 3, col: 3 })
+    })
+
+    it('grows the far-corner row when arrow matches the existing extension axis', () => {
+        // anchor B3, range B3:B5 → far corner row=5. Shift+Down → row 6.
+        const s = singleRectSelection(
+            { row: 3, col: 2 },
+            { startRow: 3, endRow: 5, startCol: 2, endCol: 2 }
+        )
+        expect(computeShiftArrowTarget(s, 'down', 3, 2, 100, 26)).toEqual({ row: 6, col: 2 })
+    })
+
+    it('shrinks the far-corner row when arrow points back toward the anchor', () => {
+        // anchor B3, range B3:B5 → Shift+Up: far corner row 5 → 4. Range
+        // ends up B3:B4 after extendActiveRangeTo consumes the target.
+        const s = singleRectSelection(
+            { row: 3, col: 2 },
+            { startRow: 3, endRow: 5, startCol: 2, endCol: 2 }
+        )
+        expect(computeShiftArrowTarget(s, 'up', 3, 2, 100, 26)).toEqual({ row: 4, col: 2 })
+    })
+
+    it('flips the far corner past the anchor onto the other side', () => {
+        // anchor B3, range B3:B3 → Shift+Up: far corner row 3 → 2. Range
+        // ends up B2:B3 with anchor still at B3.
+        const s = singleCellSelection({ row: 3, col: 2 })
+        expect(computeShiftArrowTarget(s, 'up', 3, 2, 100, 26)).toEqual({ row: 2, col: 2 })
+    })
+
+    it('uses the active (last) sub-range on a disjoint selection', () => {
+        // First sub-range anchor A1:A1; second (active) anchor C5 range
+        // C5:E7. Shift+Right should move the active far corner col 5→6.
+        const s: Selection = {
+            ranges: [
+                {
+                    anchor: { row: 1, col: 1 },
+                    range: { startRow: 1, endRow: 1, startCol: 1, endCol: 1 },
+                    scope: 'cells',
+                },
+                {
+                    anchor: { row: 5, col: 3 },
+                    range: { startRow: 5, endRow: 7, startCol: 3, endCol: 5 },
+                    scope: 'cells',
+                },
+            ],
+        }
+        expect(computeShiftArrowTarget(s, 'right', 9, 9, 100, 26)).toEqual({ row: 7, col: 6 })
+    })
+
+    it('falls back to the focused cell when nothing is selected', () => {
+        expect(computeShiftArrowTarget(null, 'down', 3, 2, 100, 26)).toEqual({ row: 4, col: 2 })
+    })
+
+    it('clamps at row 1 / col 1 — Shift+Up at the top stays in-bounds', () => {
+        const s = singleCellSelection({ row: 1, col: 1 })
+        expect(computeShiftArrowTarget(s, 'up', 1, 1, 100, 26)).toEqual({ row: 1, col: 1 })
+        expect(computeShiftArrowTarget(s, 'left', 1, 1, 100, 26)).toEqual({ row: 1, col: 1 })
+    })
+
+    it('clamps at the sheet bottom / right edge', () => {
+        const s = singleCellSelection({ row: 100, col: 26 })
+        expect(computeShiftArrowTarget(s, 'down', 100, 26, 100, 26)).toEqual({ row: 100, col: 26 })
+        expect(computeShiftArrowTarget(s, 'right', 100, 26, 100, 26)).toEqual({
+            row: 100,
+            col: 26,
+        })
     })
 })
