@@ -162,8 +162,18 @@ export const Cell = memo(function Cell({
                     skipNextPressRef.current = true
                     store.getState().selectCell({ row, col })
                 }
-                const gridX = left + (ev.clientX - drag.startRect.left)
-                const gridY = top + (ev.clientY - drag.startRect.top)
+                // Use absolute grid offsets here, not the quadrant-
+                // local `left`/`top` props — the cell's prop values
+                // are relative to its containing quadrant's origin
+                // (subtracting the frozen extent), while colOffsets/
+                // rowOffsets — and therefore locateCellAtGridCoord —
+                // are absolute prefix-sums. Mixing the two shifts the
+                // mapped target by exactly the frozen extent on each
+                // axis. See webDragStartCtrl below for the same fix.
+                const absLeft = colOffsets[col - 1] ?? 0
+                const absTop = rowOffsets[row - 1] ?? 0
+                const gridX = absLeft + (ev.clientX - drag.startRect.left)
+                const gridY = absTop + (ev.clientY - drag.startRect.top)
                 const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
                 if (target == null) return
                 store.getState().extendActiveRangeTo(target)
@@ -208,8 +218,10 @@ export const Cell = memo(function Cell({
                     // The new sub-range was already added on
                     // mousedown — no selectCell to call here.
                 }
-                const gridX = left + (ev.clientX - drag.startRect.left)
-                const gridY = top + (ev.clientY - drag.startRect.top)
+                const absLeft = colOffsets[col - 1] ?? 0
+                const absTop = rowOffsets[row - 1] ?? 0
+                const gridX = absLeft + (ev.clientX - drag.startRect.left)
+                const gridY = absTop + (ev.clientY - drag.startRect.top)
                 const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
                 if (target == null) return
                 store.getState().extendActiveRangeTo(target)
@@ -224,7 +236,7 @@ export const Cell = memo(function Cell({
             document.addEventListener('pointerup', cleanup)
             document.addEventListener('pointercancel', cleanup)
         },
-        [store, left, top, colOffsets, rowOffsets, readOnly, isAnyEditing]
+        [store, row, col, colOffsets, rowOffsets, readOnly, isAnyEditing]
     )
 
     if (isMergedCovered) return null
@@ -298,8 +310,12 @@ export const Cell = memo(function Cell({
         },
         onPanResponderMove: e => {
             const { locationX, locationY } = e.nativeEvent
-            const gridX = left + locationX
-            const gridY = top + locationY
+            // Mirror the web fix: use absolute grid offsets, not the
+            // quadrant-local `left`/`top` props.
+            const absLeft = colOffsets[col - 1] ?? 0
+            const absTop = rowOffsets[row - 1] ?? 0
+            const gridX = absLeft + locationX
+            const gridY = absTop + locationY
             const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
             if (target == null) return
             if (activeDragMode === 'ref') {
