@@ -8,9 +8,13 @@ import {
     useFindStore,
     useFindStoreApi,
 } from '../hooks/find/use-find-store-context'
+import { useCsvDownload } from '../hooks/grid/use-csv-download'
 import { useGridColumnResize } from '../hooks/grid/use-grid-column-resize'
+import { useGridFilterControls } from '../hooks/grid/use-grid-filter-controls'
 import { useGridFormatControls } from '../hooks/grid/use-grid-format-controls'
 import { useGridFormulaBar } from '../hooks/grid/use-grid-formula-bar'
+import { useGridFreezeControls } from '../hooks/grid/use-grid-freeze-controls'
+import { useGridPrintDialog } from '../hooks/grid/use-grid-print-dialog'
 import { useGridRowResize } from '../hooks/grid/use-grid-row-resize'
 import { type GridStoreInstance, useGridStoreInstance } from '../hooks/grid/use-grid-store-instance'
 import { useGridSuggestions } from '../hooks/grid/use-grid-suggestions'
@@ -21,23 +25,13 @@ import { useRefDragExtender } from '../hooks/grid/use-ref-drag-extender'
 import { useCalcShortcuts } from '../hooks/use-calc-shortcuts'
 import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
-import { useFilterView } from '../hooks/use-filter-view'
 import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
-import {
-    createPrintDialogStore,
-    PrintDialogProvider,
-    usePrintDialog,
-} from '../hooks/use-print-dialog'
+import { createPrintDialogStore, PrintDialogProvider } from '../hooks/use-print-dialog'
 import { usePresence } from '../hooks/use-presence'
 import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
 import { useYSheets } from '../hooks/use-y-sheets'
-import { downloadCsv } from '../lib/csv/download'
-import { serializeSheetToCsv } from '../lib/csv/encode'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
-import { applyFilter, clearFilter } from '../lib/filter'
-import type { PrintSelection } from '../lib/print/snapshot'
-import { effectiveRange } from '../lib/selection-range'
 import { FindReplaceDialog } from './FindReplaceDialog'
 import { PrintDialog } from './PrintDialog'
 import { FormulaBar } from './FormulaBar'
@@ -163,6 +157,11 @@ function GridInner({
 
     const frozenRows = sheet?.frozenRows ?? 0
     const frozenCols = sheet?.frozenCols ?? 0
+    // useGridViewport binary-searches the visible window; it shifts the
+    // lower bound by the frozen extent so the bottom-right quadrant
+    // can't scroll an unfrozen cell behind the frozen one. Pass the
+    // bare locals here rather than the freeze hook's bundle to keep
+    // useGridFreezeControls focused on toolbar-side state.
     const viewport = useGridViewport({
         rows,
         cols,
@@ -238,77 +237,10 @@ function GridInner({
         readOnly,
     })
 
-    const onDownloadCsvCurrent = useCallback(() => {
-        const csv = serializeSheetToCsv(doc, sheetId)
-        const filename = `${sanitizeFilename(sheet?.name ?? 'sheet')}.csv`
-        void downloadCsv(filename, csv)
-    }, [doc, sheetId, sheet?.name])
-
-    // v1: one download per sheet (multiple "Save As" prompts in browsers).
-    // TODO: zip all sheets into a single .zip download.
-    const onDownloadCsvAll = useCallback(() => {
-        for (const s of sheets) {
-            const csv = serializeSheetToCsv(doc, s.id)
-            const filename = `${sanitizeFilename(s.name)}.csv`
-            void downloadCsv(filename, csv)
-        }
-    }, [doc, sheets])
-
-    const filterView = useFilterView(doc, sheetId)
-    const filterRange = filterView?.range ?? null
-    const activeFilterCols = useMemo(() => {
-        const set = new Set<number>()
-        if (filterView != null) {
-            for (const key of Object.keys(filterView.criteria)) {
-                const c = Number(key)
-                if (Number.isFinite(c)) set.add(c)
-            }
-        }
-        return set
-    }, [filterView])
-
-    const onToggleFilter = useCallback(() => {
-        if (doc == null) return
-        const state = instance.store.getState()
-        if (filterView != null) {
-            clearFilter(doc, sheetId)
-            return
-        }
-        const range = effectiveRange(state.selected, state.selectionRange)
-        if (range == null) return
-        applyFilter(doc, sheetId, { range, criteria: {} })
-    }, [doc, sheetId, instance.store, filterView])
-
-    const printDialogIsOpen = usePrintDialog(s => s.isOpen)
-    const printDialogOpen = usePrintDialog(s => s.open)
-    const printDialogClose = usePrintDialog(s => s.close)
-    // The print dialog's "current selection" scope only makes sense for
-    // a true rectangular selection — a lone anchor cell falls through
-    // to null so the dialog hides the option.
-    const printSelectionRange = useGridStore(s => s.selectionRange)
-    const printSelection = useMemo<PrintSelection | null>(() => {
-        if (printSelectionRange == null) return null
-        return {
-            sheetId,
-            rect: {
-                startRow: printSelectionRange.startRow,
-                startCol: printSelectionRange.startCol,
-                endRow: printSelectionRange.endRow,
-                endCol: printSelectionRange.endCol,
-            },
-        }
-    }, [printSelectionRange, sheetId])
-
-    // Selection bottom row / right col drive the dynamic "Freeze up to
-    // row N / column X" items. When there is no range, fall back to
-    // the anchor's row/col so a single-cell selection still produces
-    // useful items. null = no selection at all (item hidden).
-    const selectionBottomRow = useGridStore(
-        s => s.selectionRange?.endRow ?? s.selected?.row ?? null
-    )
-    const selectionRightCol = useGridStore(
-        s => s.selectionRange?.endCol ?? s.selected?.col ?? null
-    )
+    const csvDownload = useCsvDownload(doc, sheetId, sheets, sheet?.name)
+    const filter = useGridFilterControls({ doc, sheetId, store: instance.store })
+    const printDialog = useGridPrintDialog(sheetId)
+    const freeze = useGridFreezeControls(instance.store)
 
     return (
         <View className="flex-1 bg-background web:select-none">
@@ -343,23 +275,23 @@ function GridInner({
                 horizontalAlign={format.horizontalAlign}
                 onSetHorizontalAlign={format.setHorizontalAlign}
                 onOpenFind={onOpenFind}
-                onDownloadCsvCurrent={onDownloadCsvCurrent}
-                onDownloadCsvAll={onDownloadCsvAll}
-                onOpenPrint={printDialogOpen}
+                onDownloadCsvCurrent={csvDownload.downloadCurrent}
+                onDownloadCsvAll={csvDownload.downloadAll}
+                onOpenPrint={printDialog.open}
                 onOpenSort={toolbarActions.openSort}
-                onToggleFilter={onToggleFilter}
-                isFilterActive={filterView != null}
+                onToggleFilter={filter.toggleFilter}
+                isFilterActive={filter.isFilterActive}
                 onMergeAll={toolbarActions.mergeAll}
                 onMergeHorizontal={toolbarActions.mergeHorizontal}
                 onMergeVertical={toolbarActions.mergeVertical}
                 onUnmerge={toolbarActions.unmerge}
                 frozenRows={frozenRows}
                 frozenCols={frozenCols}
-                selectionBottomRow={selectionBottomRow}
-                selectionRightCol={selectionRightCol}
-                onSetFrozenRows={toolbarActions.setFrozenRows}
-                onSetFrozenCols={toolbarActions.setFrozenCols}
-                onUnfreeze={toolbarActions.unfreeze}
+                selectionBottomRow={freeze.selectionBottomRow}
+                selectionRightCol={freeze.selectionRightCol}
+                onSetFrozenRows={freeze.setFrozenRows}
+                onSetFrozenCols={freeze.setFrozenCols}
+                onUnfreeze={freeze.unfreeze}
             />
             <SortStatusBanner />
             <FormulaBar
@@ -387,8 +319,8 @@ function GridInner({
                     frozenCols={frozenCols}
                     makeHandleProps={colResize.makeHandleProps}
                     dragState={colResize.dragState}
-                    filterRange={filterRange}
-                    activeFilterCols={activeFilterCols}
+                    filterRange={filter.filterRange}
+                    activeFilterCols={filter.activeFilterCols}
                 />
             </View>
             <View className="flex-1 flex-row">
@@ -431,11 +363,11 @@ function GridInner({
             <CommentPopover driveItemId={driveItemId} sheetId={sheetId} />
             <SortDialog doc={doc} sheetId={sheetId} />
             <PrintDialog
-                isOpen={printDialogIsOpen}
-                onClose={printDialogClose}
+                isOpen={printDialog.isOpen}
+                onClose={printDialog.close}
                 doc={doc}
                 currentSheetId={sheetId}
-                currentSelection={printSelection}
+                currentSelection={printDialog.currentSelection}
             />
             <GridFilterDropdownAnchor
                 doc={doc}
@@ -476,15 +408,6 @@ function FindReplaceDialogGate({ actions }: FindReplaceDialogGateProps) {
     const isOpen = useFindStore(s => s.isOpen)
     if (!isOpen) return null
     return <FindReplaceDialog actions={actions} />
-}
-
-// Filesystem-safe filename: replaces characters disallowed by macOS /
-// Windows / Linux with underscore, collapses runs, and trims edge
-// underscores. Browser download dialogs already coerce some of these
-// but the native (expo-file-system) write path needs it cleaned first.
-function sanitizeFilename(name: string): string {
-    const cleaned = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
-    return cleaned.replace(/_+/g, '_').replace(/^_|_$/g, '') || 'sheet'
 }
 
 interface GridFilterDropdownAnchorProps {
