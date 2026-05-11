@@ -551,4 +551,47 @@ describe('createGridStore', () => {
             expect(fired).toHaveBeenCalledTimes(1)
         })
     })
+
+    describe('clearSelection', () => {
+        it('clears just the anchor when no range is set', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().selectCell({ row: 3, col: 4 })
+            store.getState().clearSelection()
+            expect(stub.writeCalls).toEqual([{ row: 3, col: 4, value: '' }])
+        })
+
+        it('walks every cell in a range', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().selectCell({ row: 2, col: 2 })
+            store.getState().extendSelectionTo({ row: 3, col: 4 })
+            store.getState().clearSelection()
+            // 2 rows × 3 cols = 6 writes; order is row-major, all value=''.
+            expect(stub.writeCalls).toEqual([
+                { row: 2, col: 2, value: '' },
+                { row: 2, col: 3, value: '' },
+                { row: 2, col: 4, value: '' },
+                { row: 3, col: 2, value: '' },
+                { row: 3, col: 3, value: '' },
+                { row: 3, col: 4, value: '' },
+            ])
+        })
+
+        it('is a no-op when nothing is selected', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().clearSelection()
+            expect(stub.writeCalls).toEqual([])
+        })
+
+        it('is a no-op when readOnly', () => {
+            const stub = makeStubDeps({ readOnly: true })
+            const store = createGridStore(stub.deps)
+            store.getState().selectCell({ row: 1, col: 1 })
+            store.getState().extendSelectionTo({ row: 2, col: 2 })
+            store.getState().clearSelection()
+            expect(stub.writeCalls).toEqual([])
+        })
+    })
 })

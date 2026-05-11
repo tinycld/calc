@@ -167,6 +167,19 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 				colors = colors[:len(colors)-1]
 			}
 			dst.Fill.Color = colors
+			// excelize drops fill colors on serialize when Pattern==0
+			// (no fill at all in OOXML terms). A doc-side patch that
+			// supplies a color without an explicit pattern means "user
+			// picked this color via the fill button"; honor that by
+			// defaulting to solid pattern + pattern type. Without this,
+			// a YDoc bg-color edit that doesn't also re-send the
+			// pattern key would round-trip as no-op on disk.
+			if dst.Fill.Pattern == 0 {
+				dst.Fill.Pattern = 1
+			}
+			if dst.Fill.Type == "" {
+				dst.Fill.Type = "pattern"
+			}
 		}
 	},
 }
@@ -241,4 +254,135 @@ func applyPointer(dstField, srcPtr reflect.Value, path string, rootDst *excelize
 			dstField.Set(srcElem)
 		}
 	}
+}
+
+// extractStyle is the read-side inverse of overlayStyle: walk every
+// leaf the CellStyle schema knows about, probe the corresponding
+// excelize.Style field via the registry, and assemble a *CellStyle
+// carrying only the leaves excelize actually has values for. Returns
+// nil when the input is structurally empty so callers (today
+// readWorkbookCellStyle) can leave the doc-side style unset.
+//
+// Structurally 1:1 leaves (Font.Bold, Alignment.Horizontal, …) flow
+// through the reflect walk: the probe returns a typed value, the walk
+// copies it onto the same-named CellStyle field. Divergent leaves
+// (Font.Name ↔ Font.Family, NumFmt ↔ CustomNumFmt, Borders, Fill)
+// declare an ExtractTo on the registry entry, which writes to the
+// CellStyle directly.
+//
+// This mirrors the writer's policy of "leaves only" — empty / zero /
+// missing on the excelize side becomes "not tracked" (nil pointer) on
+// the CellStyle side, which the doc / serializer interprets as "leave
+// it alone on save". A workbook with no styled cells produces a nil
+// *CellStyle here, exactly like the writer's nil-patch path.
+func extractStyle(src *excelize.Style) *CellStyle {
+	if src == nil {
+		return nil
+	}
+	dst := &CellStyle{}
+	for _, path := range styleAttributePaths() {
+		spec := styleAttributeRegistry[path]
+		probe := spec.ReadFromExcelize
+		if probe == nil {
+			continue
+		}
+		value, ok := probe(src)
+		if !ok {
+			continue
+		}
+		if spec.ExtractTo != nil {
+			spec.ExtractTo(dst, value)
+			continue
+		}
+		assignLeafByPath(dst, path, value)
+	}
+	if isEmptyCellStyle(dst) {
+		return nil
+	}
+	return dst
+}
+
+// assignLeafByPath sets a CellStyle leaf at the dotted path to the
+// given value, allocating the intermediate group struct (Font / Fill /
+// Alignment / Borders) on demand. Used for the structurally-1:1
+// leaves where extractStyle has no per-attribute override; the leaf
+// field type drives the allocation (always *bool / *string /
+// *float64 on CellStyle today).
+func assignLeafByPath(dst *CellStyle, path string, value any) {
+	v := reflect.ValueOf(dst).Elem()
+	parts := splitDottedPath(path)
+	for i, name := range parts {
+		field := v.FieldByName(name)
+		if !field.IsValid() {
+			return
+		}
+		if i == len(parts)-1 {
+			elem := field.Type().Elem()
+			rv := reflect.ValueOf(value)
+			if !rv.Type().AssignableTo(elem) {
+				if !rv.Type().ConvertibleTo(elem) {
+					return
+				}
+				rv = rv.Convert(elem)
+			}
+			ptr := reflect.New(elem)
+			ptr.Elem().Set(rv)
+			field.Set(ptr)
+			return
+		}
+		if field.IsNil() {
+			field.Set(reflect.New(field.Type().Elem()))
+		}
+		v = field.Elem()
+	}
+}
+
+func splitDottedPath(path string) []string {
+	out := make([]string, 0, 2)
+	start := 0
+	for i := 0; i < len(path); i++ {
+		if path[i] == '.' {
+			out = append(out, path[start:i])
+			start = i + 1
+		}
+	}
+	out = append(out, path[start:])
+	return out
+}
+
+// isEmptyCellStyle returns true when every group on the style is nil
+// or every leaf within each non-nil group is nil. Lets extractStyle
+// return nil for cells that excelize merely registered an empty style
+// for (common after a NewStyle({}) round-trip), matching the writer's
+// nil-patch path.
+func isEmptyCellStyle(cs *CellStyle) bool {
+	if cs == nil {
+		return true
+	}
+	if cs.NumFmt != nil {
+		return false
+	}
+	if cs.Font != nil && !isEmptyStruct(reflect.ValueOf(cs.Font).Elem()) {
+		return false
+	}
+	if cs.Fill != nil && !isEmptyStruct(reflect.ValueOf(cs.Fill).Elem()) {
+		return false
+	}
+	if cs.Alignment != nil && !isEmptyStruct(reflect.ValueOf(cs.Alignment).Elem()) {
+		return false
+	}
+	if cs.Borders != nil && !isEmptyStruct(reflect.ValueOf(cs.Borders).Elem()) {
+		return false
+	}
+	return true
+}
+
+func isEmptyStruct(v reflect.Value) bool {
+	for i := range v.NumField() {
+		f := v.Field(i)
+		if f.Kind() == reflect.Pointer && !f.IsNil() {
+			return false
+		}
+	}
+	return true
 }

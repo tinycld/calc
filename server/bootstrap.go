@@ -3,6 +3,7 @@ package calc
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -390,10 +391,16 @@ func scalarToString(v any) string {
 	}
 }
 
-// readWorkbookCellStyle extracts the subset of cell styling we currently
-// track — today only font.bold, mirroring extractCellStyle in
-// xlsx-adapter.ts. New attributes land here additively as they're
-// added to CellStyle.
+// readWorkbookCellStyle pulls a cell's excelize style and converts it
+// to *CellStyle via extractStyle (the read-side inverse of
+// overlayStyle). Returns nil when the cell has no registered style or
+// the style is structurally empty so callers can skip the doc-side
+// style key entirely.
+//
+// Adding support for a new attribute happens in
+// style_attribute_registry.go — extractStyle picks it up automatically
+// from there. This function only changes when the registration shape
+// itself changes.
 func readWorkbookCellStyle(f *excelize.File, sheet, ref string) *CellStyle {
 	id, err := f.GetCellStyle(sheet, ref)
 	if err != nil || id == 0 {
@@ -403,11 +410,7 @@ func readWorkbookCellStyle(f *excelize.File, sheet, ref string) *CellStyle {
 	if err != nil || style == nil {
 		return nil
 	}
-	if style.Font != nil && style.Font.Bold {
-		bold := true
-		return &CellStyle{Font: &CellFont{Bold: &bold}}
-	}
-	return nil
+	return extractStyle(style)
 }
 
 // BootstrapYDocFromWorkbook seeds an empty server-side Y.Doc from a
@@ -554,52 +557,85 @@ func normalizeRawForY(v any) any {
 // shape) into the nested YMap tree the runtime's collectCells
 // decoder expects. Mirrors the TS buildStyleYMap (y-doc-bootstrap.ts).
 //
-// Only fields that are actually set are written; an entirely-empty
-// style returns nil so callers can skip the `style` cell key.
+// The walk is reflect-driven and follows the json tags on CellStyle /
+// CellFont / CellFill / CellAlignment / CellBorders. Only non-nil
+// pointer leaves are emitted; an entirely-empty style returns nil so
+// callers can skip the `style` cell key.
+//
+// Adding a new CellStyle field is purely additive: declare the field
+// (with a camelCase json tag) on the Go and TS sides, register it in
+// styleAttributeRegistry if its overlay isn't structurally 1:1, and
+// every path — overlay, extract, bootstrap emit, audit — picks it up.
 func buildStyleYMapFromStyle(style *CellStyle) *ycrdt.YMap {
 	if style == nil {
 		return nil
 	}
 	root := ycrdt.NewYMap(nil)
-	hasAny := false
-	if style.Font != nil {
-		group := ycrdt.NewYMap(nil)
-		groupAny := false
-		if style.Font.Bold != nil {
-			group.Set("bold", *style.Font.Bold)
-			groupAny = true
-		}
-		if style.Font.Italic != nil {
-			group.Set("italic", *style.Font.Italic)
-			groupAny = true
-		}
-		if style.Font.Underline != nil {
-			group.Set("underline", *style.Font.Underline)
-			groupAny = true
-		}
-		if style.Font.Size != nil {
-			group.Set("size", *style.Font.Size)
-			groupAny = true
-		}
-		if style.Font.Name != nil {
-			group.Set("name", *style.Font.Name)
-			groupAny = true
-		}
-		if style.Font.Color != nil {
-			group.Set("color", *style.Font.Color)
-			groupAny = true
-		}
-		if groupAny {
-			root.Set("font", group)
-			hasAny = true
-		}
-	}
-	if style.NumFmt != nil {
-		root.Set("numFmt", *style.NumFmt)
-		hasAny = true
-	}
-	if !hasAny {
+	if !emitStyleYMap(reflect.ValueOf(style).Elem(), root) {
 		return nil
 	}
 	return root
+}
+
+// emitStyleYMap walks the leaves of one CellStyle-shaped struct value
+// onto a YMap. Pointer-to-struct fields recurse into a nested YMap
+// keyed by the field's json tag. Pointer-to-scalar fields land as a
+// leaf on the current YMap. Returns true when at least one leaf was
+// written, so the caller can decide whether to attach this group to
+// its parent at all.
+//
+// Float64 leaves (Font.Size today) go through normalizeRawForY before
+// being Set on the YMap. y-crdt's Go TypeMapSet only accepts
+// Number(=int)|Object|bool|ArrayAny|string and silently drops a
+// float64. The TS side bootstrap stores numbers natively because Yjs
+// has no integer/float split there; the Go side needs the same
+// coercion the cell-raw path uses.
+func emitStyleYMap(src reflect.Value, dst *ycrdt.YMap) bool {
+	if src.Kind() != reflect.Struct {
+		return false
+	}
+	srcType := src.Type()
+	wrote := false
+	for i := range src.NumField() {
+		field := src.Field(i)
+		if field.Kind() != reflect.Pointer || field.IsNil() {
+			continue
+		}
+		key := jsonFieldKey(srcType.Field(i))
+		if key == "" {
+			continue
+		}
+		elem := field.Elem()
+		if elem.Kind() == reflect.Struct {
+			group := ycrdt.NewYMap(nil)
+			if emitStyleYMap(elem, group) {
+				dst.Set(key, group)
+				wrote = true
+			}
+			continue
+		}
+		value := elem.Interface()
+		if f, ok := value.(float64); ok {
+			value = normalizeRawForY(f)
+		}
+		dst.Set(key, value)
+		wrote = true
+	}
+	return wrote
+}
+
+// jsonFieldKey returns the camelCase wire key for a Go struct field,
+// derived from its json tag. Tagless fields (none of our style structs
+// have any) are skipped.
+func jsonFieldKey(field reflect.StructField) string {
+	tag := field.Tag.Get("json")
+	if tag == "" {
+		return ""
+	}
+	for i := 0; i < len(tag); i++ {
+		if tag[i] == ',' {
+			return tag[:i]
+		}
+	}
+	return tag
 }

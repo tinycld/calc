@@ -13,6 +13,7 @@ import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
 import { useWorkbook } from '../../hooks/use-workbook-context'
 import { useYCell } from '../../hooks/use-y-cell'
+import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
 import { cellStyleToRenderProps } from '../../lib/cell-style-render'
 import { findMergeContaining } from '../../lib/merge'
 import { columnLabel, formatCell } from '../../lib/workbook-types'
@@ -368,15 +369,22 @@ export const Cell = memo(function Cell({
               }
             : null
 
-    // Delete / Backspace on a focused (selected, not-editing) cell
-    // clears its contents — same effect as the "Clear contents" item in
-    // the cell context menu. Only fires when the cell isn't currently
-    // editing, so a Backspace inside CellEditor still erases characters.
-    const onCellKeyDown = (e: { key?: string; preventDefault?: () => void }) => {
+    // Keyboard handling on a focused (selected, not-editing) cell.
+    // Delete / Backspace clear the active selection (whole range, not
+    // just the anchor); a printable single-character key opens the
+    // editor with that character as the seed (Sheets / Excel
+    // typing-to-replace). Modifier combos belong to the global
+    // shortcut registry, not here. See classifyCellKey for the rules.
+    const onCellKeyDown = (e: CellKeyEvent & { preventDefault?: () => void }) => {
         if (readOnly) return
-        if (e.key !== 'Delete' && e.key !== 'Backspace') return
+        const action = classifyCellKey(e)
+        if (action.kind === 'ignore') return
         e.preventDefault?.()
-        store.getState().clearCellAt(row, col)
+        if (action.kind === 'clear') {
+            store.getState().clearSelection()
+            return
+        }
+        store.getState().editCell({ row, col }, action.seed)
     }
 
     const showRemoteDraft = remoteDraft != null

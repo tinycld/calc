@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -330,6 +331,7 @@ func decodeCellStyle(styleMap *ycrdt.YMap) (*CellStyle, error) {
 	if len(flat) == 0 {
 		return nil, nil
 	}
+	coerceNumericStringLeaves(flat)
 	buf, err := json.Marshal(flat)
 	if err != nil {
 		return nil, err
@@ -339,6 +341,78 @@ func decodeCellStyle(styleMap *ycrdt.YMap) (*CellStyle, error) {
 		return nil, err
 	}
 	return &cs, nil
+}
+
+// coerceNumericStringLeaves walks the flattened style map and parses
+// any string leaf whose corresponding CellStyle field is *float64 (or
+// any numeric type) back into a number. This compensates for
+// emitStyleYMap's normalizeRawForY step: y-crdt's Go TypeMapSet
+// rejects float64, so fractional font sizes (and any future float
+// leaf) get serialized as a numeric string. Without this coercion,
+// json.Unmarshal would fail to decode "13.5" into *float64.
+//
+// Integer-valued floats land as int in the YMap (per normalizeRawForY)
+// and JSON already coerces int→float64 transparently — no work needed
+// for that case.
+func coerceNumericStringLeaves(flat map[string]any) {
+	csType := reflect.TypeOf(CellStyle{})
+	for groupKey, value := range flat {
+		groupField, ok := fieldByJSONTag(csType, groupKey)
+		if !ok {
+			continue
+		}
+		nested, ok := value.(map[string]any)
+		if !ok {
+			// Scalar group (e.g. numFmt is *string at the top level).
+			coerceLeafToFieldType(flat, groupKey, groupField.Type)
+			continue
+		}
+		// Group struct fields are *Struct → recurse one level.
+		groupType := groupField.Type
+		if groupType.Kind() == reflect.Pointer {
+			groupType = groupType.Elem()
+		}
+		if groupType.Kind() != reflect.Struct {
+			continue
+		}
+		for leafKey := range nested {
+			leafField, ok := fieldByJSONTag(groupType, leafKey)
+			if !ok {
+				continue
+			}
+			coerceLeafToFieldType(nested, leafKey, leafField.Type)
+		}
+	}
+}
+
+func coerceLeafToFieldType(host map[string]any, key string, fieldType reflect.Type) {
+	if fieldType.Kind() == reflect.Pointer {
+		fieldType = fieldType.Elem()
+	}
+	switch fieldType.Kind() {
+	case reflect.Float32, reflect.Float64:
+		if s, ok := host[key].(string); ok {
+			if n, err := strconv.ParseFloat(s, 64); err == nil {
+				host[key] = n
+			}
+		}
+	}
+}
+
+func fieldByJSONTag(t reflect.Type, tag string) (reflect.StructField, bool) {
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return reflect.StructField{}, false
+	}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if jsonFieldKey(f) == tag {
+			return f, true
+		}
+	}
+	return reflect.StructField{}, false
 }
 
 // flattenStyleMap walks one level of group-typed entries (font, fill,

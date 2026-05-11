@@ -333,6 +333,11 @@ export interface GridActions {
     commitEdit: (row: number, col: number, value: string) => void
     cancelEdit: () => void
     clearCellAt: (row: number, col: number) => void
+    // clearSelection clears every cell in the active selection — the
+    // current range when one is set, otherwise just the anchor. Used
+    // by the Delete/Backspace path on focused cells so a multi-cell
+    // selection clears in one keystroke (Sheets / Excel parity).
+    clearSelection: () => void
     setActiveSurface: (surface: ActiveSurface) => void
     setFormulaBarRect: (rect: FormulaBarRect) => void
     // Ref-insertion. Returns true when the gesture was handled (cursor
@@ -761,6 +766,17 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             clearCellAt: (row, col) => {
                 if (deps.readOnly) return
                 deps.writeCell(row, col, '')
+            },
+
+            clearSelection: () => {
+                if (deps.readOnly) return
+                const range = currentSelectionRange()
+                if (range == null) return
+                for (let r = range.startRow; r <= range.endRow; r++) {
+                    for (let c = range.startCol; c <= range.endCol; c++) {
+                        deps.writeCell(r, c, '')
+                    }
+                }
             },
 
             setActiveSurface: surface => set({ activeSurface: surface }),
