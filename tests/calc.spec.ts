@@ -960,7 +960,7 @@ test.describe('Sort & Filter', () => {
         await expect(page.getByLabel('Cell B3', { exact: true })).toHaveText('1')
     })
 
-    test('create filter shows chevron, hide-by-value hides row, clear restores', async ({
+    test('range-mode filter from selection hides non-matching rows and is reversible', async ({
         page,
     }) => {
         await navigateToPackage(page, 'calc')
@@ -971,34 +971,59 @@ test.describe('Sort & Filter', () => {
         await typeIntoCell(page, formulaBar, 'A2', 'Banana')
         await typeIntoCell(page, formulaBar, 'A3', 'Cherry')
 
-        // Build A1:A3 selection, open context menu, and create the filter.
+        // Select A1:A3, then right-click and pick "Filter". The new
+        // flow builds a values-filter from the selection's distinct
+        // displays, so only rows whose A value ∈ {Apple, Banana,
+        // Cherry} stay visible across the whole sheet — i.e. all
+        // three remain visible, and any other rows below would hide.
         await page.getByLabel('Cell A1', { exact: true }).click()
         await page.getByLabel('Cell A3', { exact: true }).click({ modifiers: ['Shift'] })
         await page.getByLabel('Cell A2', { exact: true }).click({ button: 'right' })
-        await page.getByRole('menuitem', { name: 'Create filter' }).click()
+        await page.getByRole('menuitem', { name: 'Filter', exact: true }).click()
 
-        // Chevron in column A header is the per-column "Filter column A"
-        // button rendered by ColumnHeader when the column is in the
-        // filter range.
-        const chevron = page.getByRole('button', { name: 'Filter column A' })
-        await expect(chevron).toBeVisible()
+        await typeIntoCell(page, formulaBar, 'A4', 'Date')
 
-        // Open the dropdown and uncheck "Banana".
-        await chevron.click()
-        await page.getByRole('checkbox', { name: 'Banana' }).click()
-        await page.getByRole('button', { name: 'Apply filter' }).click()
-
-        // Banana row hidden — Cell A2 should now render at row 3's old
-        // position. Easiest check: A2 either has the next-visible value
-        // (Cherry) shifted up, or the cell at "A2" is no longer visible
-        // because the row has 0 height. We check that no element labeled
-        // "Cell A2" is currently rendered.
-        await expect(page.getByLabel('Cell A2', { exact: true })).toHaveCount(0)
-
-        // Reopen, click Clear, and verify Banana returns.
-        await chevron.click()
-        await page.getByRole('button', { name: 'Clear filter' }).click()
+        // Date is not in the selection's distinct values, so its row hides.
+        await expect(page.getByLabel('Cell A4', { exact: true })).toHaveCount(0)
         await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('Banana')
+
+        // Right-click again and Remove filter restores Date.
+        await page.getByLabel('Cell A2', { exact: true }).click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Remove filter' }).click()
+        await expect(page.getByLabel('Cell A4', { exact: true })).toHaveText('Date')
+    })
+
+    test('header-mode filter via Create filter dialog applies a condition', async ({
+        page,
+    }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        await typeIntoCell(page, formulaBar, 'A1', 'Apple')
+        await typeIntoCell(page, formulaBar, 'A2', 'Banana')
+        await typeIntoCell(page, formulaBar, 'A3', 'Cherry')
+
+        // Right-click the column-A header and open the new modal.
+        await page.getByRole('button', { name: 'Select column A' }).click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Create filter…' }).click()
+
+        // Default op is "is equal to"; type Banana and Apply.
+        await page.getByRole('textbox', { name: 'Filter value 1' }).fill('Banana')
+        await page.getByRole('button', { name: 'Apply' }).click()
+
+        // Apple and Cherry rows hide; Banana remains. The per-column
+        // clearing icon should now be visible in the column A header.
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveCount(0)
+        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveCount(0)
+        await expect(
+            page.getByRole('button', { name: 'Clear filter on column A' })
+        ).toBeVisible()
+
+        // Click the clearing icon — only this column's criterion is
+        // removed, which (being the last) also clears the whole filter.
+        await page.getByRole('button', { name: 'Clear filter on column A' }).click()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Apple')
     })
 })
 

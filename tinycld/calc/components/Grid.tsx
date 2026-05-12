@@ -37,7 +37,7 @@ import { ColumnHeader } from './grid/ColumnHeader'
 import { CommentPopover } from './grid/CommentPopover'
 import { CornerCell } from './grid/CornerCell'
 import { MIN_COLS, MIN_ROWS } from './grid/constants'
-import { FilterDropdownAnchor } from './grid/FilterDropdown'
+import { FilterColumnDialog } from './grid/FilterColumnDialog'
 import { HandleContextMenu } from './grid/HandleContextMenu'
 import { HeaderContextMenu } from './grid/HeaderContextMenu'
 import { RowHeader } from './grid/RowHeader'
@@ -320,6 +320,8 @@ function GridInner({
                     dragState={colResize.dragState}
                     filterRange={filter.filterRange}
                     activeFilterCols={filter.activeFilterCols}
+                    filterMode={filter.filterView?.mode ?? null}
+                    onRemoveColumnCriterion={filter.removeHeaderCriterion}
                 />
             </View>
             <View className="flex-1 flex-row">
@@ -368,12 +370,7 @@ function GridInner({
                 currentSheetId={sheetId}
                 currentSelection={printDialog.currentSelection}
             />
-            <FilterDropdownAnchor
-                doc={doc}
-                sheetId={sheetId}
-                colOffsets={colOffsets}
-                scrollX={viewport.scrollX}
-            />
+            <FilterColumnDialog doc={doc} sheetId={sheetId} />
             <HandleContextMenu
                 onAutosizeCol={col => autosizeCol(doc, sheetId, col)}
                 onResetCol={(col, width) => commitColWidth(doc, sheetId, col, width)}

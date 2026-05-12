@@ -7,7 +7,7 @@ import { useFilterView } from '../../hooks/use-filter-view'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { useYSheets } from '../../hooks/use-y-sheets'
 import { autosizeCol, commitColWidth, commitRowHeight } from './resize-actions'
-import { applyFilter, clearFilter } from '../../lib/filter'
+import { clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
 import { isDisjoint, primaryRange } from '../../lib/selection-range'
 import { detectHeaderRow, sortRange } from '../../lib/sort'
@@ -187,12 +187,11 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
         }
     }, [doc, sheetId, fullSheetRange, range, store])
 
-    const onCreateFilter = useCallback(() => {
-        if (doc == null) return
-        const r = fullSheetRange()
-        if (r == null) return
-        applyFilter(doc, sheetId, { range: r, criteria: {} })
-    }, [doc, sheetId, fullSheetRange])
+    const onOpenFilterDialog = useCallback(() => {
+        if (clickedIndex == null) return
+        store.getState().openFilterDialog(clickedIndex)
+        store.getState().closeHeaderMenu()
+    }, [store, clickedIndex])
 
     const onRemoveFilter = useCallback(() => {
         if (doc == null) return
@@ -244,14 +243,29 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
                             <Menu.ItemTitle>Sort sheet Z→A</Menu.ItemTitle>
                         </Menu.Item>
                         {filterView == null ? (
-                            <Menu.Item onPress={onCreateFilter} isDisabled={disjoint}>
-                                <Menu.ItemTitle>Create filter</Menu.ItemTitle>
+                            <Menu.Item
+                                onPress={onOpenFilterDialog}
+                                isDisabled={disjoint || clickedIndex == null}
+                            >
+                                <Menu.ItemTitle>Create filter…</Menu.ItemTitle>
                             </Menu.Item>
-                        ) : (
-                            <Menu.Item onPress={onRemoveFilter}>
-                                <Menu.ItemTitle>Remove filter</Menu.ItemTitle>
-                            </Menu.Item>
-                        )}
+                        ) : filterView.mode === 'header' ? (
+                            <>
+                                <Menu.Item
+                                    onPress={onOpenFilterDialog}
+                                    isDisabled={clickedIndex == null}
+                                >
+                                    <Menu.ItemTitle>
+                                        {filterView.criteria[clickedIndex ?? -1] != null
+                                            ? 'Edit filter…'
+                                            : 'Add filter…'}
+                                    </Menu.ItemTitle>
+                                </Menu.Item>
+                                <Menu.Item onPress={onRemoveFilter}>
+                                    <Menu.ItemTitle>Remove all filters</Menu.ItemTitle>
+                                </Menu.Item>
+                            </>
+                        ) : null}
                         <Separator className="my-1 mx-2" />
                         {clickedIndex != null && clickedIndex > 0 ? (
                             <Menu.Item onPress={onFreezeColsHere}>

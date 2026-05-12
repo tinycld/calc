@@ -164,7 +164,7 @@ export interface GridState {
     cutPending: boolean
     fillDrag: FillDrag | null
     sortDialogOpen: boolean
-    filterDropdownCol: number | null
+    filterDialogCol: number | null
     sortStatus: { mergesBroken: number } | null
     // Transient banner for selection-level status messages (e.g.
     // refused copy on a disjoint selection). Consumers clear it via
@@ -320,8 +320,8 @@ export interface GridActions {
     fillDragEnd: () => void
     openSortDialog: () => void
     closeSortDialog: () => void
-    openFilterDropdown: (col: number) => void
-    closeFilterDropdown: () => void
+    openFilterDialog: (col: number) => void
+    closeFilterDialog: () => void
     setSortStatus: (status: { mergesBroken: number } | null) => void
     setSelectionStatus: (status: SelectionStatus) => void
     dismissSelectionStatus: () => void
@@ -364,7 +364,7 @@ const initialState: GridState = {
     cutPending: false,
     fillDrag: null,
     sortDialogOpen: false,
-    filterDropdownCol: null,
+    filterDialogCol: null,
     sortStatus: null,
     selectionStatus: null,
 }
@@ -1314,8 +1314,8 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
 
             openSortDialog: () => set({ sortDialogOpen: true, contextTarget: null }),
             closeSortDialog: () => set({ sortDialogOpen: false }),
-            openFilterDropdown: col => set({ filterDropdownCol: col, contextTarget: null }),
-            closeFilterDropdown: () => set({ filterDropdownCol: null }),
+            openFilterDialog: col => set({ filterDialogCol: col, contextTarget: null }),
+            closeFilterDialog: () => set({ filterDialogCol: null }),
             setSortStatus: status => set({ sortStatus: status }),
             setSelectionStatus: status => set({ selectionStatus: status }),
             dismissSelectionStatus: () => set({ selectionStatus: null }),
