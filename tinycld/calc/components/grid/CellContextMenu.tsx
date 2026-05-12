@@ -7,7 +7,7 @@ import { useFilterView } from '../../hooks/use-filter-view'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { setYCell } from '../../hooks/use-y-cell'
 import { useYSheets } from '../../hooks/use-y-sheets'
-import { applyFilter, clearFilter } from '../../lib/filter'
+import { applyValuesFilterFromSelection, clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
 import {
     forEachCellInSelection,
@@ -193,8 +193,8 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
 
     const onCreateFilter = useCallback(() => {
         if (doc == null || range == null) return
-        applyFilter(doc, sheetId, { range, criteria: {} })
-    }, [doc, sheetId, range])
+        applyValuesFilterFromSelection(doc, sheetId, range, rowCount, frozenRows)
+    }, [doc, sheetId, range, rowCount, frozenRows])
 
     const onRemoveFilter = useCallback(() => {
         if (doc == null) return
@@ -344,13 +344,13 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                             onPress={onCreateFilter}
                             isDisabled={range == null || disjoint}
                         >
-                            <Menu.ItemTitle>Create filter</Menu.ItemTitle>
+                            <Menu.ItemTitle>Filter</Menu.ItemTitle>
                         </Menu.Item>
-                    ) : (
+                    ) : filterView.mode === 'range' ? (
                         <Menu.Item onPress={onRemoveFilter}>
                             <Menu.ItemTitle>Remove filter</Menu.ItemTitle>
                         </Menu.Item>
-                    )}
+                    ) : null}
                     <Separator className="my-1 mx-2" />
                     <Menu.Item onPress={onMergeAll} isDisabled={disjoint}>
                         <Menu.ItemTitle>Merge cells</Menu.ItemTitle>

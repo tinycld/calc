@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { ChevronDown } from 'lucide-react-native'
+import { FilterX } from 'lucide-react-native'
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import {
     type DragState,
@@ -33,11 +33,19 @@ interface ColumnHeaderProps {
     makeHandleProps: (col: number) => Record<string, unknown>
     dragState: DragState | null
     // Range covered by the active filter view (null when no filter is
-    // set). Columns inside this range render a filter chevron.
+    // set). Retained for semantics even though the per-column affordance
+    // is now driven by `filterMode` + `activeFilterCols`.
     filterRange: { startCol: number; endCol: number } | null
-    // Set of column indexes that have an active criterion. Used to
-    // render the chevron in an accented state.
+    // Set of column indexes that have an active criterion. Header-mode
+    // filters render a clear ✕ icon on columns in this set.
     activeFilterCols: ReadonlySet<number>
+    // Active filter mode (null when no filter is active). Drives the
+    // per-column affordance: `range` shows nothing, `header` shows a
+    // clear ✕ on columns with an active criterion.
+    filterMode: 'range' | 'header' | null
+    // Callback to remove the criterion for a single column (header-mode
+    // only). Wired to the ✕ press.
+    onRemoveColumnCriterion: (col: number) => void
 }
 
 export function ColumnHeader({
@@ -52,6 +60,8 @@ export function ColumnHeader({
     dragState,
     filterRange,
     activeFilterCols,
+    filterMode,
+    onRemoveColumnCriterion,
 }: ColumnHeaderProps) {
     const borderColor = useThemeColor('border')
     const activeCol = useGridStore(s => primaryAnchor(s.selection)?.col ?? null)
@@ -68,7 +78,6 @@ export function ColumnHeader({
         return false
     })
     const store = useGridStoreApi()
-    const muted = useThemeColor('muted-foreground')
     const accent = useThemeColor('accent')
     // Skip the synthetic onPress after a modifier mousedown.
     // preventDefault on mousedown blocks the focus shift but NOT the
@@ -86,8 +95,9 @@ export function ColumnHeader({
     const filterCtx: HeaderFilterCtx = {
         filterRange,
         activeFilterCols,
+        filterMode,
+        onRemoveColumnCriterion,
         store,
-        muted,
         accent,
         skipNextPressRef,
     }
@@ -182,8 +192,9 @@ export function ColumnHeader({
 interface HeaderFilterCtx {
     filterRange: { startCol: number; endCol: number } | null
     activeFilterCols: ReadonlySet<number>
+    filterMode: 'range' | 'header' | null
+    onRemoveColumnCriterion: (col: number) => void
     store: GridStoreApi
-    muted: string
     accent: string
     skipNextPressRef: React.MutableRefObject<boolean>
 }
@@ -216,11 +227,8 @@ function appendHeaderCells(
         // occupy zero pixels of layout space — render nothing rather
         // than a 0×H view to keep the DOM lean.
         if (width > 0) {
-            const inFilterRange =
-                filter.filterRange != null &&
-                col >= filter.filterRange.startCol &&
-                col <= filter.filterRange.endCol
             const hasActiveCriterion = filter.activeFilterCols.has(col)
+            const showClearIcon = filter.filterMode === 'header' && hasActiveCriterion
             // Web modifier-aware mousedown: Ctrl/Cmd-click appends a
             // column-scope sub-range (Sheets-parity disjoint
             // selection); Shift-click extends the active column-
@@ -319,17 +327,17 @@ function appendHeaderCells(
                     >
                         {columnLabel(col)}
                     </Text>
-                    {inFilterRange ? (
+                    {showClearIcon ? (
                         <Pressable
-                            // The chevron sits inside the column-select
-                            // Pressable; stop the press event so opening
-                            // the filter dropdown doesn't also collapse
-                            // the selection onto the whole column.
+                            // The clear icon sits inside the column-select
+                            // Pressable; stop the press so clearing the
+                            // criterion doesn't also collapse selection
+                            // onto the whole column.
                             onPress={e => {
                                 e.stopPropagation()
-                                filter.store.getState().openFilterDropdown(col)
+                                filter.onRemoveColumnCriterion(col)
                             }}
-                            accessibilityLabel={`Filter column ${columnLabel(col)}`}
+                            accessibilityLabel={`Clear filter on column ${columnLabel(col)}`}
                             accessibilityRole="button"
                             style={{
                                 marginLeft: 4,
@@ -338,10 +346,7 @@ function appendHeaderCells(
                                 justifyContent: 'center',
                             }}
                         >
-                            <ChevronDown
-                                size={12}
-                                color={hasActiveCriterion ? filter.accent : filter.muted}
-                            />
+                            <FilterX size={12} color={filter.accent} />
                         </Pressable>
                     ) : null}
                 </Pressable>
