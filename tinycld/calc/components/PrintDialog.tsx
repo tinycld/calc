@@ -35,8 +35,8 @@ export interface PrintDialogProps {
 // PrintConfig via React Hook Form, snapshots the live Y.Doc at submit
 // time, renders the HTML once, and hands it off to the platform's
 // print path (handle-print). The dialog stays open while the print
-// flow runs — on web the iframe + window.print() happens in front of
-// it; on native the system print sheet covers it.
+// flow runs — on web the print container + window.print() happens in
+// front of it; on native the system print sheet covers it.
 export function PrintDialog({
     isOpen,
     onClose,
