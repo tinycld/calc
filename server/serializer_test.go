@@ -2,8 +2,10 @@ package calc
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
@@ -1243,8 +1245,8 @@ func TestSerializerStyleSetsBorders(t *testing.T) {
 				Display:   "from-save",
 				Style: &CellStyle{
 					Borders: &CellBorders{
-						Top:    boolPtr(true),
-						Bottom: boolPtr(true),
+						Top:    &CellBorderEdge{Style: stringPtr("thin"), Color: stringPtr("#000000")},
+						Bottom: &CellBorderEdge{Style: stringPtr("thin"), Color: stringPtr("#000000")},
 					},
 				},
 			},
@@ -1317,7 +1319,7 @@ func TestSerializerStyleClearsBorder(t *testing.T) {
 				SheetID: "sheet1",
 				Row:     2,
 				Col:     2,
-				Style:   &CellStyle{Borders: &CellBorders{Top: boolPtr(false)}},
+				Style:   &CellStyle{Borders: &CellBorders{Top: &CellBorderEdge{IsClear: true}}},
 			},
 		},
 	}
@@ -1388,7 +1390,7 @@ func TestSerializerStyleBordersPreservesDiagonals(t *testing.T) {
 				SheetID: "sheet1",
 				Row:     2,
 				Col:     2,
-				Style:   &CellStyle{Borders: &CellBorders{Bottom: boolPtr(true)}},
+				Style:   &CellStyle{Borders: &CellBorders{Bottom: &CellBorderEdge{Style: stringPtr("thin"), Color: stringPtr("#000000")}}},
 			},
 		},
 	}
@@ -1408,6 +1410,140 @@ func TestSerializerStyleBordersPreservesDiagonals(t *testing.T) {
 	// The seeded top edge survives (it's a schema edge not in the patch).
 	if got := readCellBorder(t, out, "People", 2, 2, "top"); got.Style != 1 {
 		t.Errorf("top border (preserved schema edge) lost: want style=1, got %d", got.Style)
+	}
+}
+
+// TestSerializerStyleSetsBorderColorAndLineStyle: a CellBorderEdge with
+// non-default style + color round-trips through xlsx with the
+// matching excelize Style code (3 = dashed at weight 1, 2 = medium)
+// and color (no leading "#").
+func TestSerializerStyleSetsBorderColorAndLineStyle(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID:   "sheet1",
+				Row:       1,
+				Col:       11,
+				RawString: "borders",
+				Display:   "borders",
+				Style: &CellStyle{
+					Borders: &CellBorders{
+						Top: &CellBorderEdge{
+							Style: stringPtr("dashed"),
+							Color: stringPtr("#FF0000"),
+						},
+						Right: &CellBorderEdge{
+							Style: stringPtr("medium"),
+							Color: stringPtr("#00FF00"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+
+	top := readCellBorder(t, out, "People", 1, 11, "top")
+	if top.Style != 3 {
+		t.Errorf("K1 top border style: want 3 (dashed), got %d", top.Style)
+	}
+	if !strings.EqualFold(top.Color, "FF0000") {
+		t.Errorf("K1 top border color: want FF0000, got %q", top.Color)
+	}
+	right := readCellBorder(t, out, "People", 1, 11, "right")
+	if right.Style != 2 {
+		t.Errorf("K1 right border style: want 2 (medium), got %d", right.Style)
+	}
+	if !strings.EqualFold(right.Color, "00FF00") {
+		t.Errorf("K1 right border color: want 00FF00, got %q", right.Color)
+	}
+}
+
+// TestSerializerStyleClearViaFalseWire proves the scalar-`false` wire
+// form survives JSON decode and lands as an edge-delete in the
+// overlay. This exercises CellBorderEdge.UnmarshalJSON's IsClear
+// path, which the leaf-walking audit cannot cover (IsClear is a
+// non-exported field, invisible to the reflection walk).
+func TestSerializerStyleClearViaFalseWire(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	// Pre-stamp B2 with a top border so we have something to clear.
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	id, err := f.NewStyle(&excelize.Style{
+		Border: []excelize.Border{
+			{Type: "top", Color: "000000", Style: 1},
+			{Type: "right", Color: "000000", Style: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewStyle: %v", err)
+	}
+	if err := f.SetCellStyle("People", "B2", "B2", id); err != nil {
+		t.Fatalf("SetCellStyle: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	_ = f.Close()
+	seeded := buf.Bytes()
+
+	// Decode CellBorders from the on-the-wire JSON shape — borders.top
+	// is the literal scalar `false`, the rest absent. This is what the
+	// TS side emits for an "explicit clear" edge.
+	const wire = `{"top": false}`
+	var borders CellBorders
+	if err := json.Unmarshal([]byte(wire), &borders); err != nil {
+		t.Fatalf("unmarshal CellBorders %s: %v", wire, err)
+	}
+	if borders.Top == nil || !borders.Top.IsClear {
+		t.Fatalf("UnmarshalJSON should have set Top.IsClear=true; got %+v", borders.Top)
+	}
+
+	snap := YDocSnapshot{
+		Sheets: []SheetMeta{
+			{ID: "sheet1", Name: "People", Position: 0},
+			{ID: "sheet2", Name: "Incomes", Position: 1},
+		},
+		Cells: []CellEntry{
+			{
+				SheetID: "sheet1",
+				Row:     2,
+				Col:     2,
+				Style:   &CellStyle{Borders: &borders},
+			},
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+
+	if got := readCellBorder(t, out, "People", 2, 2, "top"); got.Style != 0 {
+		t.Errorf("top border should be cleared via wire-false, got style=%d", got.Style)
+	}
+	if got := readCellBorder(t, out, "People", 2, 2, "right"); got.Style != 1 {
+		t.Errorf("right border (not in patch) should survive: got style=%d", got.Style)
 	}
 }
 
@@ -1878,8 +2014,8 @@ func TestSerializerIntegratedRoundTrip(t *testing.T) {
 						FgColor: stringPtr("#FF0000"),
 					},
 					Borders: &CellBorders{
-						Top:    boolPtr(true),
-						Bottom: boolPtr(true),
+						Top:    &CellBorderEdge{Style: stringPtr("thin"), Color: stringPtr("#000000")},
+						Bottom: &CellBorderEdge{Style: stringPtr("thin"), Color: stringPtr("#000000")},
 					},
 					NumFmt: stringPtr("0.00%"),
 				},

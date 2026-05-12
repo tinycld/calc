@@ -8,6 +8,7 @@ import { findPresetById } from '../../lib/number-format/presets'
 import { allRanges } from '../../lib/selection-range'
 import type { CellAlignment, CellBorders } from '../../lib/workbook-types'
 import type { CellRange } from '../grid-store'
+import { useBordersPickerStore } from '../use-borders-picker-store'
 import { useGridStoreApi } from '../use-grid-store'
 import type { useYCell } from '../use-y-cell'
 
@@ -198,11 +199,19 @@ export function useGridFormatControls({
             if (readOnly || doc == null) return
             const ranges = resolveRanges()
             if (ranges.length === 0) return
+            // Read the picker's sticky color + line style at write time
+            // so each pattern click reflects the most recent sub-picker
+            // selection — matching the Google Sheets / Excel UX where
+            // the color picker pre-arms the next paint.
+            const { color, style } = useBordersPickerStore.getState()
+            const edge = { style, color }
             // applyBorderPreset already wraps its writes in a transact.
             // Nested transacts on the same doc + same origin are
             // flattened by yjs, so wrapping our outer loop here keeps
             // the disjoint write as a single undo step.
-            applyToRanges(ranges, range => applyBorderPreset(doc, sheetId, range, presetId))
+            applyToRanges(ranges, range =>
+                applyBorderPreset(doc, sheetId, range, presetId, edge)
+            )
         },
         [doc, sheetId, resolveRanges, applyToRanges, readOnly]
     )

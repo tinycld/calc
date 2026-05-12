@@ -38,17 +38,40 @@ export interface CellAlignment {
     wrapText?: boolean
 }
 
-// CellBorders stores edge presence as four booleans. Width and color
-// are uniform (1px, foreground) for now — matching the simple
-// "borders dropdown" affordance the toolbar exposes. A future
-// per-edge color/style picker can grow these into objects without
-// schema breakage (the deep-merge in setYCellStyle treats any object
-// patch additively).
+// CellBorderLineStyle enumerates the line-style codes the toolbar's
+// border line picker offers. The value is what survives end-to-end:
+// stored in the YDoc, lands in the snapshot pipeline, and translates
+// to an excelize border style code on save.
+export type CellBorderLineStyle = 'thin' | 'medium' | 'thick' | 'dashed' | 'dotted' | 'double'
+
+// CellBorderEdge describes one edge's appearance: line style + color.
+// Both fields are optional. Absence means "use the renderer's default"
+// (1px solid #000000) — but the toolbar always writes both together,
+// so partial objects only appear in legacy data.
+export interface CellBorderEdge {
+    style?: CellBorderLineStyle
+    color?: string
+}
+
+// CellBorders stores per-edge appearance. Each edge is one of:
+//   - undefined: this edge is not tracked by the doc; the serializer
+//     leaves the on-disk xlsx alone, and the renderer falls back to
+//     the cell's natural look.
+//   - false: explicit clear; the serializer deletes any existing edge
+//     on disk, and the renderer paints no border on this side.
+//   - CellBorderEdge object: paint this edge with the given style +
+//     color; missing fields default to thin / #000000.
+//
+// Merge contract: setYCellStyle replaces each edge wholesale rather
+// than deep-merging into it. The toolbar always sends a complete
+// {style, color} pair on every write, so a deep merge would be
+// pointless complexity. Code that constructs a CellBorders patch
+// must include both fields on every CellBorderEdge it sets.
 export interface CellBorders {
-    top?: boolean
-    right?: boolean
-    bottom?: boolean
-    left?: boolean
+    top?: CellBorderEdge | false
+    right?: CellBorderEdge | false
+    bottom?: CellBorderEdge | false
+    left?: CellBorderEdge | false
 }
 
 export interface CellStyle {

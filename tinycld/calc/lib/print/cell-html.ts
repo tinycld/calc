@@ -1,5 +1,5 @@
 import { normalizeColor } from '../normalize-color'
-import type { CellStyle } from '../workbook-types'
+import type { CellBorderEdge, CellBorderLineStyle, CellStyle } from '../workbook-types'
 
 // cellStyleToInlineCss converts a partial CellStyle into a CSS
 // declaration string suitable for the `style` attribute on a print
@@ -65,13 +65,51 @@ export function cellStyleToInlineCss(style: CellStyle | undefined): string {
 
     const borders = style.borders
     if (borders != null) {
-        const BORDER = '1px solid #000000'
-        if (borders.top) parts.push(`border-top:${BORDER}`)
-        if (borders.right) parts.push(`border-right:${BORDER}`)
-        if (borders.bottom) parts.push(`border-bottom:${BORDER}`)
-        if (borders.left) parts.push(`border-left:${BORDER}`)
+        // CSS supports per-edge style/color natively, so the print path
+        // preserves the user's full intent — unlike the RN render path
+        // which downgrades to a single shared borderStyle.
+        const edge = (side: 'top' | 'right' | 'bottom' | 'left') => {
+            const v = borders[side]
+            if (v == null || v === false) return
+            parts.push(`border-${side}:${edgeToCss(v)}`)
+        }
+        edge('top')
+        edge('right')
+        edge('bottom')
+        edge('left')
     }
 
     if (parts.length === 0) return ''
     return `${parts.join(';')};`
+}
+
+// edgeToCss formats one CellBorderEdge as a CSS shorthand value
+// (`<width>px <css-style> <color>`). Width follows the same
+// medium=2/thick=double=3/else=1 mapping as the RN renderer; CSS
+// styles map directly except thin/medium/thick → solid (line weight
+// carries those flavors in CSS too).
+function edgeToCss(edge: CellBorderEdge): string {
+    const width = widthForStyle(edge.style)
+    const cssStyle =
+        edge.style === 'dashed'
+            ? 'dashed'
+            : edge.style === 'dotted'
+              ? 'dotted'
+              : edge.style === 'double'
+                ? 'double'
+                : 'solid'
+    const color = normalizeColor(edge.color ?? '#000000')
+    return `${width}px ${cssStyle} ${color}`
+}
+
+function widthForStyle(style: CellBorderLineStyle | undefined): number {
+    switch (style) {
+        case 'medium':
+            return 2
+        case 'thick':
+        case 'double':
+            return 3
+        default:
+            return 1
+    }
 }

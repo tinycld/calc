@@ -99,9 +99,16 @@ describe('cellStyleToRenderProps — fill', () => {
 })
 
 describe('cellStyleToRenderProps — borders', () => {
+    const blackThin = { style: 'thin' as const, color: '#000000' }
+
     it('all four edges produce border widths and colors', () => {
         const out = cellStyleToRenderProps({
-            borders: { top: true, right: true, bottom: true, left: true },
+            borders: {
+                top: blackThin,
+                right: blackThin,
+                bottom: blackThin,
+                left: blackThin,
+            },
         })
         expect(out.viewStyle.borderTopWidth).toBe(1)
         expect(out.viewStyle.borderRightWidth).toBe(1)
@@ -110,9 +117,9 @@ describe('cellStyleToRenderProps — borders', () => {
         expect(out.viewStyle.borderTopColor).toBe('#000000')
     })
 
-    it('only the truthy edges are painted', () => {
+    it('only the painted edges (object) get widths; false edges are clears, absent are no-ops', () => {
         const out = cellStyleToRenderProps({
-            borders: { top: true, right: false, bottom: true, left: false },
+            borders: { top: blackThin, right: false, bottom: blackThin, left: false },
         })
         expect(out.viewStyle.borderTopWidth).toBe(1)
         expect(out.viewStyle.borderBottomWidth).toBe(1)
@@ -124,6 +131,55 @@ describe('cellStyleToRenderProps — borders', () => {
         const out = cellStyleToRenderProps({ borders: {} })
         expect(out.viewStyle.borderTopWidth).toBeUndefined()
         expect(out.viewStyle.borderBottomWidth).toBeUndefined()
+    })
+
+    it('per-edge color survives onto borderColor', () => {
+        const out = cellStyleToRenderProps({
+            borders: { top: { style: 'thin', color: '#FF0000' } },
+        })
+        expect(out.viewStyle.borderTopWidth).toBe(1)
+        expect(out.viewStyle.borderTopColor).toBe('#FF0000')
+    })
+
+    it('width derives from line style: medium=2, thick=3, double=3, dashed/dotted/thin=1', () => {
+        const widthFor = (style: 'medium' | 'thick' | 'double' | 'dashed' | 'dotted' | 'thin') =>
+            cellStyleToRenderProps({ borders: { top: { style, color: '#000000' } } }).viewStyle
+                .borderTopWidth
+        expect(widthFor('medium')).toBe(2)
+        expect(widthFor('thick')).toBe(3)
+        expect(widthFor('double')).toBe(3)
+        expect(widthFor('dashed')).toBe(1)
+        expect(widthFor('dotted')).toBe(1)
+        expect(widthFor('thin')).toBe(1)
+    })
+
+    it('borderStyle picks dashed > dotted > solid across the four edges', () => {
+        // RN borderStyle is shared across all four edges. Mixed styles
+        // collapse to one: dashed wins, dotted second, everything else
+        // (medium/thick/double/thin) downgrades to solid.
+        const dashedTop = cellStyleToRenderProps({
+            borders: {
+                top: { style: 'dashed', color: '#000' },
+                right: { style: 'thick', color: '#000' },
+            },
+        })
+        expect(dashedTop.viewStyle.borderStyle).toBe('dashed')
+
+        const dottedOnly = cellStyleToRenderProps({
+            borders: {
+                top: { style: 'dotted', color: '#000' },
+                bottom: { style: 'medium', color: '#000' },
+            },
+        })
+        expect(dottedOnly.viewStyle.borderStyle).toBe('dotted')
+
+        const allSolid = cellStyleToRenderProps({
+            borders: {
+                top: { style: 'thin', color: '#000' },
+                left: { style: 'double', color: '#000' },
+            },
+        })
+        expect(allSolid.viewStyle.borderStyle).toBe('solid')
     })
 })
 

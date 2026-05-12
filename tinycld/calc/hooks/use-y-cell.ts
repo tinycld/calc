@@ -301,6 +301,20 @@ export function setYCellStyle(
             }
             for (const [k, v] of Object.entries(groupPatch)) {
                 if (v == null) continue
+                // Inner value is itself an object (e.g. CellBorderEdge under
+                // a borders edge): build a nested Y.Map so the read path
+                // sees structured data instead of a literal JS object that
+                // y-crdt cannot index. Scalars (string/number/boolean) and
+                // explicit `false` clears land directly on the group map.
+                if (typeof v === 'object' && v !== null) {
+                    const inner = new Y.Map<unknown>()
+                    for (const [ik, iv] of Object.entries(v)) {
+                        if (iv == null) continue
+                        inner.set(ik, iv as unknown)
+                    }
+                    groupMap.set(k, inner)
+                    continue
+                }
                 groupMap.set(k, v as unknown)
             }
         }

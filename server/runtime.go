@@ -415,9 +415,15 @@ func fieldByJSONTag(t reflect.Type, tag string) (reflect.StructField, bool) {
 	return reflect.StructField{}, false
 }
 
-// flattenStyleMap walks one level of group-typed entries (font, fill,
-// alignment) plus any scalar leaves and returns a plain map suitable
-// for json.Marshal. Nil/missing values are skipped so the resulting
+// flattenStyleMap walks the style YMap tree and returns a plain map
+// suitable for json.Marshal. Handles three nesting levels:
+//   - top-level scalar leaves (numFmt)
+//   - group YMaps with scalar leaves (font.bold, alignment.horizontal)
+//   - group YMaps with nested YMap leaves (borders.top = {style, color})
+//
+// json.Marshal would otherwise choke on a YMap pointer it doesn't
+// recognize, leaving the per-edge color/style data unrecoverable.
+// Nil / missing values are skipped at every level so the resulting
 // object only carries explicitly-set attributes.
 func flattenStyleMap(styleMap *ycrdt.YMap) map[string]any {
 	out := map[string]any{}
@@ -429,6 +435,19 @@ func flattenStyleMap(styleMap *ycrdt.YMap) map[string]any {
 			leaves := map[string]any{}
 			group.ForEach(func(k string, v any, _ *ycrdt.YMap) {
 				if v == nil {
+					return
+				}
+				if inner, ok := v.(*ycrdt.YMap); ok {
+					nested := map[string]any{}
+					inner.ForEach(func(ik string, iv any, _ *ycrdt.YMap) {
+						if iv == nil {
+							return
+						}
+						nested[ik] = iv
+					})
+					if len(nested) > 0 {
+						leaves[k] = nested
+					}
 					return
 				}
 				leaves[k] = v

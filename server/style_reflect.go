@@ -104,14 +104,20 @@ var styleOverlayOverrides = map[string]styleOverlayOverride{
 			if f.IsNil() {
 				continue
 			}
-			if f.Elem().Bool() {
-				existing[edge.name] = excelize.Border{
-					Type:  edge.name,
-					Color: "000000",
-					Style: 1, // thin; matches the workbook-types.ts comment
-				}
-			} else {
+			edgePtr := f.Interface().(*CellBorderEdge)
+			if edgePtr.IsClear {
 				delete(existing, edge.name)
+				continue
+			}
+			styleCode := excelizeBorderStyleCode(edgePtr.Style)
+			color := "000000"
+			if edgePtr.Color != nil {
+				color = stripHash(*edgePtr.Color)
+			}
+			existing[edge.name] = excelize.Border{
+				Type:  edge.name,
+				Color: color,
+				Style: styleCode,
 			}
 		}
 
@@ -385,4 +391,66 @@ func isEmptyStruct(v reflect.Value) bool {
 		}
 	}
 	return true
+}
+
+// excelizeBorderStyleCode maps a doc-side line style name to the
+// excelize border style index. Reference: github.com/xuri/excelize/v2
+// styles.go (the table near "Border styles supported by excelize").
+//
+//	1=thin (continuous weight 1), 2=medium (continuous weight 2),
+//	3=dash, 4=dot, 5=thick (continuous weight 3), 6=double.
+//
+// Unknown / nil styles default to 1 (thin) so a partial edge written
+// by an old client still produces a visible border.
+func excelizeBorderStyleCode(style *string) int {
+	if style == nil {
+		return 1
+	}
+	switch *style {
+	case "thin":
+		return 1
+	case "medium":
+		return 2
+	case "dashed":
+		return 3
+	case "dotted":
+		return 4
+	case "thick":
+		return 5
+	case "double":
+		return 6
+	}
+	return 1
+}
+
+// borderStyleNameForCode is the inverse of excelizeBorderStyleCode for
+// the read path. Codes outside the modeled set collapse to a sane
+// fallback so an externally-authored xlsx with (e.g.) Dash Dot still
+// surfaces a doc-side line style instead of silently disappearing.
+func borderStyleNameForCode(code int) string {
+	switch code {
+	case 1:
+		return "thin"
+	case 2:
+		return "medium"
+	case 3, 8, 9, 10, 11, 12, 13:
+		return "dashed"
+	case 4:
+		return "dotted"
+	case 5:
+		return "thick"
+	case 6:
+		return "double"
+	}
+	return "thin"
+}
+
+// stripHash drops a leading "#" from a hex color string so we can hand
+// excelize the bare "RRGGBB" form it stores natively. Colors without a
+// "#" prefix pass through unchanged.
+func stripHash(s string) string {
+	if len(s) > 0 && s[0] == '#' {
+		return s[1:]
+	}
+	return s
 }

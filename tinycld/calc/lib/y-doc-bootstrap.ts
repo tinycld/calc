@@ -268,12 +268,17 @@ export function readYCell(cell: Y.Map<unknown>): YCellValue {
 
 // buildStyleYMap converts a partial CellStyle into a nested Y.Map tree
 // suitable for storing under cell[STYLE_KEY]. Only groups (font, fill,
-// alignment) and individual keys that are actually present in the
-// patch are written — the "absent = untracked" rule applies at every
-// nesting level. Returns null if the patch is structurally empty.
+// alignment, borders) and individual keys that are actually present in
+// the patch are written — the "absent = untracked" rule applies at
+// every nesting level. Returns null if the patch is structurally empty.
 //
-// New style groups land here additively: just add another `case` to
-// the switch with the same shape.
+// Three nesting levels are supported: scalar leaves (font.bold), and
+// per-edge object leaves (borders.top = {style, color}). Boolean
+// `false` under a group key (borders.top = false) is the explicit
+// "clear" signal and lands as a scalar — not a nested map.
+//
+// New style groups land here additively: just add another field with
+// the same shape.
 export function buildStyleYMap(style: CellStyle): Y.Map<unknown> | null {
     const out = new Y.Map<unknown>()
     let any = false
@@ -290,6 +295,20 @@ export function buildStyleYMap(style: CellStyle): Y.Map<unknown> | null {
         let groupAny = false
         for (const [k, v] of Object.entries(groupValue)) {
             if (v == null) continue
+            if (typeof v === 'object') {
+                const inner = new Y.Map<unknown>()
+                let innerAny = false
+                for (const [ik, iv] of Object.entries(v)) {
+                    if (iv == null) continue
+                    inner.set(ik, iv as unknown)
+                    innerAny = true
+                }
+                if (innerAny) {
+                    groupMap.set(k, inner)
+                    groupAny = true
+                }
+                continue
+            }
             groupMap.set(k, v as unknown)
             groupAny = true
         }
@@ -307,6 +326,11 @@ export function buildStyleYMap(style: CellStyle): Y.Map<unknown> | null {
 // already holds the style YMap directly — used by sheet-level row /
 // column / sheet-default style readers, which store the style YMap on
 // sheet metadata rather than inside a cell.
+//
+// Recurses one extra level when a leaf is itself a nested Y.Map (the
+// per-edge {style, color} shape under borders). Without that, a
+// borders edge would land back on the consumer as a Y.Map proxy and
+// the render layer would crash on .style/.color access.
 export function readStyleFromYMapEntry(entry: Y.Map<unknown>): CellStyle | undefined {
     const out: Record<string, unknown> = {}
     let any = false
@@ -316,10 +340,24 @@ export function readStyleFromYMapEntry(entry: Y.Map<unknown>): CellStyle | undef
             const group: Record<string, unknown> = {}
             let groupAny = false
             v.forEach((vv, kk) => {
-                if (vv != null) {
-                    group[kk] = vv
-                    groupAny = true
+                if (vv == null) return
+                if (vv instanceof Y.Map) {
+                    const inner: Record<string, unknown> = {}
+                    let innerAny = false
+                    vv.forEach((iv, ik) => {
+                        if (iv != null) {
+                            inner[ik] = iv
+                            innerAny = true
+                        }
+                    })
+                    if (innerAny) {
+                        group[kk] = inner
+                        groupAny = true
+                    }
+                    return
                 }
+                group[kk] = vv
+                groupAny = true
             })
             if (groupAny) {
                 out[k] = group

@@ -289,25 +289,55 @@ var styleAttributeRegistry = map[string]attributeSpec{
 		},
 		ReadOnly: true,
 	},
-	"Borders.Top": {
-		Canary:           true,
-		ReadFromExcelize: probeBorder("top"),
-		ExtractTo:        extractBorderEdge("Top"),
+	// Per-edge leaves — the audit auto-discovers these via reflection
+	// over CellBorders → CellBorderEdge → {Style, Color}. Each style /
+	// color entry uses a per-edge canary so an accidental cross-edge
+	// swap surfaces immediately. The clear-signal (false on the wire,
+	// IsClear=true in Go) is NOT in the leaf walk; it's covered by
+	// TestSerializerStyleClearViaFalseWire in serializer_test.go.
+	"Borders.Top.Style": {
+		Canary:           "thin",
+		ReadFromExcelize: probeBorderStyle("top"),
+		ExtractTo:        extractBorderEdgeStyle("Top"),
 	},
-	"Borders.Right": {
-		Canary:           true,
-		ReadFromExcelize: probeBorder("right"),
-		ExtractTo:        extractBorderEdge("Right"),
+	"Borders.Top.Color": {
+		Canary:           "#FF8800",
+		CanaryReadBack:   "FF8800",
+		ReadFromExcelize: probeBorderColor("top"),
+		ExtractTo:        extractBorderEdgeColor("Top"),
 	},
-	"Borders.Bottom": {
-		Canary:           true,
-		ReadFromExcelize: probeBorder("bottom"),
-		ExtractTo:        extractBorderEdge("Bottom"),
+	"Borders.Right.Style": {
+		Canary:           "medium",
+		ReadFromExcelize: probeBorderStyle("right"),
+		ExtractTo:        extractBorderEdgeStyle("Right"),
 	},
-	"Borders.Left": {
-		Canary:           true,
-		ReadFromExcelize: probeBorder("left"),
-		ExtractTo:        extractBorderEdge("Left"),
+	"Borders.Right.Color": {
+		Canary:           "#FF8800",
+		CanaryReadBack:   "FF8800",
+		ReadFromExcelize: probeBorderColor("right"),
+		ExtractTo:        extractBorderEdgeColor("Right"),
+	},
+	"Borders.Bottom.Style": {
+		Canary:           "dashed",
+		ReadFromExcelize: probeBorderStyle("bottom"),
+		ExtractTo:        extractBorderEdgeStyle("Bottom"),
+	},
+	"Borders.Bottom.Color": {
+		Canary:           "#FF8800",
+		CanaryReadBack:   "FF8800",
+		ReadFromExcelize: probeBorderColor("bottom"),
+		ExtractTo:        extractBorderEdgeColor("Bottom"),
+	},
+	"Borders.Left.Style": {
+		Canary:           "double",
+		ReadFromExcelize: probeBorderStyle("left"),
+		ExtractTo:        extractBorderEdgeStyle("Left"),
+	},
+	"Borders.Left.Color": {
+		Canary:           "#FF8800",
+		CanaryReadBack:   "FF8800",
+		ReadFromExcelize: probeBorderColor("left"),
+		ExtractTo:        extractBorderEdgeColor("Left"),
 	},
 }
 
@@ -363,27 +393,65 @@ func probeFillString(get func(excelize.Fill) string) attributeProbe {
 	}
 }
 
-func probeBorder(edge string) attributeProbe {
+func probeBorderStyle(edge string) attributeProbe {
 	return func(s *excelize.Style) (any, bool) {
 		if s == nil {
 			return nil, false
 		}
 		for _, b := range s.Border {
 			if b.Type == edge {
-				return true, true
+				if b.Style == 0 {
+					return nil, false
+				}
+				return borderStyleNameForCode(b.Style), true
 			}
 		}
 		return nil, false
 	}
 }
 
-func extractBorderEdge(goField string) func(*CellStyle, any) {
-	return func(dst *CellStyle, value any) {
-		if dst.Borders == nil {
-			dst.Borders = &CellBorders{}
+func probeBorderColor(edge string) attributeProbe {
+	return func(s *excelize.Style) (any, bool) {
+		if s == nil {
+			return nil, false
 		}
-		b := value.(bool)
-		reflect.ValueOf(dst.Borders).Elem().FieldByName(goField).Set(reflect.ValueOf(&b))
+		for _, b := range s.Border {
+			if b.Type == edge {
+				if b.Color == "" {
+					return nil, false
+				}
+				return normalizeHex(b.Color), true
+			}
+		}
+		return nil, false
+	}
+}
+
+func ensureBorderEdge(dst *CellStyle, goField string) *CellBorderEdge {
+	if dst.Borders == nil {
+		dst.Borders = &CellBorders{}
+	}
+	bordersValue := reflect.ValueOf(dst.Borders).Elem()
+	field := bordersValue.FieldByName(goField)
+	if field.IsNil() {
+		field.Set(reflect.New(field.Type().Elem()))
+	}
+	return field.Interface().(*CellBorderEdge)
+}
+
+func extractBorderEdgeStyle(goField string) func(*CellStyle, any) {
+	return func(dst *CellStyle, value any) {
+		edge := ensureBorderEdge(dst, goField)
+		s := value.(string)
+		edge.Style = &s
+	}
+}
+
+func extractBorderEdgeColor(goField string) func(*CellStyle, any) {
+	return func(dst *CellStyle, value any) {
+		edge := ensureBorderEdge(dst, goField)
+		s := value.(string)
+		edge.Color = &s
 	}
 }
 

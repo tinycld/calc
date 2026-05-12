@@ -104,14 +104,33 @@ describe('cellStyleToInlineCss', () => {
         ).toContain('text-align:right')
     })
 
-    it('emits each set border edge', () => {
+    it('emits each set border edge with default style + color', () => {
+        const blackThin = { style: 'thin' as const, color: '#000000' }
         const css = cellStyleToInlineCss({
-            borders: { top: true, right: true, bottom: false, left: true },
+            borders: { top: blackThin, right: blackThin, bottom: false, left: blackThin },
         })
         expect(css).toContain('border-top:1px solid #000000')
         expect(css).toContain('border-right:1px solid #000000')
         expect(css).toContain('border-left:1px solid #000000')
         expect(css).not.toContain('border-bottom')
+    })
+
+    it('emits per-edge color from edge.color', () => {
+        const css = cellStyleToInlineCss({
+            borders: { top: { style: 'thin', color: '#FF0000' } },
+        })
+        expect(css).toContain('border-top:1px solid #FF0000')
+    })
+
+    it('maps line styles: thin/medium/thick → solid + width, dashed/dotted/double → CSS keyword', () => {
+        const ofTop = (style: 'thin' | 'medium' | 'thick' | 'dashed' | 'dotted' | 'double') =>
+            cellStyleToInlineCss({ borders: { top: { style, color: '#000000' } } })
+        expect(ofTop('thin')).toContain('border-top:1px solid #000000')
+        expect(ofTop('medium')).toContain('border-top:2px solid #000000')
+        expect(ofTop('thick')).toContain('border-top:3px solid #000000')
+        expect(ofTop('dashed')).toContain('border-top:1px dashed #000000')
+        expect(ofTop('dotted')).toContain('border-top:1px dotted #000000')
+        expect(ofTop('double')).toContain('border-top:3px double #000000')
     })
 
     it('combines multiple groups with semicolons', () => {

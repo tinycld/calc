@@ -129,22 +129,34 @@ describe('format controls — fill color', () => {
 })
 
 describe('format controls — borders', () => {
-    it('all-borders patch writes four true edges', () => {
+    const blackThin = { style: 'thin' as const, color: '#000000' }
+
+    it('all-borders patch writes four edge objects', () => {
         const doc = new Y.Doc()
         setYCellStyle(doc, 'sheet1', 1, 1, {
-            borders: { top: true, right: true, bottom: true, left: true },
+            borders: {
+                top: blackThin,
+                right: blackThin,
+                bottom: blackThin,
+                left: blackThin,
+            },
         })
         const b = readStyle(doc, 'sheet1', 1, 1)?.borders
-        expect(b?.top).toBe(true)
-        expect(b?.right).toBe(true)
-        expect(b?.bottom).toBe(true)
-        expect(b?.left).toBe(true)
+        expect(b?.top).toEqual(blackThin)
+        expect(b?.right).toEqual(blackThin)
+        expect(b?.bottom).toEqual(blackThin)
+        expect(b?.left).toEqual(blackThin)
     })
 
-    it('no-borders patch writes four false edges', () => {
+    it('no-borders patch writes four false edges (the explicit clear signal)', () => {
         const doc = new Y.Doc()
         setYCellStyle(doc, 'sheet1', 1, 1, {
-            borders: { top: true, right: true, bottom: true, left: true },
+            borders: {
+                top: blackThin,
+                right: blackThin,
+                bottom: blackThin,
+                left: blackThin,
+            },
         })
         setYCellStyle(doc, 'sheet1', 1, 1, {
             borders: { top: false, right: false, bottom: false, left: false },
@@ -154,6 +166,43 @@ describe('format controls — borders', () => {
         expect(b?.right).toBe(false)
         expect(b?.bottom).toBe(false)
         expect(b?.left).toBe(false)
+    })
+
+    it('preserves per-edge color and line-style on round-trip through the YDoc', () => {
+        const doc = new Y.Doc()
+        setYCellStyle(doc, 'sheet1', 1, 1, {
+            borders: {
+                top: { style: 'dashed', color: '#FF0000' },
+                right: { style: 'medium', color: '#00FF00' },
+            },
+        })
+        const b = readStyle(doc, 'sheet1', 1, 1)?.borders
+        expect(b?.top).toEqual({ style: 'dashed', color: '#FF0000' })
+        expect(b?.right).toEqual({ style: 'medium', color: '#00FF00' })
+    })
+})
+
+describe('format controls — setBorders reads the picker store', () => {
+    it('uses the store color + style on the next write', async () => {
+        // Imported lazily so the store module isn't initialized at file
+        // collection time (other tests don't touch the picker).
+        const { useBordersPickerStore } = await import(
+            '../tinycld/calc/hooks/use-borders-picker-store'
+        )
+        const { applyBorderPreset } = await import('../tinycld/calc/lib/border-presets')
+        useBordersPickerStore.setState({ color: '#1565C0', style: 'thick' })
+
+        const doc = new Y.Doc()
+        const range = { startRow: 1, endRow: 1, startCol: 1, endCol: 1 }
+        const { color, style } = useBordersPickerStore.getState()
+        applyBorderPreset(doc, 'sheet1', range, 'all', { color, style })
+
+        const b = readStyle(doc, 'sheet1', 1, 1)?.borders
+        expect(b?.top).toEqual({ style: 'thick', color: '#1565C0' })
+        expect(b?.right).toEqual({ style: 'thick', color: '#1565C0' })
+
+        // Reset so subsequent suites see the defaults.
+        useBordersPickerStore.setState({ color: '#000000', style: 'thin' })
     })
 })
 

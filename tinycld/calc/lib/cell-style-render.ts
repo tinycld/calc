@@ -1,6 +1,6 @@
 import type { TextStyle, ViewStyle } from 'react-native'
 import { normalizeColor } from './normalize-color'
-import type { CellStyle } from './workbook-types'
+import type { CellBorderEdge, CellBorderLineStyle, CellStyle } from './workbook-types'
 
 // CellRenderStyle is the bundle of RN style values produced from a
 // partial CellStyle. A single helper produces all three layers
@@ -81,25 +81,21 @@ export function cellStyleToRenderProps(style: CellStyle | undefined): CellRender
     }
 
     if (style.borders != null) {
-        // Uniform 1px black borders for now — matches Excel's default
-        // border color. Per-edge color/style is a future extension.
-        const BORDER_COLOR = '#000000'
-        if (style.borders.top) {
-            viewStyle.borderTopWidth = 1
-            viewStyle.borderTopColor = BORDER_COLOR
-        }
-        if (style.borders.right) {
-            viewStyle.borderRightWidth = 1
-            viewStyle.borderRightColor = BORDER_COLOR
-        }
-        if (style.borders.bottom) {
-            viewStyle.borderBottomWidth = 1
-            viewStyle.borderBottomColor = BORDER_COLOR
-        }
-        if (style.borders.left) {
-            viewStyle.borderLeftWidth = 1
-            viewStyle.borderLeftColor = BORDER_COLOR
-        }
+        // Per-edge translation: each edge is either an object describing
+        // its style + color, the literal `false` (clear; render as no
+        // border), or absent. RN's `borderStyle` is shared across all
+        // four edges and limited to solid/dotted/dashed — we pick one
+        // for the whole cell with preference dashed > dotted > solid
+        // and downgrade medium/thick/double to solid (the width carries
+        // weight on render). The xlsx export path preserves the user's
+        // full intent; the on-screen render is intentionally lossy on
+        // mixed line styles.
+        applyEdge(viewStyle, 'Top', style.borders.top)
+        applyEdge(viewStyle, 'Right', style.borders.right)
+        applyEdge(viewStyle, 'Bottom', style.borders.bottom)
+        applyEdge(viewStyle, 'Left', style.borders.left)
+        const cellBorderStyle = pickBorderStyle(style.borders)
+        if (cellBorderStyle != null) viewStyle.borderStyle = cellBorderStyle
     }
 
     if (style.alignment != null) {
@@ -134,5 +130,63 @@ export function cellStyleToRenderProps(style: CellStyle | undefined): CellRender
     }
 
     return { viewStyle, textStyle, numberOfLines }
+}
+
+// applyEdge sets the per-side border width + color on `viewStyle` for
+// one CellBorders edge. `false` and absent edges are no-ops; an object
+// edge writes width derived from its style (medium=2, thick/double=3,
+// thin/dashed/dotted=1) and color via normalizeColor (defaulting to
+// black when the edge has no color).
+//
+// `side` is the PascalCase RN suffix ("Top", "Right", …). The function
+// is a thin assignment shim — keeping it factored avoids repeating the
+// width-from-style switch four times in the borders block.
+function applyEdge(
+    viewStyle: ViewStyle,
+    side: 'Top' | 'Right' | 'Bottom' | 'Left',
+    edge: CellBorderEdge | false | undefined
+): void {
+    if (edge == null || edge === false) return
+    const widthKey = `border${side}Width` as const
+    const colorKey = `border${side}Color` as const
+    viewStyle[widthKey] = widthForStyle(edge.style)
+    viewStyle[colorKey] = normalizeColor(edge.color ?? '#000000')
+}
+
+function widthForStyle(style: CellBorderLineStyle | undefined): number {
+    switch (style) {
+        case 'medium':
+            return 2
+        case 'thick':
+        case 'double':
+            return 3
+        default:
+            return 1
+    }
+}
+
+// pickBorderStyle collapses the up-to-four edge styles into a single
+// RN `borderStyle` value. RN applies one borderStyle to all four sides
+// simultaneously (it has no per-side variant) and only honors
+// solid/dotted/dashed; the remaining shapes (medium/thick/double) all
+// downgrade to solid. Preference order dashed > dotted > solid keeps
+// the most visually distinct value when edges disagree.
+function pickBorderStyle(
+    borders: NonNullable<CellStyle['borders']>
+): 'solid' | 'dotted' | 'dashed' | undefined {
+    let best: 'solid' | 'dotted' | 'dashed' | undefined
+    const rank = (s: 'solid' | 'dotted' | 'dashed') =>
+        s === 'dashed' ? 3 : s === 'dotted' ? 2 : 1
+    for (const edge of [borders.top, borders.right, borders.bottom, borders.left]) {
+        if (edge == null || edge === false) continue
+        const candidate: 'solid' | 'dotted' | 'dashed' =
+            edge.style === 'dashed'
+                ? 'dashed'
+                : edge.style === 'dotted'
+                  ? 'dotted'
+                  : 'solid'
+        if (best == null || rank(candidate) > rank(best)) best = candidate
+    }
+    return best
 }
 

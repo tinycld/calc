@@ -1,5 +1,11 @@
 package calc
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
 // YDocSnapshot is a Go-native, point-in-time view of a calc room's
 // Y.Doc state, suitable for handing to a serializer that doesn't
 // know (or care) how the doc is implemented. The serializer in
@@ -159,17 +165,85 @@ type CellAlignment struct {
 	WrapText   *bool   `json:"wrapText,omitempty"`
 }
 
-// CellBorders mirrors the doc-side schema: presence of each edge as a
-// boolean. The "Borders" entry in styleOverlayOverrides maps each
-// non-nil edge onto an excelize.Border with Type="thin" and
-// Color="000000" — the uniform black-thin look the toolbar's borders
-// dropdown affords today. When per-edge color/style pickers come
-// online, grow these fields into objects (the deep-merge in
-// setYCellStyle on the TS side treats any object patch additively)
-// and extend the Borders override.
+// CellBorders mirrors the doc-side schema: each edge is one of:
+//   - nil pointer: edge is not tracked by the doc; the serializer
+//     leaves the on-disk xlsx alone.
+//   - non-nil with IsClear=true: explicit clear; the serializer deletes
+//     any existing edge on disk. This is how the doc-side `false`
+//     scalar (UnmarshalJSON below) lands in Go.
+//   - non-nil with Style/Color set: paint the edge with that style and
+//     color.
+//
+// The "Borders" entry in styleOverlayOverrides consumes each non-nil
+// edge and writes the corresponding excelize.Border. Diagonals (and
+// any other non-orthogonal edge types in the source workbook) survive
+// untouched.
 type CellBorders struct {
-	Top    *bool `json:"top,omitempty"`
-	Right  *bool `json:"right,omitempty"`
-	Bottom *bool `json:"bottom,omitempty"`
-	Left   *bool `json:"left,omitempty"`
+	Top    *CellBorderEdge `json:"top,omitempty"`
+	Right  *CellBorderEdge `json:"right,omitempty"`
+	Bottom *CellBorderEdge `json:"bottom,omitempty"`
+	Left   *CellBorderEdge `json:"left,omitempty"`
+}
+
+// CellBorderEdge describes one edge's appearance: line style + color.
+// Both fields are nullable. Absence falls back to the renderer /
+// serializer default (1px / #000000). The non-exported IsClear field
+// carries the explicit-clear signal the wire format encodes as the
+// scalar `false`; the reflect-driven audit walks only the exported
+// pointer leaves, so IsClear lives outside the leaf walk and gets a
+// dedicated test in serializer_test.go.
+type CellBorderEdge struct {
+	Style   *string `json:"style,omitempty"`
+	Color   *string `json:"color,omitempty"`
+	IsClear bool    `json:"-"`
+}
+
+// UnmarshalJSON accepts both wire shapes the TS side may send:
+//   - the scalar `false` → an "explicit clear" edge (IsClear=true,
+//     Style/Color nil).
+//   - an object {style?, color?} → a paint-this-edge edge with the
+//     given fields (IsClear=false).
+//
+// Anything else (numbers, strings, `null`, `true`) is rejected with
+// an error so a schema regression surfaces immediately on the wire.
+func (e *CellBorderEdge) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if bytes.Equal(trimmed, []byte("false")) {
+		e.IsClear = true
+		e.Style = nil
+		e.Color = nil
+		return nil
+	}
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		// Avoid recursing into UnmarshalJSON via the named alias
+		// trick — re-aliasing the type sheds the receiver method.
+		type rawEdge struct {
+			Style *string `json:"style,omitempty"`
+			Color *string `json:"color,omitempty"`
+		}
+		var raw rawEdge
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return err
+		}
+		e.IsClear = false
+		e.Style = raw.Style
+		e.Color = raw.Color
+		return nil
+	}
+	return fmt.Errorf("calc: CellBorderEdge: unsupported JSON shape %s", string(trimmed))
+}
+
+// MarshalJSON mirrors the wire shape: an "explicit clear" edge emits
+// `false`, anything else emits the {style?, color?} object. Used by
+// any path that re-serializes a Go-side CellBorders (e.g. the row /
+// sheet style snapshot encoders that round-trip through JSON).
+func (e CellBorderEdge) MarshalJSON() ([]byte, error) {
+	if e.IsClear {
+		return []byte("false"), nil
+	}
+	type rawEdge struct {
+		Style *string `json:"style,omitempty"`
+		Color *string `json:"color,omitempty"`
+	}
+	return json.Marshal(rawEdge{Style: e.Style, Color: e.Color})
 }
