@@ -6,6 +6,10 @@ import { Text, View } from 'react-native'
 import { findPresetByNumFmt, NUMBER_FORMAT_PRESETS } from '../../lib/number-format/presets'
 import { ToolbarButton } from './ToolbarButton'
 
+// Re-exported so the Format menubar can render the same preset list
+// without duplicating the source-of-truth registry.
+export { NUMBER_FORMAT_PRESETS as numberFormatPresets } from '../../lib/number-format/presets'
+
 interface NumberFormatMenuProps {
     currentNumFmt: string | undefined
     disabled: boolean
