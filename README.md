@@ -26,6 +26,29 @@ identity, the drive share rules govern who can open the room, and the xlsx
 blob attached to the drive_item is the source of truth that survives across
 sessions.
 
+## Menus
+
+A Sheets-style menubar sits above the toolbar:
+
+- **File** — New spreadsheet, Open, Import, Make a copy (disabled until
+  server-side blob copy lands), Download (XLSX / CSV current / CSV all),
+  Rename, Move to trash, Details, Print.
+- **Edit** — Undo, Redo, Cut, Copy, Paste, Paste special (Values only,
+  Format only), Find and replace.
+- **View** — Freeze (rows / columns / up to selection / Unfreeze), Hidden
+  sheets (re-show a hidden tab).
+- **Format** — Number (preset registry), Text (Bold / Italic / Underline /
+  Strikethrough with active-state check), Alignment (Left / Center / Right),
+  Font size, Merge cells, Clear formatting (⌘\\).
+- **Data** — Sort range, Create / Remove filter.
+- **Help** — Documentation (`tinycld.org/docs`), Function list (every
+  HyperFormula function name), Keyboard shortcuts (⌘/).
+
+The toolbar is trimmed to the core formatting controls (Undo/Redo, number
+format, currency / percent / decimal stepper, font size, bold / italic /
+underline / strike, text color, fill color, borders, horizontal alignment,
+find). Sort, filter, merge, freeze, download, and print are menu-only.
+
 ## Architecture
 
 ```
@@ -213,6 +236,11 @@ tinycld/calc/
         CornerCell, CommentPopover, CommentIndicator,
         CutMarchingAntsOverlay, Toolbar (+ submenus), FormulaBar,
         SheetTabs, CalcPreview
+        menubar/
+            MenuBar.tsx, MenuBarTrigger.tsx, MenuShortcut.tsx,
+            FileMenu, EditMenu, ViewMenu, FormatMenu, DataMenu, HelpMenu
+        dialogs/
+            FunctionListDialog.tsx, KeyboardShortcutsDialog.tsx
     hooks/
         use-realtime.ts            calc-flavored useRealtimeRoom
         use-workbook-context.tsx   provider with doc + awareness
@@ -225,7 +253,10 @@ tinycld/calc/
         use-undo-manager.ts        Y.UndoManager wired to typing
         use-clipboard.ts           copy/cut/paste (web + native adapters)
         use-column-resize.ts, use-row-resize.ts
-        use-calc-shortcuts.ts      keyboard handler
+        use-calc-shortcuts.ts      keyboard handler + shortcut docs
+        use-clear-formatting.ts    wipe cell styles in a range (⌘\)
+        use-menu-dialogs-store.ts  zustand for Function list / Shortcuts dialogs
+        use-workbook-file-actions.ts  rename / trash / details from File menu
     lib/
         workbook-types.ts          CellKind, CellStyle, formatCell
         y-doc-bootstrap.ts         SHEETS_MAP / CELLS_MAP / readYCell / bootstrap
@@ -253,14 +284,14 @@ git clone git@github.com:tinycld/calc.git
 
 # Install deps in the app shell
 cd tinycld
-bun install
+pnpm install
 
 # Link this package (and its dependency, @tinycld/drive) into the app shell
-bun run packages:link ../drive
-bun run packages:link ../calc
+pnpm run packages:link ../drive
+pnpm run packages:link ../calc
 
 # Run the full stack
-bun run dev
+pnpm run dev
 ```
 
 ## Standalone checks
@@ -270,7 +301,7 @@ From this directory, with `node_modules` symlinked to `../tinycld/node_modules`:
 ```sh
 ln -s ../tinycld/node_modules node_modules
 
-bun run lint        # biome (config lives in the app shell)
+pnpm run lint        # biome (config lives in the app shell)
 ```
 
 Typechecking is best done from inside `tinycld/` after this package is linked
@@ -280,9 +311,9 @@ which a standalone `tsc` invocation in this package can see:
 
 ```sh
 cd ../tinycld
-bun run typecheck
-bun run test:unit       # vitest, including this package's tests/
-bun run test:go         # go test on this package's server/
+pnpm run typecheck
+pnpm run test:unit       # vitest, including this package's tests/
+pnpm run test:go         # go test on this package's server/
 ```
 
 ## CI
