@@ -245,6 +245,94 @@ export function buildCalcShortcuts({
     ]
 }
 
+// getCalcShortcutDocs returns the pure metadata for every Calc
+// shortcut — id, keys, description, group — without needing the
+// live store/clipboard/find handler bundles. Used by the in-app
+// Keyboard shortcuts help dialog where we only want to render the
+// list, not bind real callbacks.
+//
+// Kept in sync by hand with buildCalcShortcuts. Drift is caught by
+// the unit test that asserts both lists agree on (id, keys, group,
+// description).
+export interface CalcShortcutDoc {
+    id: string
+    keys: string
+    description: string
+    group: string
+}
+
+export function getCalcShortcutDocs(): CalcShortcutDoc[] {
+    return [
+        { id: 'calc.clipboard.copy', keys: '$mod+c', group: 'Calc', description: 'Copy' },
+        { id: 'calc.clipboard.cut', keys: '$mod+x', group: 'Calc', description: 'Cut' },
+        {
+            id: 'calc.clipboard.cancelCut',
+            keys: 'Escape',
+            group: 'Calc',
+            description: 'Cancel cut',
+        },
+        { id: 'calc.clipboard.paste', keys: '$mod+v', group: 'Calc', description: 'Paste' },
+        {
+            id: 'calc.clipboard.pasteValues',
+            keys: '$mod+Shift+v',
+            group: 'Calc',
+            description: 'Paste values only',
+        },
+        {
+            id: 'calc.clipboard.pasteFormulas',
+            keys: '$mod+Alt+v',
+            group: 'Calc',
+            description: 'Paste formulas only',
+        },
+        {
+            id: 'calc.clipboard.pasteFormat',
+            keys: '$mod+Alt+Shift+v',
+            group: 'Calc',
+            description: 'Paste format only',
+        },
+        {
+            id: 'calc.clipboard.pasteTranspose',
+            keys: '$mod+Alt+t',
+            group: 'Calc',
+            description: 'Paste transposed',
+        },
+        { id: 'calc.format.bold', keys: '$mod+b', group: 'Calc', description: 'Bold' },
+        { id: 'calc.format.italic', keys: '$mod+i', group: 'Calc', description: 'Italic' },
+        {
+            id: 'calc.format.underline',
+            keys: '$mod+u',
+            group: 'Calc',
+            description: 'Underline',
+        },
+        {
+            id: 'calc.format.strike',
+            keys: '$mod+Shift+x',
+            group: 'Calc',
+            description: 'Strikethrough',
+        },
+        {
+            id: 'calc.format.clearFormatting',
+            keys: '$mod+\\',
+            group: 'Calc',
+            description: 'Clear formatting',
+        },
+        { id: 'calc.find.open', keys: '$mod+f', group: 'Calc', description: 'Find' },
+        {
+            id: 'calc.find.openReplace',
+            keys: '$mod+Shift+h',
+            group: 'Calc',
+            description: 'Find and replace',
+        },
+        { id: 'calc.find.next', keys: '$mod+g', group: 'Calc', description: 'Next match' },
+        {
+            id: 'calc.find.prev',
+            keys: '$mod+Shift+g',
+            group: 'Calc',
+            description: 'Previous match',
+        },
+    ]
+}
+
 export function useCalcShortcuts({
     store,
     clipboard,

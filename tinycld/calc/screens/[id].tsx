@@ -6,6 +6,8 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useRef } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import type * as Y from 'yjs'
+import { FunctionListDialog } from '../components/dialogs/FunctionListDialog'
+import { KeyboardShortcutsDialog } from '../components/dialogs/KeyboardShortcutsDialog'
 import { Grid } from '../components/Grid'
 import { CommentsProvider } from '../components/grid/CommentsContext'
 import { SheetTabs } from '../components/SheetTabs'
@@ -117,6 +119,8 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                     activeSheetId={activeSheet.id}
                     onSelect={onSelect}
                 />
+                <FunctionListDialog />
+                <KeyboardShortcutsDialog />
             </View>
         </CommentsProvider>
     )
