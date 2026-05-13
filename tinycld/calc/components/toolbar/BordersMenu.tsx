@@ -6,7 +6,7 @@ import { useCallback, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useBordersPickerStore } from "../../hooks/use-borders-picker-store";
 import type { BorderPresetId } from "../../lib/border-presets";
-import type { CellBorders } from "../../lib/workbook-types";
+import type { CellBorderEdge, CellBorderLineStyle, CellBorders } from "../../lib/workbook-types";
 import {
 	BorderNoneIcon,
 	BorderOuterIcon,

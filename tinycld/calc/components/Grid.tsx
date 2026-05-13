@@ -21,16 +21,20 @@ import { useCalcShortcuts } from '../hooks/use-calc-shortcuts'
 import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { GridStoreProvider } from '../hooks/use-grid-store'
+import { useMenuDialogsStore } from '../hooks/use-menu-dialogs-store'
 import { createPrintDialogStore, PrintDialogProvider } from '../hooks/use-print-dialog'
 import { usePresence } from '../hooks/use-presence'
+import { useSheetActions } from '../hooks/use-sheet-actions'
 import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
-import { useYSheets } from '../hooks/use-y-sheets'
+import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
+import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { FindReplaceDialogGate } from './FindReplaceDialog'
-import { PrintDialog } from './PrintDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
+import { MenuBar } from './menubar/MenuBar'
+import { PrintDialog } from './PrintDialog'
 import { Body } from './grid/Body'
 import { CellContextMenu } from './grid/CellContextMenu'
 import { ColumnHeader } from './grid/ColumnHeader'
@@ -45,7 +49,7 @@ import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-acti
 import { SortDialog } from './grid/SortDialog'
 import { SelectionStatusBanner } from './SelectionStatusBanner'
 import { SortStatusBanner } from './SortStatusBanner'
-import { Toolbar } from './Toolbar'
+import { Toolbar, type ToolbarProps } from './Toolbar'
 
 export type GridHandle = GridViewportHandle
 
@@ -62,6 +66,13 @@ interface GridProps {
     // toolbar buttons and the Cmd-Z keyboard shortcuts share one
     // Y.UndoManager instance.
     undoState: UndoManagerState
+    // Workbook display name; the File menu surfaces this via the
+    // "Rename…" dialog and the "Make a copy" default value.
+    workbookName: string
+    // Drive-side actions (rename / duplicate / trash / open details)
+    // resolved at the screen layer so Grid stays agnostic to drive's
+    // hook signature.
+    fileActions: WorkbookFileActions
 }
 
 // Top-level Grid component. Builds the per-instance Zustand store
@@ -75,7 +86,16 @@ interface GridProps {
 // orchestration here is intentionally thin — Grid is composition,
 // not logic.
 export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
-    { sheetId, driveItemId, minRows = MIN_ROWS, minCols = MIN_COLS, readOnly = false, undoState },
+    {
+        sheetId,
+        driveItemId,
+        minRows = MIN_ROWS,
+        minCols = MIN_COLS,
+        readOnly = false,
+        undoState,
+        workbookName,
+        fileActions,
+    },
     ref
 ) {
     const { doc, awareness } = useWorkbook()
@@ -100,6 +120,8 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                         undoState={undoState}
                         instance={instance}
                         gridRef={ref}
+                        workbookName={workbookName}
+                        fileActions={fileActions}
                     />
                 </PrintDialogProvider>
             </FindStoreProvider>
@@ -116,6 +138,8 @@ interface GridInnerProps {
     undoState: UndoManagerState
     instance: GridStoreInstance
     gridRef: React.ForwardedRef<GridHandle>
+    workbookName: string
+    fileActions: WorkbookFileActions
 }
 
 function GridInner({
@@ -127,6 +151,8 @@ function GridInner({
     undoState,
     instance,
     gridRef,
+    workbookName,
+    fileActions,
 }: GridInnerProps) {
     const { doc, awareness } = useWorkbook()
     const sheets = useYSheets(doc)
@@ -238,58 +264,87 @@ function GridInner({
     const filter = useGridFilterControls({ doc, sheetId, store: instance.store })
     const printDialog = useGridPrintDialog(sheetId)
     const freeze = useGridFreezeControls(instance.store)
+    const sheetActions = useSheetActions(doc)
+
+    const allSheets = useAllYSheets(doc)
+    const openFunctionList = useMenuDialogsStore(s => s.openFunctionList)
+    const openKeyboardShortcuts = useMenuDialogsStore(s => s.openKeyboardShortcuts)
+    // Real implementation lands in a later task; the menubar shell only
+    // needs a callable handle so its prop bundle typechecks.
+    const onClearFormatting = useCallback(() => {}, [])
+
+    // Shared prop identity for the toolbar and the menubar; both
+    // consume the same bag so the menubar mirroring stays in lockstep
+    // with the toolbar without duplicating field declarations.
+    const toolbarPropsBundle: ToolbarProps = {
+        disabled: readOnly || !toolbar.hasSelection,
+        canUndo: undoState.canUndo,
+        canRedo: undoState.canRedo,
+        onUndo: undoState.undo,
+        onRedo: undoState.redo,
+        isBold: toolbar.isBold,
+        isItalic: toolbar.isItalic,
+        isUnderline: toolbar.isUnderline,
+        isStrike: toolbar.isStrike,
+        onToggleBold: toolbar.onToggleBold,
+        onToggleItalic: toolbar.onToggleItalic,
+        onToggleUnderline: toolbar.onToggleUnderline,
+        onToggleStrike: toolbar.onToggleStrike,
+        currentNumFmt: format.currentNumFmt,
+        onApplyPreset: format.applyPreset,
+        onApplyCurrency: format.applyCurrency,
+        onApplyPercent: format.applyPercent,
+        onDecreaseDecimal: format.decreaseDecimal,
+        onIncreaseDecimal: format.increaseDecimal,
+        fontSize: format.fontSize,
+        onSetFontSize: format.setFontSize,
+        fontColor: format.fontColor,
+        onSetFontColor: format.setFontColor,
+        fillColor: format.fillColor,
+        onSetFillColor: format.setFillColor,
+        borders: format.borders,
+        onSetBorders: format.setBorders,
+        horizontalAlign: format.horizontalAlign,
+        onSetHorizontalAlign: format.setHorizontalAlign,
+        onOpenFind: onOpenFind,
+        onDownloadCsvCurrent: csvDownload.downloadCurrent,
+        onDownloadCsvAll: csvDownload.downloadAll,
+        onOpenPrint: printDialog.open,
+        onOpenSort: toolbarActions.openSort,
+        onToggleFilter: filter.toggleFilter,
+        isFilterActive: filter.isFilterActive,
+        onMergeAll: toolbarActions.mergeAll,
+        onMergeHorizontal: toolbarActions.mergeHorizontal,
+        onMergeVertical: toolbarActions.mergeVertical,
+        onUnmerge: toolbarActions.unmerge,
+        frozenRows,
+        frozenCols,
+        selectionBottomRow: freeze.selectionBottomRow,
+        selectionRightCol: freeze.selectionRightCol,
+        onSetFrozenRows: freeze.setFrozenRows,
+        onSetFrozenCols: freeze.setFrozenCols,
+        onUnfreeze: freeze.unfreeze,
+    }
 
     return (
         <View className="flex-1 bg-background web:select-none">
-            <Toolbar
-                disabled={readOnly || !toolbar.hasSelection}
-                canUndo={undoState.canUndo}
-                canRedo={undoState.canRedo}
-                onUndo={undoState.undo}
-                onRedo={undoState.redo}
-                isBold={toolbar.isBold}
-                isItalic={toolbar.isItalic}
-                isUnderline={toolbar.isUnderline}
-                isStrike={toolbar.isStrike}
-                onToggleBold={toolbar.onToggleBold}
-                onToggleItalic={toolbar.onToggleItalic}
-                onToggleUnderline={toolbar.onToggleUnderline}
-                onToggleStrike={toolbar.onToggleStrike}
-                currentNumFmt={format.currentNumFmt}
-                onApplyPreset={format.applyPreset}
-                onApplyCurrency={format.applyCurrency}
-                onApplyPercent={format.applyPercent}
-                onDecreaseDecimal={format.decreaseDecimal}
-                onIncreaseDecimal={format.increaseDecimal}
-                fontSize={format.fontSize}
-                onSetFontSize={format.setFontSize}
-                fontColor={format.fontColor}
-                onSetFontColor={format.setFontColor}
-                fillColor={format.fillColor}
-                onSetFillColor={format.setFillColor}
-                borders={format.borders}
-                onSetBorders={format.setBorders}
-                horizontalAlign={format.horizontalAlign}
-                onSetHorizontalAlign={format.setHorizontalAlign}
-                onOpenFind={onOpenFind}
-                onDownloadCsvCurrent={csvDownload.downloadCurrent}
-                onDownloadCsvAll={csvDownload.downloadAll}
-                onOpenPrint={printDialog.open}
-                onOpenSort={toolbarActions.openSort}
-                onToggleFilter={filter.toggleFilter}
-                isFilterActive={filter.isFilterActive}
-                onMergeAll={toolbarActions.mergeAll}
-                onMergeHorizontal={toolbarActions.mergeHorizontal}
-                onMergeVertical={toolbarActions.mergeVertical}
-                onUnmerge={toolbarActions.unmerge}
-                frozenRows={frozenRows}
-                frozenCols={frozenCols}
-                selectionBottomRow={freeze.selectionBottomRow}
-                selectionRightCol={freeze.selectionRightCol}
-                onSetFrozenRows={freeze.setFrozenRows}
-                onSetFrozenCols={freeze.setFrozenCols}
-                onUnfreeze={freeze.unfreeze}
+            <MenuBar
+                {...toolbarPropsBundle}
+                workbookName={workbookName}
+                fileActions={fileActions}
+                onClearFormatting={onClearFormatting}
+                onCopy={() => void clipboard.copy()}
+                onCut={() => void clipboard.cut()}
+                onPaste={() => void clipboard.paste()}
+                onPasteValues={() => void clipboard.paste('values')}
+                onPasteFormat={() => void clipboard.paste('format')}
+                onOpenFindReplace={onOpenFind}
+                onOpenFunctionList={openFunctionList}
+                onOpenKeyboardShortcuts={openKeyboardShortcuts}
+                allSheets={allSheets}
+                onShowSheet={id => sheetActions.showSheet(id)}
             />
+            <Toolbar {...toolbarPropsBundle} />
             <SortStatusBanner />
             <SelectionStatusBanner />
             <FormulaBar

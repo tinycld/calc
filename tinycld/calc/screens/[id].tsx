@@ -14,6 +14,7 @@ import { useFormulaBridge } from '../hooks/use-formula-bridge'
 import { useRealtime } from '../hooks/use-realtime'
 import { useUndoManager } from '../hooks/use-undo-manager'
 import { useWorkbook, WorkbookProvider } from '../hooks/use-workbook-context'
+import { useWorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { addSheet, useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { applyCsvToDoc } from '../lib/csv/apply-paste'
 import { useCsvImportStore } from '../lib/csv/import-store'
@@ -72,6 +73,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     const allSheets = useAllYSheets(doc)
     const orgHref = useOrgHref()
     const comments = useCellComments(workbookId)
+    const fileActions = useWorkbookFileActions(workbookId)
     usePendingCsvImport(doc, workbookId, sheets.length > 0)
 
     // Resolve the active sheet from the URL query, falling back to the
@@ -102,7 +104,13 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                     </Text>
                     <ConnectionStatus isConnected={isConnected} />
                 </View>
-                <Grid sheetId={activeSheet.id} driveItemId={workbookId} undoState={undoState} />
+                <Grid
+                    sheetId={activeSheet.id}
+                    driveItemId={workbookId}
+                    undoState={undoState}
+                    workbookName={itemName}
+                    fileActions={fileActions}
+                />
                 <SheetTabs
                     doc={doc}
                     allSheets={allSheets}
