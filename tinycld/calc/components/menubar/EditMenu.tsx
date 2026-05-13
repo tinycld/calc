@@ -9,24 +9,24 @@ export function EditMenu(props: MenuBarProps) {
             <MenuBarTrigger label="Edit" />
             <Menu.Portal>
                 <Menu.Content placement="bottom" align="start">
-                    <Menu.Item onPress={props.onUndo} disabled={!props.canUndo}>
+                    <Menu.Item onPress={props.onUndo} isDisabled={!props.canUndo}>
                         <Menu.ItemTitle>Undo</Menu.ItemTitle>
                         <MenuShortcut keys="⌘Z" />
                     </Menu.Item>
-                    <Menu.Item onPress={props.onRedo} disabled={!props.canRedo}>
+                    <Menu.Item onPress={props.onRedo} isDisabled={!props.canRedo}>
                         <Menu.ItemTitle>Redo</Menu.ItemTitle>
                         <MenuShortcut keys="⌘Y" />
                     </Menu.Item>
                     <Separator />
-                    <Menu.Item onPress={props.onCut} disabled={props.disabled}>
+                    <Menu.Item onPress={props.onCut} isDisabled={props.disabled}>
                         <Menu.ItemTitle>Cut</Menu.ItemTitle>
                         <MenuShortcut keys="⌘X" />
                     </Menu.Item>
-                    <Menu.Item onPress={props.onCopy} disabled={props.disabled}>
+                    <Menu.Item onPress={props.onCopy} isDisabled={props.disabled}>
                         <Menu.ItemTitle>Copy</Menu.ItemTitle>
                         <MenuShortcut keys="⌘C" />
                     </Menu.Item>
-                    <Menu.Item onPress={props.onPaste} disabled={props.disabled}>
+                    <Menu.Item onPress={props.onPaste} isDisabled={props.disabled}>
                         <Menu.ItemTitle>Paste</Menu.ItemTitle>
                         <MenuShortcut keys="⌘V" />
                     </Menu.Item>
@@ -35,11 +35,11 @@ export function EditMenu(props: MenuBarProps) {
                             <Menu.ItemTitle>Paste special</Menu.ItemTitle>
                         </Menu.SubTrigger>
                         <Menu.SubContent>
-                            <Menu.Item onPress={props.onPasteValues} disabled={props.disabled}>
+                            <Menu.Item onPress={props.onPasteValues} isDisabled={props.disabled}>
                                 <Menu.ItemTitle>Values only</Menu.ItemTitle>
                                 <MenuShortcut keys="⌘⇧V" />
                             </Menu.Item>
-                            <Menu.Item onPress={props.onPasteFormat} disabled={props.disabled}>
+                            <Menu.Item onPress={props.onPasteFormat} isDisabled={props.disabled}>
                                 <Menu.ItemTitle>Format only</Menu.ItemTitle>
                                 <MenuShortcut keys="⌘⌥V" />
                             </Menu.Item>

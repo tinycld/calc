@@ -30,7 +30,7 @@ export function FormatMenu(props: MenuBarProps) {
                                 <Menu.Item
                                     key={preset.id}
                                     onPress={() => props.onApplyPreset(preset.id)}
-                                    disabled={props.disabled}
+                                    isDisabled={props.disabled}
                                 >
                                     <Menu.ItemTitle>{preset.label}</Menu.ItemTitle>
                                 </Menu.Item>
@@ -42,25 +42,25 @@ export function FormatMenu(props: MenuBarProps) {
                             <Menu.ItemTitle>Text</Menu.ItemTitle>
                         </Menu.SubTrigger>
                         <Menu.SubContent>
-                            <Menu.Item onPress={props.onToggleBold} disabled={props.disabled}>
+                            <Menu.Item onPress={props.onToggleBold} isDisabled={props.disabled}>
                                 <CheckedIndicator isOn={props.isBold} />
                                 <Menu.ItemTitle>Bold</Menu.ItemTitle>
                                 <MenuShortcut keys="⌘B" />
                             </Menu.Item>
-                            <Menu.Item onPress={props.onToggleItalic} disabled={props.disabled}>
+                            <Menu.Item onPress={props.onToggleItalic} isDisabled={props.disabled}>
                                 <CheckedIndicator isOn={props.isItalic} />
                                 <Menu.ItemTitle>Italic</Menu.ItemTitle>
                                 <MenuShortcut keys="⌘I" />
                             </Menu.Item>
                             <Menu.Item
                                 onPress={props.onToggleUnderline}
-                                disabled={props.disabled}
+                                isDisabled={props.disabled}
                             >
                                 <CheckedIndicator isOn={props.isUnderline} />
                                 <Menu.ItemTitle>Underline</Menu.ItemTitle>
                                 <MenuShortcut keys="⌘U" />
                             </Menu.Item>
-                            <Menu.Item onPress={props.onToggleStrike} disabled={props.disabled}>
+                            <Menu.Item onPress={props.onToggleStrike} isDisabled={props.disabled}>
                                 <CheckedIndicator isOn={props.isStrike} />
                                 <Menu.ItemTitle>Strikethrough</Menu.ItemTitle>
                                 <MenuShortcut keys="⌘⇧X" />
@@ -74,21 +74,21 @@ export function FormatMenu(props: MenuBarProps) {
                         <Menu.SubContent>
                             <Menu.Item
                                 onPress={() => props.onSetHorizontalAlign('left')}
-                                disabled={props.disabled}
+                                isDisabled={props.disabled}
                             >
                                 <CheckedIndicator isOn={props.horizontalAlign === 'left'} />
                                 <Menu.ItemTitle>Left</Menu.ItemTitle>
                             </Menu.Item>
                             <Menu.Item
                                 onPress={() => props.onSetHorizontalAlign('center')}
-                                disabled={props.disabled}
+                                isDisabled={props.disabled}
                             >
                                 <CheckedIndicator isOn={props.horizontalAlign === 'center'} />
                                 <Menu.ItemTitle>Center</Menu.ItemTitle>
                             </Menu.Item>
                             <Menu.Item
                                 onPress={() => props.onSetHorizontalAlign('right')}
-                                disabled={props.disabled}
+                                isDisabled={props.disabled}
                             >
                                 <CheckedIndicator isOn={props.horizontalAlign === 'right'} />
                                 <Menu.ItemTitle>Right</Menu.ItemTitle>
@@ -104,7 +104,7 @@ export function FormatMenu(props: MenuBarProps) {
                                 <Menu.Item
                                     key={size}
                                     onPress={() => props.onSetFontSize(size)}
-                                    disabled={props.disabled}
+                                    isDisabled={props.disabled}
                                 >
                                     <CheckedIndicator isOn={props.fontSize === size} />
                                     <Menu.ItemTitle>{String(size)}</Menu.ItemTitle>
@@ -117,25 +117,25 @@ export function FormatMenu(props: MenuBarProps) {
                             <Menu.ItemTitle>Merge cells</Menu.ItemTitle>
                         </Menu.SubTrigger>
                         <Menu.SubContent>
-                            <Menu.Item onPress={props.onMergeAll} disabled={props.disabled}>
+                            <Menu.Item onPress={props.onMergeAll} isDisabled={props.disabled}>
                                 <Menu.ItemTitle>Merge all</Menu.ItemTitle>
                             </Menu.Item>
                             <Menu.Item
                                 onPress={props.onMergeHorizontal}
-                                disabled={props.disabled}
+                                isDisabled={props.disabled}
                             >
                                 <Menu.ItemTitle>Merge horizontally</Menu.ItemTitle>
                             </Menu.Item>
-                            <Menu.Item onPress={props.onMergeVertical} disabled={props.disabled}>
+                            <Menu.Item onPress={props.onMergeVertical} isDisabled={props.disabled}>
                                 <Menu.ItemTitle>Merge vertically</Menu.ItemTitle>
                             </Menu.Item>
-                            <Menu.Item onPress={props.onUnmerge} disabled={props.disabled}>
+                            <Menu.Item onPress={props.onUnmerge} isDisabled={props.disabled}>
                                 <Menu.ItemTitle>Unmerge</Menu.ItemTitle>
                             </Menu.Item>
                         </Menu.SubContent>
                     </Menu.Sub>
                     <Separator />
-                    <Menu.Item onPress={props.onClearFormatting} disabled={props.disabled}>
+                    <Menu.Item onPress={props.onClearFormatting} isDisabled={props.disabled}>
                         <Menu.ItemTitle>Clear formatting</Menu.ItemTitle>
                         <MenuShortcut keys="⌘\" />
                     </Menu.Item>

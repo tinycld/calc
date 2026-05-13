@@ -22,9 +22,11 @@ export function FunctionListDialog() {
             accessibilityLabel="Function list"
         >
             <View
-                accessibilityRole="dialog"
                 accessibilityLabel="Function list"
                 className="flex-1 items-center justify-center bg-black/50"
+                {...(typeof document !== 'undefined'
+                    ? { role: 'dialog', 'aria-label': 'Function list' }
+                    : {})}
             >
                 <View
                     className="w-[500px] max-h-[80vh] bg-background rounded-lg border border-border"

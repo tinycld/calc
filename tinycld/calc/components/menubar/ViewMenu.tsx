@@ -69,7 +69,7 @@ export function ViewMenu(props: MenuBarProps) {
                         </Menu.SubTrigger>
                         <Menu.SubContent>
                             {!hasHidden && (
-                                <Menu.Item disabled>
+                                <Menu.Item isDisabled>
                                     <Menu.ItemTitle>(no hidden sheets)</Menu.ItemTitle>
                                 </Menu.Item>
                             )}

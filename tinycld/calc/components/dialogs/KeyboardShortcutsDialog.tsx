@@ -41,9 +41,11 @@ export function KeyboardShortcutsDialog() {
             accessibilityLabel="Keyboard shortcuts"
         >
             <View
-                accessibilityRole="dialog"
                 accessibilityLabel="Keyboard shortcuts"
                 className="flex-1 items-center justify-center bg-black/50"
+                {...(typeof document !== 'undefined'
+                    ? { role: 'dialog', 'aria-label': 'Keyboard shortcuts' }
+                    : {})}
             >
                 <View
                     className="w-[600px] max-h-[80vh] bg-background rounded-lg border border-border"
