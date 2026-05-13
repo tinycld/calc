@@ -1,11 +1,9 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {
-    ArrowDownUp,
     ArrowLeft,
     ArrowRight,
     Bold,
     DollarSign,
-    Filter,
     Italic,
     Percent,
     Redo,
@@ -20,14 +18,10 @@ import type { HorizontalAlign } from '../hooks/grid/use-grid-format-controls'
 import type { BorderPresetId } from '../lib/border-presets'
 import type { CellBorders } from '../lib/workbook-types'
 import { BordersMenu } from './toolbar/BordersMenu'
-import { DownloadMenu } from './toolbar/DownloadMenu'
 import { FillColorMenu } from './toolbar/FillColorMenu'
 import { FontSizeStepper } from './toolbar/FontSizeStepper'
-import { FreezeMenu } from './toolbar/FreezeMenu'
 import { HorizontalAlignMenu } from './toolbar/HorizontalAlignMenu'
-import { MergeMenu } from './toolbar/MergeMenu'
 import { NumberFormatMenu } from './toolbar/NumberFormatMenu'
-import { PrintButton } from './toolbar/PrintButton'
 import { TextColorMenu } from './toolbar/TextColorMenu'
 import { ToolbarButton, ToolbarDivider } from './toolbar/ToolbarButton'
 
@@ -139,30 +133,13 @@ function ToolbarImpl(props: ToolbarProps) {
         horizontalAlign,
         onSetHorizontalAlign,
         onOpenFind,
-        onDownloadCsvCurrent,
-        onDownloadCsvAll,
-        onDownloadXlsx,
-        onOpenPrint,
-        onOpenSort,
-        onToggleFilter,
-        isFilterActive,
-        onMergeAll,
-        onMergeHorizontal,
-        onMergeVertical,
-        onUnmerge,
-        frozenRows,
-        frozenCols,
-        selectionBottomRow,
-        selectionRightCol,
-        onSetFrozenRows,
-        onSetFrozenCols,
-        onUnfreeze,
     } = props
 
     return (
         <View
             className="flex-row items-center bg-surface-secondary border-b border-border"
             style={{ height: 32, paddingHorizontal: 4 }}
+            {...(typeof document !== 'undefined' ? { 'data-test-id': 'calc-toolbar' } : {})}
         >
             <ToolbarButton icon={Undo} disabled={!canUndo} onPress={onUndo} label="Undo" />
             <ToolbarButton icon={Redo} disabled={!canRedo} onPress={onRedo} label="Redo" />
@@ -246,44 +223,7 @@ function ToolbarImpl(props: ToolbarProps) {
             />
             <ToolbarDivider />
 
-            <ToolbarButton
-                icon={ArrowDownUp}
-                disabled={disabled}
-                onPress={onOpenSort}
-                label="Sort range"
-            />
-            <ToolbarButton
-                icon={Filter}
-                active={isFilterActive}
-                disabled={disabled}
-                onPress={onToggleFilter}
-                label={isFilterActive ? 'Remove filter' : 'Create filter'}
-            />
-            <MergeMenu
-                disabled={disabled}
-                onMergeAll={onMergeAll}
-                onMergeHorizontal={onMergeHorizontal}
-                onMergeVertical={onMergeVertical}
-                onUnmerge={onUnmerge}
-            />
-            <FreezeMenu
-                disabled={false}
-                frozenRows={frozenRows}
-                frozenCols={frozenCols}
-                selectionBottomRow={selectionBottomRow}
-                selectionRightCol={selectionRightCol}
-                onSetFrozenRows={onSetFrozenRows}
-                onSetFrozenCols={onSetFrozenCols}
-                onUnfreeze={onUnfreeze}
-            />
-            <ToolbarDivider />
             <ToolbarButton icon={Search} onPress={onOpenFind} label="Find and replace" />
-            <DownloadMenu
-                onDownloadCsvCurrent={onDownloadCsvCurrent}
-                onDownloadCsvAll={onDownloadCsvAll}
-                onDownloadXlsx={onDownloadXlsx}
-            />
-            <PrintButton onPress={onOpenPrint} />
         </View>
     )
 }
