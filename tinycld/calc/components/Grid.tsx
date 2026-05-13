@@ -18,6 +18,7 @@ import { useGridToolbarToggles } from '../hooks/grid/use-grid-toolbar-toggles'
 import { type GridViewportHandle, useGridViewport } from '../hooks/grid/use-grid-viewport'
 import { useRefDragExtender } from '../hooks/grid/use-ref-drag-extender'
 import { useCalcShortcuts } from '../hooks/use-calc-shortcuts'
+import { useClearFormatting } from '../hooks/use-clear-formatting'
 import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { GridStoreProvider } from '../hooks/use-grid-store'
@@ -30,6 +31,7 @@ import { useWorkbook } from '../hooks/use-workbook-context'
 import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
+import { allRanges } from '../lib/selection-range'
 import { FindReplaceDialogGate } from './FindReplaceDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
@@ -235,6 +237,21 @@ function GridInner({
 
     const toolbarActions = useGridToolbarActions(instance.store)
 
+    // Read every sub-range out of the live selection at call time.
+    // Stable identity across selection drags (the store ref is stable)
+    // so useClearFormatting's returned callback doesn't churn the
+    // shortcut bundle's memo. Mirrors the resolveRanges pattern in
+    // useGridFormatControls (which keeps that helper internal).
+    const getSelectionRanges = useCallback(
+        () => allRanges(instance.store.getState().selection),
+        [instance.store]
+    )
+    const onClearFormatting = useClearFormatting({
+        sheetId,
+        getSelectionRanges,
+        readOnly,
+    })
+
     // Stable identity for the format-shortcut bundle so the shortcut
     // registry doesn't churn on every render.
     const formatShortcuts = useMemo(
@@ -243,12 +260,14 @@ function GridInner({
             toggleItalic: toolbar.onToggleItalic,
             toggleUnderline: toolbar.onToggleUnderline,
             toggleStrike: toolbar.onToggleStrike,
+            clearFormatting: onClearFormatting,
         }),
         [
             toolbar.onToggleBold,
             toolbar.onToggleItalic,
             toolbar.onToggleUnderline,
             toolbar.onToggleStrike,
+            onClearFormatting,
         ]
     )
     useCalcShortcuts({
@@ -269,9 +288,6 @@ function GridInner({
     const allSheets = useAllYSheets(doc)
     const openFunctionList = useMenuDialogsStore(s => s.openFunctionList)
     const openKeyboardShortcuts = useMenuDialogsStore(s => s.openKeyboardShortcuts)
-    // Real implementation lands in a later task; the menubar shell only
-    // needs a callable handle so its prop bundle typechecks.
-    const onClearFormatting = useCallback(() => {}, [])
 
     // Shared prop identity for the toolbar and the menubar; both
     // consume the same bag so the menubar mirroring stays in lockstep

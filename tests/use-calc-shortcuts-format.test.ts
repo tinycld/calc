@@ -54,6 +54,7 @@ function makeFormatCallbacks(): CalcFormatShortcutCallbacks {
         toggleItalic: vi.fn(),
         toggleUnderline: vi.fn(),
         toggleStrike: vi.fn(),
+        clearFormatting: vi.fn(),
     }
 }
 

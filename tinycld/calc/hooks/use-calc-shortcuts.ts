@@ -11,6 +11,7 @@ export interface CalcFormatShortcutCallbacks {
     toggleItalic: () => void
     toggleUnderline: () => void
     toggleStrike: () => void
+    clearFormatting: () => void
 }
 
 export interface UseCalcShortcutsArgs {
@@ -180,6 +181,17 @@ export function buildCalcShortcuts({
             when: () => when() && !readOnly,
             run: () => {
                 format.toggleStrike()
+            },
+        },
+        {
+            id: 'calc.format.clearFormatting',
+            keys: '$mod+\\',
+            scope: 'global',
+            group: 'Calc',
+            description: 'Clear formatting',
+            when: () => when() && !readOnly,
+            run: () => {
+                format.clearFormatting()
             },
         },
         {
