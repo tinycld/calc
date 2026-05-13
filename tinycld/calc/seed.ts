@@ -16,8 +16,7 @@ function log(...args: unknown[]) {
 
 // Resolved relative to this file's location so the seeder works whether
 // invoked via the linked symlink or the source repo path. Use
-// `import.meta.dirname` (Node ≥20 / tsx) rather than Bun's `import.meta.dir`
-// — the seed runner spawns tsx, not bun, so `import.meta.dir` is undefined.
+// `import.meta.dirname` (Node ≥20 / tsx) — the seed runner spawns tsx.
 const FIXTURE_PATH = path.resolve(import.meta.dirname, 'assets', 'team-scorecard.xlsx')
 
 async function loadSampleWorkbook(): Promise<{ blob: Blob; size: number }> {

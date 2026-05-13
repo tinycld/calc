@@ -1,7 +1,7 @@
 node_modules/
 *.tsbuildinfo
 .DS_Store
-bun.lock
+pnpm-lock.yaml
 .claude/
 .worktrees/
 .superpowers/

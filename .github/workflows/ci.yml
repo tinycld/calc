@@ -23,7 +23,9 @@ jobs:
           repository: ${{ env.APP_REPO }}
           ref: ${{ env.APP_REF }}
           path: tinycld
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.1
 
       # The app shell bundles @tinycld/core at packages/@tinycld/core/. This
       # package's tsconfig path "@tinycld/core/*":
@@ -31,15 +33,15 @@ jobs:
       # directive both point directly there.
       - name: Install app shell deps
         working-directory: tinycld
-        run: bun install
+        run: pnpm install --frozen-lockfile
 
       - name: Link sheets into tinycld app shell
         working-directory: tinycld
-        run: bun run packages:link ../sheets
+        run: pnpm run packages:link ../sheets
 
       - name: Lint (biome runs from tinycld; scans linked sheets via app rules)
         working-directory: tinycld
-        run: bun run lint
+        run: pnpm run lint
 
       # Typecheck runs from inside tinycld so module resolution sees the
       # full app-shell tree (uniwind augments, expo types, etc) — running
@@ -48,8 +50,8 @@ jobs:
         working-directory: tinycld
         env:
           NODE_OPTIONS: --preserve-symlinks
-        run: bun run typecheck
+        run: pnpm run typecheck
 
       - name: Run unit tests
         working-directory: sheets
-        run: bunx vitest run
+        run: pnpm exec vitest run
