@@ -73,3 +73,17 @@ export function buildPivotGridCellMatrix(
     }
     return rows
 }
+
+// True when the pivot side panel should mount alongside this sheet's
+// PivotGrid. The store keys by sheet id (not pivot id) because that's
+// what Grid.tsx already passes through when opening, and because the
+// same pivot definition might in principle be reused across sheets in
+// a future feature — the per-sheet keying keeps each grid's panel
+// state independent. Extracted so PivotGrid stays a thin renderer and
+// the conditional logic is testable without RN.
+export function selectPivotPanelOpen(
+    openForSheetId: string | null,
+    sheetId: string
+): boolean {
+    return openForSheetId != null && openForSheetId === sheetId
+}

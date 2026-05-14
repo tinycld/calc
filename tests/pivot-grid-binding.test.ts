@@ -28,6 +28,7 @@ import {
     buildPivotGridCellMatrix,
     isPivotDefinitionEmpty,
     selectPivotGridViewState,
+    selectPivotPanelOpen,
 } from '../tinycld/calc/components/pivot/pivot-grid-view-state'
 import type { CellValue, PivotDefinition } from '../tinycld/calc/lib/workbook-types'
 import type { RenderedPivotResult } from '../tinycld/calc/hooks/use-rendered-pivot'
@@ -208,6 +209,29 @@ describe('buildPivotGridCellMatrix', () => {
         const m = buildPivotGridCellMatrix(rendered)
         expect(m[0][0].display).toBe('hi')
         expect(m[0][1].display).toBe('')
+    })
+})
+
+describe('selectPivotPanelOpen', () => {
+    it('returns false when nothing is open', () => {
+        expect(selectPivotPanelOpen(null, 'sheet-1')).toBe(false)
+    })
+
+    it('returns false when a different sheet is open', () => {
+        expect(selectPivotPanelOpen('sheet-2', 'sheet-1')).toBe(false)
+    })
+
+    it('returns true when the open sheet matches', () => {
+        expect(selectPivotPanelOpen('sheet-1', 'sheet-1')).toBe(true)
+    })
+
+    it('treats empty string as a real sheet id (not null)', () => {
+        // Defensive: the store's "no panel" sentinel is null, not "".
+        // If a caller ever passes "" we want the comparison to follow
+        // strict equality so we don't accidentally mount the panel
+        // against a sheetless caller.
+        expect(selectPivotPanelOpen('', 'sheet-1')).toBe(false)
+        expect(selectPivotPanelOpen('', '')).toBe(true)
     })
 })
 

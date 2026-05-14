@@ -1,13 +1,16 @@
 import { ScrollView, Text, View } from 'react-native'
 import * as Y from 'yjs'
 import { useRenderedPivot } from '../../hooks/use-rendered-pivot'
+import { usePivotPanelStore } from '../../lib/stores/pivot-panel-store'
 import type { PivotDefinition } from '../../lib/workbook-types'
 import { PivotBanner } from './PivotBanner'
 import { PivotEmptyState } from './PivotEmptyState'
+import { PivotSidePanel } from './PivotSidePanel'
 import {
     buildPivotGridCellMatrix,
     type PivotGridCellMeta,
     selectPivotGridViewState,
+    selectPivotPanelOpen,
 } from './pivot-grid-view-state'
 
 // Read-only renderer for a pivot output sheet. The engine produces a
@@ -16,23 +19,95 @@ import {
 // cell map in later integration tasks — for v1 the grid is purely
 // visual. The view-state decision (empty / error / grid) lives in
 // ./pivot-grid-view-state so it can be unit-tested without RN.
+//
+// The PivotSidePanel mounts as a sibling whenever
+// usePivotPanelStore.openForSheetId equals this grid's sheetId — the
+// store keys by sheet id (not pivot id) because Grid.tsx already has
+// sheetId in scope when it opens the panel, and per-sheet keying keeps
+// concurrent grids' panels independent. The selectPivotPanelOpen pure
+// helper makes the conditional testable without RN.
 export interface PivotGridProps {
     doc: Y.Doc
     def: PivotDefinition
+    sheetId: string
+    onOpenSidePanel: () => void
+    readOnly?: boolean
+}
+
+export function PivotGrid({
+    doc,
+    def,
+    sheetId,
+    onOpenSidePanel,
+    readOnly,
+}: PivotGridProps) {
+    const result = useRenderedPivot(doc, def)
+    const openForSheetId = usePivotPanelStore((s) => s.openForSheetId)
+    const close = usePivotPanelStore((s) => s.close)
+    const view = selectPivotGridViewState(def, result)
+    const panelOpen = selectPivotPanelOpen(openForSheetId, sheetId)
+    return (
+        <View className="flex-1 flex-row">
+            <View className="flex-1">
+                <PivotBody view={view} onOpenSidePanel={onOpenSidePanel} />
+            </View>
+            <PivotPanelContainer
+                isVisible={panelOpen}
+                doc={doc}
+                def={def}
+                onClose={close}
+                readOnly={readOnly}
+            />
+        </View>
+    )
+}
+
+interface PivotBodyProps {
+    view: ReturnType<typeof selectPivotGridViewState>
     onOpenSidePanel: () => void
 }
 
-export function PivotGrid({ doc, def, onOpenSidePanel }: PivotGridProps) {
-    const result = useRenderedPivot(doc, def)
-    const view = selectPivotGridViewState(def, result)
-
+function PivotBody({ view, onOpenSidePanel }: PivotBodyProps) {
     if (view.kind === 'empty') {
         return <PivotEmptyState onOpenSidePanel={onOpenSidePanel} />
     }
     if (view.kind === 'error') {
         return <PivotBanner error={view.error} onEdit={onOpenSidePanel} />
     }
-    const matrix = buildPivotGridCellMatrix(view.rendered)
+    return <PivotMatrix matrix={buildPivotGridCellMatrix(view.rendered)} />
+}
+
+interface PivotPanelContainerProps {
+    isVisible: boolean
+    doc: Y.Doc
+    def: PivotDefinition
+    onClose: () => void
+    readOnly: boolean | undefined
+}
+
+function PivotPanelContainer({
+    isVisible,
+    doc,
+    def,
+    onClose,
+    readOnly,
+}: PivotPanelContainerProps) {
+    if (!isVisible) return null
+    return (
+        <PivotSidePanel
+            doc={doc}
+            def={def}
+            onClose={onClose}
+            readOnly={readOnly}
+        />
+    )
+}
+
+interface PivotMatrixProps {
+    matrix: PivotGridCellMeta[][]
+}
+
+function PivotMatrix({ matrix }: PivotMatrixProps) {
     return (
         <ScrollView horizontal className="flex-1 bg-background">
             <ScrollView className="flex-1">

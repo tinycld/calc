@@ -122,7 +122,9 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
             <PivotGrid
                 doc={doc}
                 def={pivotDef}
+                sheetId={sheetId}
                 onOpenSidePanel={() => usePivotPanelStore.getState().open(sheetId)}
+                readOnly={readOnly}
             />
         )
     }
