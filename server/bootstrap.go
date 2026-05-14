@@ -18,7 +18,8 @@ import (
 // bootstrap path on first joiner. Field names use camelCase JSON tags
 // so the wire shape matches the TS interface byte-for-byte.
 type WorkbookModel struct {
-	Sheets []WorksheetModel `json:"sheets"`
+	Sheets []WorksheetModel     `json:"sheets"`
+	Pivots []PivotDefinitionDTO `json:"pivots,omitempty"`
 }
 
 type WorksheetModel struct {
