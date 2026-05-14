@@ -1043,6 +1043,62 @@ test.describe('Calc', () => {
                 mergedBox.y + mergedBox.height + 1
             )
         })
+
+        test('Merged cells survive a page reload', async ({ page }) => {
+            // Regression: merge entries were written as plain JS objects
+            // under MERGES_KEY, but the Go snapshot decoder
+            // (server/runtime.go::decodeMerges) type-asserts each value
+            // to `*ycrdt.YMap`. Plain-object entries were silently
+            // dropped on the next save, so client-created merges did
+            // not survive any process that rebuilt the doc from
+            // persisted state (most visibly a page reload).
+            await navigateToPackage(page, 'calc')
+            await openNewSpreadsheet(page)
+            const sheetUrl = page.url()
+
+            const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+            await typeIntoCell(page, formulaBar, 'A1', 'MERGED-A1')
+
+            // Drag-select A1:C1 and merge.
+            const a1 = page.getByLabel('Cell A1', { exact: true })
+            const c1 = page.getByLabel('Cell C1', { exact: true })
+            const a1Box = await a1.boundingBox()
+            const c1Box = await c1.boundingBox()
+            if (a1Box == null || c1Box == null) throw new Error('cell rects missing')
+            await page.mouse.move(a1Box.x + a1Box.width / 2, a1Box.y + a1Box.height / 2)
+            await page.mouse.down()
+            await page.mouse.move(c1Box.x + c1Box.width / 2, c1Box.y + c1Box.height / 2, {
+                steps: 8,
+            })
+            await page.mouse.up()
+            await page.getByRole('button', { name: 'Format', exact: true }).click()
+            await page.getByRole('menuitem', { name: 'Merge cells' }).click()
+            await page.getByRole('menuitem', { name: 'Merge all', exact: true }).click()
+
+            // Capture the merged width pre-reload as the baseline. The
+            // server's SaveCoordinator debounces at 3s of idle; wait
+            // long enough that the next reload's bootstrap reads the
+            // persisted (not in-memory-only) state.
+            const widthBefore = (await a1.boundingBox())?.width ?? 0
+            expect(widthBefore).toBeGreaterThan(96 * 2)
+            await page.waitForTimeout(4500)
+
+            // Navigate away and back so the room empties (triggers a
+            // final synchronous save) before re-opening from disk.
+            await page.goto('about:blank')
+            await page.goto(sheetUrl)
+            await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({
+                timeout: 30_000,
+            })
+            // Allow live-query / Y.Doc sync to settle so the merge
+            // entry is observed before we measure.
+            await expect(page.getByLabel('Cell B1', { exact: true })).toHaveCount(0)
+            await expect(page.getByLabel('Cell C1', { exact: true })).toHaveCount(0)
+
+            const widthAfter = (await page.getByLabel('Cell A1', { exact: true }).boundingBox())
+                ?.width
+            expect(widthAfter).toBeCloseTo(widthBefore, 0)
+        })
     })
 })
 

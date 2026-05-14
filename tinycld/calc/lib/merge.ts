@@ -1,10 +1,14 @@
 // Merged-cell metadata lives on per-sheet meta under MERGES_KEY as a
-// Y.Map<{rowSpan, colSpan}> keyed by `${anchorRow}:${anchorCol}`. The
-// anchor cell renders at the merged width/height; covered (non-anchor)
-// cells render nothing. Storage is intentionally simple — values are
-// plain JS objects, not nested Y.Map — because we never mutate
-// individual span fields in place; an unmerge+merge round trips the
-// whole entry.
+// Y.Map keyed by `${anchorRow}:${anchorCol}`. The anchor cell renders
+// at the merged width/height; covered (non-anchor) cells render
+// nothing.
+//
+// Each entry is itself a nested Y.Map with `rowSpan` and `colSpan`
+// integer fields. The nested-Y.Map shape is required so the Go
+// snapshot decoder (`decodeMerges` in server/runtime.go) and the
+// xlsx import path can read entries — both type-assert each value
+// to `*ycrdt.YMap`. Writing a plain JS object instead silently
+// drops the merge on the next save.
 //
 // Mutations are wrapped in doc.transact with LOCAL_ORIGIN so the
 // realtime undo manager (scoped to SHEETS_MAP) captures the merge as
@@ -42,11 +46,12 @@ function getSheetMeta(doc: Y.Doc, sheetId: string): Y.Map<unknown> | null {
 }
 
 function readMergeEntry(value: unknown): MergeEntry | null {
-    if (value == null || typeof value !== 'object') return null
-    const v = value as { rowSpan?: unknown; colSpan?: unknown }
-    if (typeof v.rowSpan !== 'number' || typeof v.colSpan !== 'number') return null
-    if (v.rowSpan < 1 || v.colSpan < 1) return null
-    return { rowSpan: v.rowSpan, colSpan: v.colSpan }
+    if (!(value instanceof Y.Map)) return null
+    const rowSpan = value.get('rowSpan')
+    const colSpan = value.get('colSpan')
+    if (typeof rowSpan !== 'number' || typeof colSpan !== 'number') return null
+    if (rowSpan < 1 || colSpan < 1) return null
+    return { rowSpan, colSpan }
 }
 
 function parseAnchorKey(key: string): { row: number; col: number } | null {
@@ -139,10 +144,10 @@ export function mergeCells(doc: Y.Doc, sheetId: string, range: CellRange): void 
     doc.transact(() => {
         let merges = meta.get(MERGES_KEY)
         if (!(merges instanceof Y.Map)) {
-            merges = new Y.Map<MergeEntry>()
+            merges = new Y.Map<Y.Map<number>>()
             meta.set(MERGES_KEY, merges)
         }
-        const mergesMap = merges as Y.Map<MergeEntry>
+        const mergesMap = merges as Y.Map<Y.Map<number>>
 
         const overlappingKeys: string[] = []
         mergesMap.forEach((value, key) => {
@@ -179,7 +184,10 @@ export function mergeCells(doc: Y.Doc, sheetId: string, range: CellRange): void 
             }
         }
 
-        mergesMap.set(mergeKey(startRow, startCol), { rowSpan, colSpan })
+        const entry = new Y.Map<number>()
+        entry.set('rowSpan', rowSpan)
+        entry.set('colSpan', colSpan)
+        mergesMap.set(mergeKey(startRow, startCol), entry)
     }, LOCAL_ORIGIN)
 }
 
@@ -315,7 +323,7 @@ export function applyStructuralShiftToMerges(
     if (meta == null) return
     const merges = meta.get(MERGES_KEY)
     if (!(merges instanceof Y.Map)) return
-    const mergesMap = merges as Y.Map<MergeEntry>
+    const mergesMap = merges as Y.Map<Y.Map<number>>
     if (mergesMap.size === 0) return
 
     interface Snap {
@@ -451,7 +459,10 @@ export function applyStructuralShiftToMerges(
         }
         for (const m of mutations) {
             if (m.newKey != null && m.next != null) {
-                mergesMap.set(m.newKey, m.next)
+                const entry = new Y.Map<number>()
+                entry.set('rowSpan', m.next.rowSpan)
+                entry.set('colSpan', m.next.colSpan)
+                mergesMap.set(m.newKey, entry)
             }
         }
     }, LOCAL_ORIGIN)

@@ -155,14 +155,18 @@ export function bootstrapYDocFromWorkbook(doc: Y.Doc, model: WorkbookModel): voi
             sheetsMap.set(sheetId, meta)
 
             if (sheet.merges != null && sheet.merges.length > 0) {
-                const mergesMap = new Y.Map<{ rowSpan: number; colSpan: number }>()
+                const mergesMap = new Y.Map<Y.Map<number>>()
                 for (const m of sheet.merges) {
                     if (m.rowSpan < 1 || m.colSpan < 1) continue
                     if (m.rowSpan === 1 && m.colSpan === 1) continue
-                    mergesMap.set(`${m.anchorRow}:${m.anchorCol}`, {
-                        rowSpan: m.rowSpan,
-                        colSpan: m.colSpan,
-                    })
+                    // Each entry must be a nested Y.Map so the Go
+                    // snapshot decoder (server/runtime.go::decodeMerges)
+                    // recognizes it. See merge.ts for the full
+                    // explanation.
+                    const entry = new Y.Map<number>()
+                    entry.set('rowSpan', m.rowSpan)
+                    entry.set('colSpan', m.colSpan)
+                    mergesMap.set(`${m.anchorRow}:${m.anchorCol}`, entry)
                 }
                 if (mergesMap.size > 0) {
                     meta.set(MERGES_KEY, mergesMap)
