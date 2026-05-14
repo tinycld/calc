@@ -8,6 +8,7 @@ import { useOrgSlug } from '@tinycld/core/lib/use-org-slug'
 import { router } from 'expo-router'
 import { newRecordId } from 'pbtsdb/core'
 import { useCallback } from 'react'
+import { useMenuDialogsStore } from './use-menu-dialogs-store'
 
 export interface WorkbookFileActions {
     rename: (newName: string) => void
@@ -28,11 +29,13 @@ export interface WorkbookFileActions {
 // needed, then navigates the user back to the calc index so they
 // aren't left looking at the trashed workbook.
 //
-// `makeCopy` is intentionally a stub — duplicating an xlsx workbook
-// also requires duplicating the file blob and the on-disk Y.Doc
-// snapshot the realtime room reads from, which drive doesn't have a
-// client-side primitive for. The File menu disables the "Make a copy"
-// item until that lands as a server-side flow (TODO: follow-up).
+// `makeCopy` doesn't immediately mutate — it stashes the desired
+// copy name plus the source workbook's current parent in the menu
+// dialogs store, which the CopyToFolderDialog reads to open the
+// folder picker pre-selected at the source's folder. The picker
+// fires the real useCopyDriveItem mutation when the user confirms.
+// This indirection exists so the user can choose a destination
+// before the workbook is duplicated, matching Sheets' behavior.
 export function useWorkbookFileActions(workbookId: string): WorkbookFileActions {
     const [driveItemsCollection, driveItemStateCollection] = useStore(
         'drive_items',
@@ -42,6 +45,7 @@ export function useWorkbookFileActions(workbookId: string): WorkbookFileActions 
     const userOrg = useCurrentUserOrg(orgSlug)
     const userOrgId = userOrg?.id ?? ''
     const orgHref = useOrgHref()
+    const openCopyDialog = useMenuDialogsStore(s => s.openCopyDialog)
 
     const { data: existingStateRows = [] } = useOrgLiveQuery(
         (query, scope) =>
@@ -54,9 +58,19 @@ export function useWorkbookFileActions(workbookId: string): WorkbookFileActions 
     )
     const existingState = existingStateRows[0]
 
+    const { data: workbookRows = [] } = useOrgLiveQuery(
+        (query, scope) =>
+            query
+                .from({ item: driveItemsCollection })
+                .where(({ item }) => and(eq(item.org, scope.orgId), eq(item.id, workbookId)))
+                .select(({ item }) => ({ parent: item.parent })),
+        [workbookId]
+    )
+    const sourceParentId = workbookRows[0]?.parent ?? ''
+
     const renameMutation = useMutation({
         mutationFn: mutation(function* (newName: string) {
-            yield driveItemsCollection.update(workbookId, (draft) => {
+            yield driveItemsCollection.update(workbookId, draft => {
                 draft.name = newName
             })
         }),
@@ -69,17 +83,9 @@ export function useWorkbookFileActions(workbookId: string): WorkbookFileActions 
 
     const makeCopy = useCallback(
         (copyName: string) => {
-            // TODO: duplicating a workbook requires server-side blob +
-            // Y.Doc snapshot duplication (the realtime room bootstraps
-            // from drive_items.file). The File menu disables this item
-            // until a server route exists. See plan
-            // 2026-05-13-calc-menubar.md "Task 2".
-            console.warn('useWorkbookFileActions.makeCopy is not implemented yet', {
-                workbookId,
-                copyName,
-            })
+            openCopyDialog({ copyName, sourceParentId })
         },
-        [workbookId]
+        [openCopyDialog, sourceParentId]
     )
 
     const trashMutation = useMutation({

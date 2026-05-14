@@ -30,9 +30,10 @@ sessions.
 
 A Sheets-style menubar sits above the toolbar:
 
-- **File** — New spreadsheet, Open, Import, Make a copy (disabled until
-  server-side blob copy lands), Download (XLSX / CSV current / CSV all),
-  Rename, Move to trash, Details, Print.
+- **File** — New spreadsheet, Open, Import, Make a copy (clones the
+  workbook's xlsx blob into a new drive_items row and opens it),
+  Download (CSV current / CSV all; XLSX writer is a follow-up), Rename,
+  Move to trash, Details, Print.
 - **Edit** — Undo, Redo, Cut, Copy, Paste, Paste special (Values only,
   Format only), Find and replace.
 - **View** — Freeze (rows / columns / up to selection / Unfreeze), Hidden

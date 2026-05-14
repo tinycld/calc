@@ -37,12 +37,8 @@ export function FileMenu(props: MenuBarProps) {
                     <Menu.Item onPress={openImport}>
                         <Menu.ItemTitle>Import</Menu.ItemTitle>
                     </Menu.Item>
-                    {/* "Make a copy" is wired but disabled until the
-                        server-side workbook duplication route lands —
-                        see use-workbook-file-actions.ts. */}
                     <Menu.Item
-                        isDisabled
-                        onPress={promptThen('Copy name', `${props.workbookName} (copy)`, (v) =>
+                        onPress={promptThen('Copy name', `${props.workbookName} (copy)`, v =>
                             props.fileActions.makeCopy(v)
                         )}
                     >

@@ -6,6 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useRef } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import type * as Y from 'yjs'
+import { CopyToFolderDialog } from '../components/dialogs/CopyToFolderDialog'
 import { FunctionListDialog } from '../components/dialogs/FunctionListDialog'
 import { KeyboardShortcutsDialog } from '../components/dialogs/KeyboardShortcutsDialog'
 import { Grid } from '../components/Grid'
@@ -127,6 +128,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                 />
                 <FunctionListDialog />
                 <KeyboardShortcutsDialog />
+                <CopyToFolderDialog workbookId={workbookId} />
             </View>
         </CommentsProvider>
     )
