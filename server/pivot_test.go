@@ -2,6 +2,7 @@ package calc
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -203,5 +204,47 @@ func TestWorkbookModelPivotsRoundTrip(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), `"pivots"`) {
 		t.Errorf("expected pivots omitted when empty, got %s", string(encoded))
+	}
+}
+
+// TestReadWorkbookFromXLSX_Pivots exercises the xlsx → WorkbookModel
+// pivot import path end-to-end. testdata/pivot-basic.xlsx is a
+// deterministic fixture authored via excelize.AddPivotTable that
+// places a single Region × Year × Sum(Sales) pivot on a dedicated
+// PivotSheet so we can assert the basic field mapping without also
+// exercising the in-sheet → dedicated-sheet promotion path
+// (ensureDistinctTargets owns that case and is covered by a separate
+// case where source and target collide).
+func TestReadWorkbookFromXLSX_Pivots(t *testing.T) {
+	data, err := os.ReadFile("testdata/pivot-basic.xlsx")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	model, err := ReadWorkbookFromXLSX(data, 0, 0)
+	if err != nil {
+		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
+	}
+	if len(model.Pivots) != 1 {
+		t.Fatalf("want 1 pivot, got %d", len(model.Pivots))
+	}
+	p := model.Pivots[0]
+	if p.SourceRange != "Sheet1!A1:C4" {
+		t.Errorf("SourceRange = %q, want Sheet1!A1:C4", p.SourceRange)
+	}
+	if p.TargetSheetName != "PivotSheet" {
+		t.Errorf("TargetSheetName = %q, want PivotSheet", p.TargetSheetName)
+	}
+	if len(p.Rows) != 1 || p.Rows[0].SourceColumn != "Region" {
+		t.Errorf("Rows = %+v", p.Rows)
+	}
+	if len(p.Cols) != 1 || p.Cols[0].SourceColumn != "Year" {
+		t.Errorf("Cols = %+v", p.Cols)
+	}
+	if len(p.Values) != 1 || p.Values[0].SourceColumn != "Sales" ||
+		p.Values[0].Aggregation != "sum" {
+		t.Errorf("Values = %+v", p.Values)
+	}
+	if !p.RowGrandTotals || !p.ColGrandTotals {
+		t.Errorf("totals flags = %+v / %+v", p.RowGrandTotals, p.ColGrandTotals)
 	}
 }
