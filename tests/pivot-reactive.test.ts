@@ -15,9 +15,12 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { __pivotForSheetHookInternals as pivotForSheet } from '../tinycld/calc/hooks/use-pivot-for-sheet'
 import { __pivotsHookInternals as pivots } from '../tinycld/calc/hooks/use-pivots'
+import { __renderedPivotHookInternals as renderedPivot } from '../tinycld/calc/hooks/use-rendered-pivot'
 import { writePivot } from '../tinycld/calc/lib/pivot/y-binding'
-import type { PivotDefinition } from '../tinycld/calc/lib/workbook-types'
+import type { CellValue, PivotDefinition } from '../tinycld/calc/lib/workbook-types'
+import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
 import {
+    CELLS_MAP,
     PIVOT_SHEET_KEY,
     PIVOTS_MAP,
     SHEETS_MAP,
@@ -268,6 +271,214 @@ describe('usePivotForSheet data-flow contract', () => {
 
     it('subscribe returns a no-op cleanup when doc is null', () => {
         const off = pivotForSheet.subscribe(null, () => {})
+        expect(() => off()).not.toThrow()
+    })
+})
+
+// useRenderedPivot is the reactive bridge between a PivotDefinition
+// and the engine (computePivot). It must recompute when source cells
+// inside the def's source range change, AND must NOT recompute when
+// unrelated cells (outside the source rect, or on a different sheet)
+// change. We exercise the data-flow contract via the same internals
+// pattern as the other hooks — no React mount needed.
+
+function writeCell(
+    doc: Y.Doc,
+    sheetId: string,
+    row: number,
+    col: number,
+    cell: CellValue
+): void {
+    const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+    const m = new Y.Map<unknown>()
+    m.set('kind', cell.kind)
+    m.set('raw', cell.raw)
+    m.set('display', cell.display)
+    if (cell.formula != null) m.set('formula', cell.formula)
+    cellsMap.set(yCellKey(sheetId, row, col), m)
+}
+
+function mutateCellRaw(
+    doc: Y.Doc,
+    sheetId: string,
+    row: number,
+    col: number,
+    raw: number | string
+): void {
+    const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+    const existing = cellsMap.get(yCellKey(sheetId, row, col))
+    if (!(existing instanceof Y.Map)) throw new Error('cell missing')
+    existing.set('raw', raw)
+    existing.set('display', String(raw))
+}
+
+function setSheetName(doc: Y.Doc, sheetId: string, name: string): void {
+    const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+    let meta = sheetsMap.get(sheetId)
+    if (!(meta instanceof Y.Map)) {
+        meta = new Y.Map<unknown>()
+        sheetsMap.set(sheetId, meta)
+    }
+    meta.set('name', name)
+}
+
+function str(s: string): CellValue {
+    return { kind: 'string', raw: s, display: s }
+}
+function num(n: number): CellValue {
+    return { kind: 'number', raw: n, display: String(n) }
+}
+
+// Seed: 3x3 region/year/sales table on a sheet named "Sheet1" with id
+// "s1". Source range is Sheet1!A1:C3 (header + 2 data rows).
+function seedDocWithSourceTable(doc: Y.Doc): void {
+    setSheetName(doc, 's1', 'Sheet1')
+    writeCell(doc, 's1', 1, 1, str('Region'))
+    writeCell(doc, 's1', 1, 2, str('Year'))
+    writeCell(doc, 's1', 1, 3, str('Sales'))
+    writeCell(doc, 's1', 2, 1, str('East'))
+    writeCell(doc, 's1', 2, 2, num(2024))
+    writeCell(doc, 's1', 2, 3, num(10))
+    writeCell(doc, 's1', 3, 1, str('West'))
+    writeCell(doc, 's1', 3, 2, num(2024))
+    writeCell(doc, 's1', 3, 3, num(5))
+}
+
+function pivotDefFor(): PivotDefinition {
+    return makeDef({
+        sourceRange: 'Sheet1!A1:C3',
+        rows: [{ sourceColumn: 'Region' }],
+        cols: [],
+        values: [{ sourceColumn: 'Sales', aggregation: 'sum' }],
+    })
+}
+
+function runRenderedPivotSim(doc: Y.Doc, def: PivotDefinition | null) {
+    const state = renderedPivot.createSnapshotState()
+    const reads: ReturnType<typeof renderedPivot.computeSnapshot>[] = []
+    const read = () => {
+        const next = renderedPivot.computeSnapshot(doc, def, state)
+        reads.push(next)
+        return next
+    }
+    read()
+    const unsubscribe = renderedPivot.subscribe(doc, def, () => {
+        read()
+    })
+    return {
+        reads,
+        latest: () => reads[reads.length - 1],
+        unsubscribe,
+    }
+}
+
+describe('useRenderedPivot data-flow contract', () => {
+    it('returns an error result when doc is null', () => {
+        const state = renderedPivot.createSnapshotState()
+        const r = renderedPivot.computeSnapshot(null, pivotDefFor(), state)
+        expect(r.ok).toBe(false)
+    })
+
+    it('returns an error result when def is null', () => {
+        const doc = new Y.Doc()
+        const state = renderedPivot.createSnapshotState()
+        const r = renderedPivot.computeSnapshot(doc, null, state)
+        expect(r.ok).toBe(false)
+    })
+
+    it('returns a RenderedPivot when given a valid doc + def + source data', () => {
+        const doc = new Y.Doc()
+        seedDocWithSourceTable(doc)
+        const sim = runRenderedPivotSim(doc, pivotDefFor())
+        const r = sim.latest()
+        expect(r.ok).toBe(true)
+        if (r.ok) {
+            expect(r.value.cells.size).toBeGreaterThan(0)
+        }
+        sim.unsubscribe()
+    })
+
+    it('emits a fresh snapshot when a source cell value changes', () => {
+        const doc = new Y.Doc()
+        seedDocWithSourceTable(doc)
+        const sim = runRenderedPivotSim(doc, pivotDefFor())
+        const before = sim.latest()
+        expect(before.ok).toBe(true)
+        mutateCellRaw(doc, 's1', 2, 3, 999)
+        const after = sim.latest()
+        expect(after.ok).toBe(true)
+        // Identity must differ — engine re-ran.
+        expect(after).not.toBe(before)
+    })
+
+    it('emits a fresh snapshot when a source cell is added to a previously-empty key', () => {
+        const doc = new Y.Doc()
+        seedDocWithSourceTable(doc)
+        // Wipe cell B2 from the source rect so writing it later is an
+        // "add" event (changes.keys), not a nested mutation.
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+        cellsMap.delete(yCellKey('s1', 2, 2))
+        const sim = runRenderedPivotSim(doc, pivotDefFor())
+        const initialReadCount = sim.reads.length
+        writeCell(doc, 's1', 2, 2, num(2025))
+        expect(sim.reads.length).toBeGreaterThan(initialReadCount)
+    })
+
+    it('does NOT recompute when a cell outside the source rect changes', () => {
+        const doc = new Y.Doc()
+        seedDocWithSourceTable(doc)
+        const sim = runRenderedPivotSim(doc, pivotDefFor())
+        const initialReadCount = sim.reads.length
+        // Source range is A1:C3 — D4 is outside.
+        writeCell(doc, 's1', 4, 4, num(42))
+        expect(sim.reads.length).toBe(initialReadCount)
+        sim.unsubscribe()
+    })
+
+    it('does NOT recompute when a cell on a different sheet changes', () => {
+        const doc = new Y.Doc()
+        seedDocWithSourceTable(doc)
+        setSheetName(doc, 's2', 'Other')
+        const sim = runRenderedPivotSim(doc, pivotDefFor())
+        const initialReadCount = sim.reads.length
+        writeCell(doc, 's2', 1, 1, str('unrelated'))
+        expect(sim.reads.length).toBe(initialReadCount)
+        sim.unsubscribe()
+    })
+
+    it('does recompute when an existing cell inside the source rect is mutated', () => {
+        // observeDeep delivers nested events with ev.path = [<cellKey>]
+        // for in-place mutations on existing cell Y.Maps. The subscribe
+        // callback must inspect ev.path (not just ev.changes.keys) to
+        // detect these.
+        const doc = new Y.Doc()
+        seedDocWithSourceTable(doc)
+        const sim = runRenderedPivotSim(doc, pivotDefFor())
+        const initialReadCount = sim.reads.length
+        mutateCellRaw(doc, 's1', 3, 3, 77)
+        expect(sim.reads.length).toBeGreaterThan(initialReadCount)
+        sim.unsubscribe()
+    })
+
+    it('returns the same result identity when nothing changed', () => {
+        // React invariant: useSyncExternalStore loops forever if
+        // getSnapshot returns a fresh object on every call.
+        const doc = new Y.Doc()
+        seedDocWithSourceTable(doc)
+        const state = renderedPivot.createSnapshotState()
+        const a = renderedPivot.computeSnapshot(doc, pivotDefFor(), state)
+        const b = renderedPivot.computeSnapshot(doc, pivotDefFor(), state)
+        expect(a).toBe(b)
+    })
+
+    it('subscribe returns a no-op cleanup when doc is null', () => {
+        const off = renderedPivot.subscribe(null, pivotDefFor(), () => {})
+        expect(() => off()).not.toThrow()
+    })
+
+    it('subscribe returns a no-op cleanup when def is null', () => {
+        const doc = new Y.Doc()
+        const off = renderedPivot.subscribe(doc, null, () => {})
         expect(() => off()).not.toThrow()
     })
 })
