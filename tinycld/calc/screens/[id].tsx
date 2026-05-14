@@ -1,5 +1,4 @@
 import { eq } from '@tanstack/db'
-import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -74,7 +73,6 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     useFormulaBridge(doc)
     const sheets = useYSheets(doc)
     const allSheets = useAllYSheets(doc)
-    const orgHref = useOrgHref()
     const comments = useCellComments(workbookId)
     const fileActions = useWorkbookFileActions(workbookId)
     usePendingCsvImport(doc, workbookId, sheets.length > 0)
@@ -89,9 +87,17 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
 
     const onSelect = useCallback(
         (nextSheetId: string) => {
-            router.replace(orgHref('calc/[id]', { id: workbookId, sheet: nextSheetId }))
+            // setParams updates the `sheet` query param without
+            // unmounting the screen. router.replace re-mounts the
+            // route on web for query-only changes, which tears down
+            // the Y.Doc + realtime WebSocket and races local writes
+            // (newly-created pivots in particular) against the new
+            // doc's SyncReply. setParams keeps the same component
+            // instance + the same room, so unsaved local state
+            // survives the activation.
+            router.setParams({ sheet: nextSheetId })
         },
-        [orgHref, workbookId]
+        []
     )
 
     if (activeSheet == null) {

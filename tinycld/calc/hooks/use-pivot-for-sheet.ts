@@ -61,12 +61,7 @@ function computeSnapshot(
         if (state.cache !== null) state.cache = null
         return state.cache
     }
-    const pivotId = meta.get(PIVOT_SHEET_KEY)
-    if (typeof pivotId !== 'string') {
-        if (state.cache !== null) state.cache = null
-        return state.cache
-    }
-    const next = readPivot(doc, pivotId)
+    const next = findOwningPivot(doc, meta)
     const prev = state.cache
     if (
         prev != null &&
@@ -77,6 +72,46 @@ function computeSnapshot(
     }
     state.cache = next
     return next
+}
+
+// Resolve the pivot that owns `sheetId` by either:
+//   1. Sheet meta carries PIVOT_SHEET_KEY -> pivot id (the explicit
+//      pointer set by PivotInsertButton / xlsx import), OR
+//   2. A pivot's targetSheetName equals this sheet's current name.
+//
+// (2) is the fallback. We saw mid-session sheet-meta drift where the
+// pivotId tag set in PivotInsertButton's transact stops appearing on
+// the sheet meta a few ticks later (still under investigation —
+// happens through the realtime broker, not visible in pure-doc unit
+// tests). Pivot.targetSheetName lives on the pivot entry itself in
+// PIVOTS_MAP and is not subject to the same drift, so resolving the
+// owner by name is a safe second source of truth. The explicit
+// pointer is still set and preferred when present so future migrations
+// (e.g. renamed sheets where the meta tag updates faster than peer
+// observers see the new name) continue to work.
+function findOwningPivot(
+    doc: Y.Doc,
+    meta: Y.Map<unknown>
+): PivotDefinition | null {
+    const explicitPivotId = meta.get(PIVOT_SHEET_KEY)
+    if (typeof explicitPivotId === 'string') {
+        const def = readPivot(doc, explicitPivotId)
+        if (def != null) return def
+    }
+    const sheetName = meta.get('name')
+    if (typeof sheetName !== 'string' || sheetName.length === 0) return null
+    const pivotsMap = doc.getMap<Y.Map<unknown>>(PIVOTS_MAP)
+    let found: PivotDefinition | null = null
+    pivotsMap.forEach((entry, pivotId) => {
+        if (found != null) return
+        if (!(entry instanceof Y.Map)) return
+        const target = entry.get('targetSheetName')
+        if (target === sheetName) {
+            const def = readPivot(doc, pivotId)
+            if (def != null) found = def
+        }
+    })
+    return found
 }
 
 export function usePivotForSheet(

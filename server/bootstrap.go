@@ -636,6 +636,16 @@ func readWorkbookCellStyle(f *excelize.File, sheet, ref string) *CellStyle {
 func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 	sheetsAny := doc.GetMap("sheets")
 	cellsAny := doc.GetMap("cells")
+	// Register the pivots top-level map even on workbooks with no
+	// pivots yet, so y-crdt knows about the type before any client
+	// update arrives. Without this, a peer that adds the first pivot
+	// has their update applied to the server doc, but the type is
+	// only visible after an explicit GetMap call — and any
+	// EncodeStateAsUpdate that happens before SaveRoom touches it
+	// (e.g. a late-joiner's SyncReply, or the same client tearing
+	// down and re-creating its doc on a route change) misses the
+	// pivot in the encoded delta.
+	doc.GetMap("pivots")
 	sheetsMap, ok := sheetsAny.(*ycrdt.YMap)
 	if !ok {
 		return fmt.Errorf("calc: bootstrap: sheets map is not a YMap")
