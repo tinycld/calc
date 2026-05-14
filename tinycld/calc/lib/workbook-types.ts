@@ -157,6 +157,7 @@ export interface MergeRangeModel {
 
 export interface WorkbookModel {
     sheets: WorksheetModel[]
+    pivots?: PivotDefinition[]
 }
 
 export function cellKey(row: number, col: number): string {
