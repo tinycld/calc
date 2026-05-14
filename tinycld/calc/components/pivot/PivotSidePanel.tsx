@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { X } from 'lucide-react-native'
-import { Pressable, ScrollView, Switch, Text, View } from 'react-native'
+import { Switch } from '@tinycld/core/ui/switch'
+import { Pressable, ScrollView, Text, View } from 'react-native'
 import * as Y from 'yjs'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {

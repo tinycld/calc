@@ -133,24 +133,14 @@ test.describe('Calc pivot tables', () => {
         await expect(page.getByText('30', { exact: true })).toHaveCount(0)
     })
 
-    test('option toggles render with correct default state', async ({ page }) => {
-        // Coverage for the option-toggle slot in PivotSidePanel. We
-        // verify the four switches are mounted with the correct
-        // initial checked-state — rowGrandTotals + colGrandTotals
-        // default to true (buildInitialPivotDefinition mirrors
-        // Sheets); subtotals default to false. This catches a
-        // regression where the Switch wiring drops or the defaults
-        // are flipped.
-        //
-        // We intentionally don't drive the Switch through Playwright
-        // events here. RN-Web's Switch renders the input inside
-        // overlapping View/track/thumb layers, and React's delegated
-        // change listener doesn't pick up Playwright's synthesized
-        // events (click, setChecked, force click, dispatchEvent,
-        // focus+Space were all verified to NOT fire onValueChange).
-        // The setBoolean → engine path is exercised by the
-        // pivot-mutate unit tests; this e2e test just asserts the
-        // panel surface is wired and rendering correctly.
+    test('option toggles flip checked state on click', async ({ page }) => {
+        // Verifies the option-toggle Switches in PivotSidePanel are
+        // interactive in Playwright (regression from the prior RN-Web
+        // Switch, which rendered overlapping input/track/thumb layers
+        // that swallowed synthesized clicks). The new Switch is a
+        // Pressable with role="switch" + aria-checked, so .click()
+        // fires onValueChange normally. The setBoolean → engine path
+        // is covered by the pivot-mutate unit tests.
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
         const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
@@ -163,14 +153,29 @@ test.describe('Calc pivot tables', () => {
         await page.getByLabel('Add Region to R').click()
         await page.getByLabel('Add Sales to V').click()
 
-        // The panel is open after createPivot. All four switches
-        // should be mounted with the correct defaults.
-        await expect(page.getByLabel('Toggle row grand totals')).toBeChecked({
-            timeout: 15_000,
-        })
-        await expect(page.getByLabel('Toggle column grand totals')).toBeChecked()
-        await expect(page.getByLabel('Toggle row subtotals')).not.toBeChecked()
-        await expect(page.getByLabel('Toggle column subtotals')).not.toBeChecked()
+        const rowGrand = page.getByLabel('Toggle row grand totals')
+        const colGrand = page.getByLabel('Toggle column grand totals')
+        const rowSub = page.getByLabel('Toggle row subtotals')
+        const colSub = page.getByLabel('Toggle column subtotals')
+
+        // Defaults: grand-totals on, subtotals off
+        // (buildInitialPivotDefinition mirrors Sheets).
+        await expect(rowGrand).toBeChecked({ timeout: 15_000 })
+        await expect(colGrand).toBeChecked()
+        await expect(rowSub).not.toBeChecked()
+        await expect(colSub).not.toBeChecked()
+
+        // Click each switch and confirm checked state flips. This
+        // proves the click landed and onValueChange fired (which is
+        // what the previous test could not assert).
+        await rowGrand.click()
+        await expect(rowGrand).not.toBeChecked()
+        await colGrand.click()
+        await expect(colGrand).not.toBeChecked()
+        await rowSub.click()
+        await expect(rowSub).toBeChecked()
+        await colSub.click()
+        await expect(colSub).toBeChecked()
     })
 
     test('filter selection trims rows from the pivot output', async ({ page }) => {
