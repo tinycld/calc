@@ -894,6 +894,69 @@ test.describe('Calc', () => {
             await expect(page.getByLabel('Cell B1', { exact: true })).toBeVisible()
             await expect(page.getByLabel('Cell C1', { exact: true })).toBeVisible()
         })
+
+        test('Merged anchor in body quadrant keeps single-row height when rows are frozen', async ({
+            page,
+        }) => {
+            // Regression: merge sizing mixed absolute prefix-sum offsets
+            // (colOffsets/rowOffsets) with quadrant-local `left`/`top`
+            // props. For a merge whose anchor lived in the bottom-right
+            // quadrant, the computed renderHeight was inflated by the
+            // frozen-rows extent — the user saw the cell text vertically
+            // pushed down by exactly the frozen header height.
+            await navigateToPackage(page, 'calc')
+            await openNewSpreadsheet(page)
+
+            const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+            await typeIntoCell(page, formulaBar, 'A3', 'MERGED')
+
+            // Capture the default row height before merging so the post-
+            // merge assertion has a sheet-specific baseline (rather than
+            // hard-coding a pixel value tied to the renderer).
+            const a3BoxBefore = await page.getByLabel('Cell A3', { exact: true }).boundingBox()
+            if (a3BoxBefore == null) throw new Error('A3 box missing pre-merge')
+            const rowHeight = a3BoxBefore.height
+
+            // Drag-select A3:C3 and merge.
+            const a3 = page.getByLabel('Cell A3', { exact: true })
+            const c3 = page.getByLabel('Cell C3', { exact: true })
+            const a3Box = await a3.boundingBox()
+            const c3Box = await c3.boundingBox()
+            if (a3Box == null || c3Box == null) throw new Error('cell rects missing')
+            await page.mouse.move(a3Box.x + a3Box.width / 2, a3Box.y + a3Box.height / 2)
+            await page.mouse.down()
+            await page.mouse.move(c3Box.x + c3Box.width / 2, c3Box.y + c3Box.height / 2, {
+                steps: 8,
+            })
+            await page.mouse.up()
+            await page.getByRole('button', { name: 'Format', exact: true }).click()
+            await page.getByRole('menuitem', { name: 'Merge cells' }).click()
+            await page.getByRole('menuitem', { name: 'Merge all', exact: true }).click()
+
+            // Freeze 2 rows. Row 3 is the first row inside the body
+            // (bottom-right) quadrant — exactly the quadrant where the
+            // bug bit.
+            await page.getByRole('button', { name: 'View', exact: true }).click()
+            await page.getByRole('menuitem', { name: 'Freeze' }).click()
+            await page.getByRole('menuitem', { name: '2 rows', exact: true }).click()
+
+            // The merged anchor should still be exactly one row tall:
+            // the merge spans columns only, not rows. Before the fix it
+            // measured rowHeight + frozenHeight (~3x taller).
+            const mergedBox = await page.getByLabel('Cell A3', { exact: true }).boundingBox()
+            if (mergedBox == null) throw new Error('merged cell box missing post-freeze')
+            expect(mergedBox.height).toBeCloseTo(rowHeight, 0)
+
+            // The text node sits inside the cell rect — its top edge
+            // should be within the cell's own height, not floating
+            // somewhere below it (the visible symptom of the bug).
+            const textBox = await page.getByText('MERGED', { exact: true }).boundingBox()
+            if (textBox == null) throw new Error('merged text box missing')
+            expect(textBox.y).toBeGreaterThanOrEqual(mergedBox.y - 1)
+            expect(textBox.y + textBox.height).toBeLessThanOrEqual(
+                mergedBox.y + mergedBox.height + 1
+            )
+        })
     })
 })
 

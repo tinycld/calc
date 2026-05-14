@@ -77,11 +77,20 @@ export const Cell = memo(function Cell({
     if (merge != null && !isMergedCovered) {
         const lastCol = merge.anchorCol + merge.colSpan - 1
         const lastRow = merge.anchorRow + merge.rowSpan - 1
+        // Compute the merge footprint in absolute prefix-sum space, NOT
+        // by subtracting from `left` / `top`. `left` and `top` are
+        // quadrant-local (the renderer subtracts the frozen extent
+        // before passing them in); `colOffsets`/`rowOffsets` are
+        // absolute. Mixing them inflates the merged anchor's height by
+        // the frozen-rows extent (and width by frozen-cols) for any
+        // anchor that lives in a non-top-left quadrant, which is what
+        // the user sees as text vertically offset by the frozen header
+        // height.
         if (lastCol < colOffsets.length) {
-            renderWidth = colOffsets[lastCol] - left
+            renderWidth = colOffsets[lastCol] - colOffsets[col - 1]
         }
         if (lastRow < rowOffsets.length) {
-            renderHeight = rowOffsets[lastRow] - top
+            renderHeight = rowOffsets[lastRow] - rowOffsets[row - 1]
         }
     }
 
