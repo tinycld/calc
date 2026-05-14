@@ -101,7 +101,13 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
         <CommentsProvider value={comments}>
             <View className="flex-1 bg-background">
                 <View className="px-4 py-2 border-b border-border flex-row items-center gap-3">
-                    <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
+                    <Text
+                        className="text-base font-semibold text-foreground"
+                        numberOfLines={1}
+                        {...(typeof document !== 'undefined'
+                            ? { 'data-test-id': 'calc-workbook-header' }
+                            : {})}
+                    >
                         {itemName}
                     </Text>
                     <ConnectionStatus isConnected={isConnected} />

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { login, navigateToPackage } from '../../../../tests/e2e/helpers'
+import { openNewSpreadsheet } from './_menubar-helpers'
 
 test.describe('Calc toolbar (slimmed)', () => {
     test.setTimeout(120_000)
@@ -9,8 +10,7 @@ test.describe('Calc toolbar (slimmed)', () => {
 
     test('Toolbar no longer renders Sort/Filter/Merge/Freeze/Download/Print', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('Team Scorecard.xlsx').click()
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+        await openNewSpreadsheet(page)
 
         const toolbar = page.locator('[data-test-id="calc-toolbar"]')
         await expect(toolbar).toBeVisible()
@@ -26,8 +26,7 @@ test.describe('Calc toolbar (slimmed)', () => {
 
     test('Toolbar still shows Bold / Italic / Find and replace', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('Team Scorecard.xlsx').click()
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+        await openNewSpreadsheet(page)
 
         const toolbar = page.locator('[data-test-id="calc-toolbar"]')
         await expect(toolbar).toBeVisible()

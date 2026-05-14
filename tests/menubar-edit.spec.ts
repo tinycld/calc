@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { login, navigateToPackage } from '../../../../tests/e2e/helpers'
+import { openNewSpreadsheet } from './_menubar-helpers'
 
 test.describe('Calc Edit menu', () => {
     test.setTimeout(120_000)
@@ -9,8 +10,7 @@ test.describe('Calc Edit menu', () => {
 
     test('Undo is disabled on a freshly-opened workbook', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('Team Scorecard.xlsx').click()
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+        await openNewSpreadsheet(page)
 
         await page.getByRole('button', { name: 'Edit', exact: true }).click()
         const undo = page.getByRole('menuitem', { name: /Undo/ })
@@ -20,8 +20,7 @@ test.describe('Calc Edit menu', () => {
 
     test('Find and replace opens the find overlay', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('Team Scorecard.xlsx').click()
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+        await openNewSpreadsheet(page)
 
         await page.getByRole('button', { name: 'Edit', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Find and replace' }).click()
@@ -30,8 +29,7 @@ test.describe('Calc Edit menu', () => {
 
     test('Paste special exposes Values only and Format only', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('Team Scorecard.xlsx').click()
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+        await openNewSpreadsheet(page)
 
         await page.getByRole('button', { name: 'Edit', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Paste special' }).hover()

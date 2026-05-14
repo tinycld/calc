@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { login, navigateToPackage } from '../../../../tests/e2e/helpers'
+import { openNewSpreadsheet } from './_menubar-helpers'
 
 test.describe('Calc Help menu', () => {
     test.setTimeout(120_000)
@@ -9,8 +10,7 @@ test.describe('Calc Help menu', () => {
 
     test('Keyboard shortcuts opens a dialog listing Calc shortcuts', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('Team Scorecard.xlsx').click()
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+        await openNewSpreadsheet(page)
 
         await page.getByRole('button', { name: 'Help', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).click()
@@ -23,8 +23,7 @@ test.describe('Calc Help menu', () => {
 
     test('Function list opens a dialog listing formula functions', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('Team Scorecard.xlsx').click()
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+        await openNewSpreadsheet(page)
 
         await page.getByRole('button', { name: 'Help', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Function list' }).click()

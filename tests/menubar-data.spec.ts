@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { login, navigateToPackage } from '../../../../tests/e2e/helpers'
+import { openNewSpreadsheet } from './_menubar-helpers'
 
 test.describe('Calc Data menu', () => {
     test.setTimeout(120_000)
@@ -9,19 +10,17 @@ test.describe('Calc Data menu', () => {
 
     test('Sort range opens the sort dialog', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('Team Scorecard.xlsx').click()
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+        await openNewSpreadsheet(page)
 
         await page.getByLabel('Cell A1', { exact: true }).click()
         await page.getByRole('button', { name: 'Data', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Sort range' }).click()
-        await expect(page.getByRole('dialog', { name: /Sort/i })).toBeVisible()
+        await expect(page.getByLabel('Sort range dialog')).toBeVisible()
     })
 
     test('Create a filter flips to Remove filter once active', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await page.getByText('Team Scorecard.xlsx').click()
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 60_000 })
+        await openNewSpreadsheet(page)
 
         await page.getByLabel('Cell A1', { exact: true }).click()
         await page.getByRole('button', { name: 'Data', exact: true }).click()
