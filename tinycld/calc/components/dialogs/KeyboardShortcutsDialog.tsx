@@ -1,10 +1,10 @@
-import { formatKeys } from '@tinycld/core/lib/shortcuts/keys'
 import { useMemo } from 'react'
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native'
 import { type CalcShortcutDoc, getCalcShortcutDocs } from '../../hooks/use-calc-shortcuts'
 import { useMenuDialogsStore } from '../../hooks/use-menu-dialogs-store'
+import { displayKeys } from './display-keys'
 
-function groupShortcuts(docs: CalcShortcutDoc[]): Map<string, CalcShortcutDoc[]> {
+function groupShortcuts(docs: readonly CalcShortcutDoc[]): Map<string, CalcShortcutDoc[]> {
     const groups = new Map<string, CalcShortcutDoc[]>()
     for (const s of docs) {
         const key = s.group
@@ -15,17 +15,11 @@ function groupShortcuts(docs: CalcShortcutDoc[]): Map<string, CalcShortcutDoc[]>
     return groups
 }
 
-function displayKeys(keys: string): string {
-    const combos = formatKeys(keys)
-    return combos.map(parts => parts.join('')).join(' ')
-}
-
 // KeyboardShortcutsDialog renders the Calc shortcut catalog grouped
-// by group label, with descriptions on the left and keyboard
-// glyphs on the right. The data comes from `getCalcShortcutDocs`,
-// which is parallel-maintained alongside `buildCalcShortcuts` —
-// using a pure-metadata helper avoids constructing fake stores or
-// clipboard handler bundles just to read off the list.
+// by group label, with descriptions on the left and keyboard glyphs
+// on the right. Data comes from `getCalcShortcutDocs`, which derives
+// from the same SHORTCUT_DOCS list buildCalcShortcuts registers — no
+// hand-maintained second array, no drift possible.
 export function KeyboardShortcutsDialog() {
     const isOpen = useMenuDialogsStore(s => s.isKeyboardShortcutsOpen)
     const close = useMenuDialogsStore(s => s.closeKeyboardShortcuts)

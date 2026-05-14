@@ -35,7 +35,6 @@ type GateKind =
     | 'editingClosed' // not currently editing a cell
     | 'editingClosedWritable' // not editing + !readOnly
     | 'findOpen' // the find overlay is visible
-    | 'always' // unconditional
 
 // Discriminated union over the side effects. buildCalcShortcuts looks
 // up the matching closure based on `action` and binds it to the
@@ -210,6 +209,9 @@ const SHORTCUT_DOCS: readonly ShortcutEntry[] = [
         action: 'findOpen',
     },
     {
+        // Replace is a write op — `editingClosedWritable` gates it off
+        // for read-only viewers. Find (above) uses `editingClosed` since
+        // browsing matches is harmless without write permission.
         id: 'calc.find.openReplace',
         keys: '$mod+Shift+h',
         description: 'Find and replace',
@@ -251,13 +253,18 @@ export interface CalcShortcutDoc {
     group: string
 }
 
-export function getCalcShortcutDocs(): CalcShortcutDoc[] {
-    return SHORTCUT_DOCS.map(({ id, keys, description, group }) => ({
-        id,
-        keys,
-        description,
-        group,
-    }))
+// Frozen so repeated callers (and tests) get a stable identity rather
+// than a fresh array every call. `SHORTCUT_DOCS` is `readonly` already;
+// this projection peels off the internal `gate`/`action` discriminators
+// once and reuses the result.
+const CALC_SHORTCUT_DOCS: readonly CalcShortcutDoc[] = Object.freeze(
+    SHORTCUT_DOCS.map(({ id, keys, description, group }) =>
+        Object.freeze({ id, keys, description, group })
+    )
+)
+
+export function getCalcShortcutDocs(): readonly CalcShortcutDoc[] {
+    return CALC_SHORTCUT_DOCS
 }
 
 // buildCalcShortcuts is the pure shortcut-list factory used by both
@@ -265,34 +272,6 @@ export function getCalcShortcutDocs(): CalcShortcutDoc[] {
 // means tests can assert the registered keybindings, gate predicates,
 // and run callbacks without spinning up a React renderer.
 export function buildCalcShortcuts(args: UseCalcShortcutsArgs): Shortcut[] {
-    const { store, findStore, readOnly = false } = args
-    // Centralized predicates so each entry's `gate` value picks a
-    // closure. The find dialog suspends regular grid shortcuts (find's
-    // own next/prev/close use `findOpen` instead so they keep firing).
-    const baseWhen = () => {
-        const s = store.getState()
-        if (findStore.getState().isOpen) return false
-        return s.selection != null && s.editSession == null
-    }
-    const gateFor = (kind: GateKind): (() => boolean) => {
-        switch (kind) {
-            case 'always':
-                return () => true
-            case 'selectedCell':
-                return baseWhen
-            case 'selectedCellWritable':
-                return () => baseWhen() && !readOnly
-            case 'cutPending':
-                return () => store.getState().cutPending
-            case 'editingClosed':
-                return () => store.getState().editSession == null
-            case 'editingClosedWritable':
-                return () => !readOnly && store.getState().editSession == null
-            case 'findOpen':
-                return () => findStore.getState().isOpen
-        }
-    }
-
     return SHORTCUT_DOCS.map(entry => ({
         id: entry.id,
         keys: entry.keys,
@@ -300,9 +279,47 @@ export function buildCalcShortcuts(args: UseCalcShortcutsArgs): Shortcut[] {
         group: entry.group,
         description: entry.description,
         allowInInputs: entry.allowInInputs,
-        when: gateFor(entry.gate),
+        when: gateFor(entry.gate, args),
         run: actionFor(entry.action, args),
     }))
+}
+
+function unreachable(value: never): never {
+    throw new Error(`unreachable: ${String(value)}`)
+}
+
+// gateFor returns the predicate the keyboard registry consults before
+// firing a shortcut. Centralised here (rather than embedded in each
+// SHORTCUT_DOCS entry as a closure) so the docs view can ignore them.
+// The find dialog suspends regular grid shortcuts; find's own
+// next/prev/close use the `findOpen` gate so they keep firing while
+// the overlay is up. `findOpenReplace` uses `editingClosedWritable`
+// (rather than the read-only `editingClosed` gate that opens read-only
+// Find) because Replace is a write op — keep this distinction; relaxing
+// it would let read-only viewers issue replaces.
+function gateFor(kind: GateKind, args: UseCalcShortcutsArgs): () => boolean {
+    const { store, findStore, readOnly = false } = args
+    const baseWhen = () => {
+        const s = store.getState()
+        if (findStore.getState().isOpen) return false
+        return s.selection != null && s.editSession == null
+    }
+    switch (kind) {
+        case 'selectedCell':
+            return baseWhen
+        case 'selectedCellWritable':
+            return () => baseWhen() && !readOnly
+        case 'cutPending':
+            return () => store.getState().cutPending
+        case 'editingClosed':
+            return () => store.getState().editSession == null
+        case 'editingClosedWritable':
+            return () => !readOnly && store.getState().editSession == null
+        case 'findOpen':
+            return () => findStore.getState().isOpen
+        default:
+            return unreachable(kind)
+    }
 }
 
 function actionFor(kind: ActionKind, args: UseCalcShortcutsArgs): () => void {
@@ -358,6 +375,8 @@ function actionFor(kind: ActionKind, args: UseCalcShortcutsArgs): () => void {
             return () => find.nextMatch()
         case 'findPrev':
             return () => find.prevMatch()
+        default:
+            return unreachable(kind)
     }
 }
 
