@@ -142,9 +142,14 @@ func serializeWorkbook(model WorkbookModel) ([]byte, error) {
 			// for v1.
 			continue
 		}
+		// excelize v2.10.1 quirk: AddPivotTable rejects sheet names
+		// wrapped in single quotes inside DataRange / PivotTableRange
+		// (the parser does a literal sheet-name lookup against the
+		// workbook and `'Sheet 1'` doesn't match the bare `Sheet 1`).
+		// Pass the bare sheet name even when it contains spaces.
 		opts := &excelize.PivotTableOptions{
 			DataRange:           p.SourceRange,
-			PivotTableRange:     fmt.Sprintf("%s!A1:Z200", quoteSheetForRange(p.TargetSheetName)),
+			PivotTableRange:     fmt.Sprintf("%s!A1:Z200", p.TargetSheetName),
 			Rows:                toExcelizeFields(p.Rows, false, ""),
 			Columns:             toExcelizeFields(p.Cols, false, ""),
 			Data:                toExcelizeValueFields(p.Values),
@@ -218,13 +223,6 @@ func excelizeSubtotal(agg string) string {
 		return "Varp"
 	}
 	return "Sum"
-}
-
-func quoteSheetForRange(name string) string {
-	if strings.IndexAny(name, " '!") >= 0 {
-		return "'" + strings.ReplaceAll(name, "'", "''") + "'"
-	}
-	return name
 }
 
 // parseModelCellKey parses the "row:col" keys used by

@@ -1,11 +1,14 @@
 package calc
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/xuri/excelize/v2"
 )
 
 // TestPivotDefinitionDTOJSONRoundTrip asserts that a fully-populated
@@ -246,5 +249,108 @@ func TestReadWorkbookFromXLSX_Pivots(t *testing.T) {
 	}
 	if !p.RowGrandTotals || !p.ColGrandTotals {
 		t.Errorf("totals flags = %+v / %+v", p.RowGrandTotals, p.ColGrandTotals)
+	}
+}
+
+// TestSerializeWorkbook_PivotRoundTrip drives serializeWorkbook end-to-end:
+// build a WorkbookModel with one pivot, serialize to xlsx bytes, reopen
+// with excelize, and assert GetPivotTables surfaces an equivalent
+// definition. Guards against silent drift in DTO→PivotTableOptions
+// mapping and aggregation-enum encoding.
+func TestSerializeWorkbook_PivotRoundTrip(t *testing.T) {
+	model := WorkbookModel{
+		Sheets: []WorksheetModel{
+			{
+				Name: "Sheet1", RowCount: 4, ColCount: 3,
+				Cells: map[string]CellValueDTO{
+					"1:1": {Kind: "string", Raw: "Region", Display: "Region"},
+					"1:2": {Kind: "string", Raw: "Year", Display: "Year"},
+					"1:3": {Kind: "string", Raw: "Sales", Display: "Sales"},
+					"2:1": {Kind: "string", Raw: "East", Display: "East"},
+					"2:2": {Kind: "number", Raw: float64(2024), Display: "2024"},
+					"2:3": {Kind: "number", Raw: float64(10), Display: "10"},
+					"3:1": {Kind: "string", Raw: "West", Display: "West"},
+					"3:2": {Kind: "number", Raw: float64(2024), Display: "2024"},
+					"3:3": {Kind: "number", Raw: float64(5), Display: "5"},
+				},
+			},
+			{Name: "Pivot of Sheet1", RowCount: 1, ColCount: 1, Cells: map[string]CellValueDTO{}},
+		},
+		Pivots: []PivotDefinitionDTO{
+			{
+				ID:              "p1",
+				SourceRange:     "Sheet1!A1:C3",
+				TargetSheetName: "Pivot of Sheet1",
+				Rows:            []PivotFieldDTO{{SourceColumn: "Region"}},
+				Cols:            []PivotFieldDTO{{SourceColumn: "Year"}},
+				Values: []PivotValueFieldDTO{
+					{SourceColumn: "Sales", Aggregation: "sum"},
+				},
+				RowGrandTotals: true,
+				ColGrandTotals: true,
+			},
+		},
+	}
+	data, err := serializeWorkbook(model)
+	if err != nil {
+		t.Fatalf("serializeWorkbook: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatalf("empty serialization output")
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("re-open: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	pivots, err := f.GetPivotTables("Pivot of Sheet1")
+	if err != nil {
+		t.Fatalf("GetPivotTables: %v", err)
+	}
+	if len(pivots) != 1 {
+		t.Fatalf("want 1 pivot on target sheet, got %d", len(pivots))
+	}
+	if got := pivots[0].DataRange; got != "Sheet1!A1:C3" {
+		t.Errorf("DataRange = %q, want Sheet1!A1:C3", got)
+	}
+	if len(pivots[0].Rows) != 1 || pivots[0].Rows[0].Data != "Region" {
+		t.Errorf("Rows = %+v", pivots[0].Rows)
+	}
+	if len(pivots[0].Columns) != 1 || pivots[0].Columns[0].Data != "Year" {
+		t.Errorf("Columns = %+v", pivots[0].Columns)
+	}
+	if len(pivots[0].Data) != 1 || pivots[0].Data[0].Data != "Sales" {
+		t.Errorf("Data = %+v", pivots[0].Data)
+	}
+}
+
+// TestRoundTrip_ImportExportImport: read a real xlsx fixture, serialize
+// it back out, then re-import. The pivot count and SourceRange must
+// match across the two imports — drift here means the export path is
+// reshaping the def in a way the importer can't recover.
+func TestRoundTrip_ImportExportImport(t *testing.T) {
+	data, err := os.ReadFile("testdata/pivot-basic.xlsx")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	model, err := ReadWorkbookFromXLSX(data, 0, 0)
+	if err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	out, err := serializeWorkbook(model)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	second, err := ReadWorkbookFromXLSX(out, 0, 0)
+	if err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+	if len(second.Pivots) != len(model.Pivots) {
+		t.Fatalf("pivot count drift: first=%d second=%d", len(model.Pivots), len(second.Pivots))
+	}
+	if model.Pivots[0].SourceRange != second.Pivots[0].SourceRange {
+		t.Errorf("SourceRange drift: %q -> %q", model.Pivots[0].SourceRange, second.Pivots[0].SourceRange)
 	}
 }
