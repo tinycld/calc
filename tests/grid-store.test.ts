@@ -524,6 +524,56 @@ describe('createGridStore', () => {
             expect(store.getState().refDrag).toBeNull()
             expect(stub.focusCalls).toBe(1)
         })
+
+        it('start returns false when the cursor is not ref-acceptable', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().editCell({ row: 1, col: 1 }, 'abc')
+            expect(store.getState().cellRefDragStart(5, 2)).toBe(false)
+            expect(store.getState().refDrag).toBeNull()
+        })
+
+        // End-to-end: typing =SUM( and dragging A1 → A3 should leave
+        // the draft as =SUM(A1:A3). useRefDragExtender is the React
+        // glue that watches refDrag identity and rewrites the draft;
+        // here we drive its body inline so the contract is pinned at
+        // the store level.
+        it('drag from A1 to A3 inside =SUM( yields =SUM(A1:A3)', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().editCell({ row: 4, col: 4 }, '=SUM(')
+            expect(store.getState().cellRefDragStart(1, 1)).toBe(true)
+            expect(store.getState().editSession?.draft).toBe('=SUM(A1')
+            // Simulate useRefDragExtender for each move: recompute the
+            // range and call extendRefDragDraft, matching what the hook
+            // does on every refDrag identity change.
+            const applyExtender = () => {
+                const drag = store.getState().refDrag
+                const session = store.getState().editSession
+                if (drag == null || session == null) return
+                const minRow = Math.min(drag.anchor.row, drag.end.row)
+                const maxRow = Math.max(drag.anchor.row, drag.end.row)
+                const minCol = Math.min(drag.anchor.col, drag.end.col)
+                const maxCol = Math.max(drag.anchor.col, drag.end.col)
+                const range =
+                    minRow === maxRow && minCol === maxCol
+                        ? `${String.fromCharCode(64 + minCol)}${minRow}`
+                        : `${String.fromCharCode(64 + minCol)}${minRow}:${String.fromCharCode(64 + maxCol)}${maxRow}`
+                const before = session.draft.slice(0, drag.lastSlice.start)
+                const after = session.draft.slice(drag.lastSlice.end)
+                const nextDraft = `${before}${range}${after}`
+                const nextSlice = {
+                    start: before.length,
+                    end: before.length + range.length,
+                }
+                store.getState().extendRefDragDraft(nextDraft, nextSlice)
+            }
+            store.getState().cellRefDragMove(3, 1)
+            applyExtender()
+            expect(store.getState().editSession?.draft).toBe('=SUM(A1:A3')
+            store.getState().cellRefDragEnd()
+            expect(store.getState().refDrag).toBeNull()
+        })
     })
 
     describe('suggestion popover', () => {

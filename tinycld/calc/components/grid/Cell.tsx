@@ -246,6 +246,65 @@ export const Cell = memo(function Cell({
         [store, row, col, colOffsets, rowOffsets, readOnly, isAnyEditing]
     )
 
+    // Ref-drag variant: fires while a formula edit is in progress. The
+    // mousedown call site has already preventDefault'd so the formula
+    // input keeps focus. cellRefDragStart inserts the anchor address
+    // (e.g. "A1") and may return false if the cursor isn't in a ref-
+    // acceptable position — in that case there's no insertion to
+    // extend, so we don't install document listeners. Otherwise every
+    // pointermove maps the cursor to a cell and calls cellRefDragMove;
+    // useRefDragExtender reacts to that and rewrites the inserted slice
+    // to the new range (A1:B3). Release ends the drag and refocuses
+    // the input.
+    const webRefDragStart = useCallback(
+        (clientX: number, clientY: number, rect: { left: number; top: number }) => {
+            if (Platform.OS !== 'web' || readOnly) return
+            if (typeof document === 'undefined') return
+            if (!store.getState().cellRefDragStart(row, col)) return
+            // cellRefDragStart already inserted the anchor address into
+            // the formula. The synthetic click that fires after mouseup
+            // would otherwise hit onPress → cellRefTap (no-op because
+            // the cursor is now past digits) → selectCell, which would
+            // commit the half-typed formula and lose the edit. Suppress
+            // it.
+            skipNextPressRef.current = true
+            webDragRef.current = {
+                startX: clientX,
+                startY: clientY,
+                startRect: rect,
+                dragging: false,
+            }
+            const onMove = (ev: PointerEvent) => {
+                const drag = webDragRef.current
+                if (drag == null) return
+                const dx = ev.clientX - drag.startX
+                const dy = ev.clientY - drag.startY
+                if (!drag.dragging) {
+                    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+                    drag.dragging = true
+                }
+                const absLeft = colOffsets[col - 1] ?? 0
+                const absTop = rowOffsets[row - 1] ?? 0
+                const gridX = absLeft + (ev.clientX - drag.startRect.left)
+                const gridY = absTop + (ev.clientY - drag.startRect.top)
+                const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
+                if (target == null) return
+                store.getState().cellRefDragMove(target.row, target.col)
+            }
+            const cleanup = () => {
+                document.removeEventListener('pointermove', onMove)
+                document.removeEventListener('pointerup', cleanup)
+                document.removeEventListener('pointercancel', cleanup)
+                webDragRef.current = null
+                store.getState().cellRefDragEnd()
+            }
+            document.addEventListener('pointermove', onMove)
+            document.addEventListener('pointerup', cleanup)
+            document.addEventListener('pointercancel', cleanup)
+        },
+        [store, row, col, colOffsets, rowOffsets, readOnly]
+    )
+
     if (isMergedCovered) return null
 
     if (isEditing) {
@@ -446,7 +505,32 @@ export const Cell = memo(function Cell({
                           return
                       }
                       if (isAnyEditing) {
+                          // Two jobs here:
+                          //   1. preventDefault swallows the focus
+                          //      shift so the formula input doesn't
+                          //      blur (which would commit the half-
+                          //      typed formula).
+                          //   2. Try to start a ref-drag. If the
+                          //      cursor is in a ref-acceptable spot
+                          //      (e.g. just typed "=SUM("), this
+                          //      inserts the anchor address and
+                          //      installs pointer listeners so a
+                          //      subsequent drag stretches it into a
+                          //      range. If the cursor isn't ref-
+                          //      acceptable, webRefDragStart no-ops
+                          //      and a pure click still falls through
+                          //      to onPress → cellRefTap.
                           e.preventDefault()
+                          const clientX = typeof e.clientX === 'number' ? e.clientX : 0
+                          const clientY = typeof e.clientY === 'number' ? e.clientY : 0
+                          const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
+                              left: 0,
+                              top: 0,
+                          }
+                          webRefDragStart(clientX, clientY, {
+                              left: rect.left,
+                              top: rect.top,
+                          })
                           return
                       }
                       // Plain drag-select. The first pointermove past
