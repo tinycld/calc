@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useMemo } from 'react'
-import { View } from 'react-native'
+import { type LayoutChangeEvent, View } from 'react-native'
 import { useFindActions } from '../hooks/find/use-find-actions'
 import { createFindStore } from '../hooks/find/use-find-store'
 import { FindStoreProvider, useFindStoreApi } from '../hooks/find/use-find-store-context'
@@ -252,11 +252,27 @@ function GridInner({
         selectedCellValue: toolbar.selectedCellValue,
     })
     const suggestions = useGridSuggestions({
+        doc,
+        sheetId,
         colOffsets,
         rowOffsets,
         scrollX: viewport.scrollX,
         scrollY: viewport.scrollY,
     })
+    // Capture the body row container's y offset within the Grid root so
+    // the formula-suggestion popover (and any future viewport-anchored
+    // overlay) can position itself against the real layout instead of
+    // summing brittle constants. The menubar/toolbar/status-banner
+    // stack between the Grid root and the body has changed heights more
+    // than once and is conditional in places, which has bitten the
+    // popover's vertical anchor.
+    const setBodyTop = useGridStore(s => s.setBodyTop)
+    const onBodyContainerLayout = useCallback(
+        (e: LayoutChangeEvent) => {
+            setBodyTop(e.nativeEvent.layout.y)
+        },
+        [setBodyTop]
+    )
     useRefDragExtender()
     useCommentShortcut(instance.store, readOnly)
     // Cmd+C / Cmd+X / Cmd+V plus paste-special variants. Wired here so
@@ -449,7 +465,7 @@ function GridInner({
                     onRemoveColumnCriterion={filter.removeHeaderCriterion}
                 />
             </View>
-            <View className="flex-1 flex-row">
+            <View className="flex-1 flex-row" onLayout={onBodyContainerLayout}>
                 <RowHeader
                     scrollRef={viewport.leftColumnScrollRef}
                     contentHeight={contentHeight}

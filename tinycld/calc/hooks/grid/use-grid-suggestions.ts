@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import type * as Y from 'yjs'
 import type { FormulaSpecialKey } from '../../components/FormulaBar'
-import {
-    FORMULA_BAR_HEIGHT,
-    HEADER_HEIGHT,
-    ROW_HEADER_WIDTH,
-    TOOLBAR_HEIGHT,
-} from '../../components/grid/constants'
+import { HEADER_HEIGHT, ROW_HEADER_WIDTH } from '../../components/grid/constants'
 import { filterFunctions, parseFunctionToken } from '../../lib/formula/autocomplete'
+import { useSheetMerges } from '../use-cell-merge'
 import { useFormulaFunctionNames } from '../use-formula-function-names'
 import { useGridStore, useGridStoreApi } from '../use-grid-store'
 
@@ -30,6 +27,8 @@ export interface GridSuggestions {
 }
 
 interface UseGridSuggestionsArgs {
+    doc: Y.Doc | null
+    sheetId: string
     colOffsets: Float64Array
     rowOffsets: Float64Array
     scrollX: number
@@ -47,17 +46,21 @@ interface UseGridSuggestionsArgs {
 // in-cell editor, hover on a list item) all converge on the same
 // state, which is what stores are for.
 export function useGridSuggestions({
+    doc,
+    sheetId,
     colOffsets,
     rowOffsets,
     scrollX,
     scrollY,
 }: UseGridSuggestionsArgs): GridSuggestions {
+    const merges = useSheetMerges(doc, sheetId)
     const store = useGridStoreApi()
     const editSession = useGridStore(s => s.editSession)
     const dismissedDraft = useGridStore(s => s.dismissedDraft)
     const selectedIndex = useGridStore(s => s.suggestionIndex)
     const activeSurface = useGridStore(s => s.activeSurface)
     const formulaBarRect = useGridStore(s => s.formulaBarRect)
+    const bodyTop = useGridStore(s => s.bodyTop)
 
     const functionNames = useFormulaFunctionNames()
 
@@ -131,19 +134,41 @@ export function useGridSuggestions({
 
     const anchor = useMemo<SuggestionAnchor | null>(() => {
         if (!popoverOpen || editSession == null) return null
+        // The Grid stacks (top to bottom): menubar, toolbar, optional
+        // status banners, formula bar, column header, body. Their
+        // individual heights have changed multiple times and the
+        // banners are conditional, so summing layout constants drifts
+        // out of date silently. `bodyTop` is the body row container's
+        // measured y inside the Grid root — equal to the bottom of the
+        // column header, i.e. (formula-bar bottom) + HEADER_HEIGHT —
+        // so all popover anchors can be expressed against it.
+        if (bodyTop == null) return null
         if (activeSurface === 'bar') {
             if (formulaBarRect == null) return null
             return {
                 left: ROW_HEADER_WIDTH + formulaBarRect.left,
-                top: TOOLBAR_HEIGHT + FORMULA_BAR_HEIGHT,
+                top: bodyTop - HEADER_HEIGHT,
                 width: Math.min(220, Math.max(140, formulaBarRect.width)),
             }
         }
         const colLeft = colOffsets[editSession.col - 1] ?? 0
-        const rowBottom = rowOffsets[editSession.row] ?? 0
+        // If the editing cell is the anchor of a vertical merge, the
+        // popover must drop below the merge's full footprint — using
+        // the anchor row's own bottom would put the popover inside the
+        // merged span and cover the text the user just typed. Covered
+        // (non-anchor) cells never enter edit mode, so only the anchor
+        // case needs handling here.
+        const mergeForCell = merges.find(
+            m => m.anchorRow === editSession.row && m.anchorCol === editSession.col
+        )
+        const bottomRow =
+            mergeForCell != null
+                ? mergeForCell.anchorRow + mergeForCell.rowSpan - 1
+                : editSession.row
+        const rowBottom = rowOffsets[bottomRow] ?? 0
         return {
             left: ROW_HEADER_WIDTH + colLeft - scrollX,
-            top: TOOLBAR_HEIGHT + FORMULA_BAR_HEIGHT + HEADER_HEIGHT + rowBottom - scrollY,
+            top: bodyTop + rowBottom - scrollY,
             width: 220,
         }
     }, [
@@ -151,6 +176,8 @@ export function useGridSuggestions({
         editSession,
         activeSurface,
         formulaBarRect,
+        bodyTop,
+        merges,
         colOffsets,
         rowOffsets,
         scrollX,

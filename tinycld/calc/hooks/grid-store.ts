@@ -155,6 +155,13 @@ export interface GridState {
     suggestionIndex: number
     dismissedDraft: string | null
     formulaBarRect: FormulaBarRect | null
+    // y offset (in Grid-root pixels) of the body row container — the
+    // <View> that holds the row header and the cells viewport. Lets
+    // popovers anchored to a cell or to the formula bar position
+    // themselves relative to the actual rendered layout instead of a
+    // sum of brittle layout constants (the menubar, status banners,
+    // and toolbar drift in height independently of the Grid).
+    bodyTop: number | null
     contextTarget: ContextTarget | null
     commentTarget: CommentTarget | null
     handleMenu: HandleMenuTarget | null
@@ -260,6 +267,7 @@ export interface GridActions {
     clearSelection: () => void
     setActiveSurface: (surface: ActiveSurface) => void
     setFormulaBarRect: (rect: FormulaBarRect) => void
+    setBodyTop: (y: number) => void
     cellRefTap: (row: number, col: number) => boolean
     cellRefDragStart: (row: number, col: number) => boolean
     cellRefDragMove: (row: number, col: number) => void
@@ -355,6 +363,7 @@ const initialState: GridState = {
     suggestionIndex: 0,
     dismissedDraft: null,
     formulaBarRect: null,
+    bodyTop: null,
     contextTarget: null,
     commentTarget: null,
     handleMenu: null,
@@ -898,6 +907,10 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
 
             setActiveSurface: surface => set({ activeSurface: surface }),
             setFormulaBarRect: rect => set({ formulaBarRect: rect }),
+            setBodyTop: y => {
+                if (get().bodyTop === y) return
+                set({ bodyTop: y })
+            },
 
             cellRefTap: (row, col) => {
                 const session = get().editSession

@@ -184,6 +184,92 @@ test.describe('Calc', () => {
         await formulaBar.press('Escape')
     })
 
+    test('formula function autocomplete: in-cell popover anchors below the cell, not at its top', async ({
+        page,
+    }) => {
+        // Regression: the in-cell popover was positioned by summing
+        // hardcoded layout constants (toolbar + formula bar + column
+        // header). The actual stack above the body had drifted — the
+        // menubar above the toolbar was unaccounted for and the
+        // toolbar's height didn't match its constant. The popover
+        // ended up roughly one cell-height too high and covered the
+        // text the user was typing.
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        // Snapshot the cell's box BEFORE editing — once typing starts
+        // the Pressable swaps for a TextInput (CellEditor) without an
+        // accessibility label, so we can't relocate the cell mid-edit.
+        const a3 = page.getByLabel('Cell A3', { exact: true })
+        await a3.click()
+        const cellBox = await a3.boundingBox()
+        if (cellBox == null) throw new Error('A3 box missing pre-edit')
+
+        // Type a formula prefix to trigger the suggestion popover.
+        // Typing-to-replace opens the in-cell editor (CellEditor),
+        // which is what we want — the formula bar branch has its own
+        // anchor path.
+        await page.keyboard.type('=SU')
+
+        // Locate the popover container itself, not an item's text — the
+        // text node sits an item-height or two below the container top
+        // (alphabetically-first item, padding, border) which would
+        // mask a small upward drift of the container into the cell.
+        const popover = page.getByLabel('Formula suggestions', { exact: true })
+        await expect(popover).toBeVisible()
+        const popBox = await popover.boundingBox()
+        if (popBox == null) throw new Error('suggestion popover box missing')
+
+        // The popover should sit at or below the cell's bottom edge —
+        // not overlapping the editor where the user is typing. Allow
+        // 1px of sub-pixel rounding slack.
+        expect(popBox.y).toBeGreaterThanOrEqual(cellBox.y + cellBox.height - 1)
+    })
+
+    test('formula function autocomplete: in-cell popover drops below the full merged footprint', async ({
+        page,
+    }) => {
+        // Same regression as the previous test, but for a merged
+        // anchor: the popover must clear the merge's bottom row, not
+        // the anchor row alone. Without the merge lookup the popover
+        // would still cover the lower cells of the merge that the user
+        // can see and is typing into.
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        // Drag-select A1:A3 and merge vertically.
+        const a1 = page.getByLabel('Cell A1', { exact: true })
+        const a3 = page.getByLabel('Cell A3', { exact: true })
+        const a1Start = await a1.boundingBox()
+        const a3End = await a3.boundingBox()
+        if (a1Start == null || a3End == null) throw new Error('A1/A3 box missing pre-merge')
+        await page.mouse.move(a1Start.x + a1Start.width / 2, a1Start.y + a1Start.height / 2)
+        await page.mouse.down()
+        await page.mouse.move(a3End.x + a3End.width / 2, a3End.y + a3End.height / 2, {
+            steps: 8,
+        })
+        await page.mouse.up()
+        await page.getByRole('button', { name: 'Format', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Merge cells' }).click()
+        await page.getByRole('menuitem', { name: 'Merge all', exact: true }).click()
+
+        // Re-resolve A1 — its bounding box now covers the merged
+        // A1:A3 footprint, so cellBox.height reflects three row
+        // heights.
+        await a1.click()
+        const mergedBox = await a1.boundingBox()
+        if (mergedBox == null) throw new Error('merged A1 box missing')
+
+        await page.keyboard.type('=SU')
+
+        const popover = page.getByLabel('Formula suggestions', { exact: true })
+        await expect(popover).toBeVisible()
+        const popBox = await popover.boundingBox()
+        if (popBox == null) throw new Error('suggestion popover box missing')
+
+        expect(popBox.y).toBeGreaterThanOrEqual(mergedBox.y + mergedBox.height - 1)
+    })
+
     test('cell-ref insertion: clicking a cell mid-formula inserts its address', async ({
         page,
     }) => {

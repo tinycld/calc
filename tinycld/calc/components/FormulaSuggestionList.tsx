@@ -44,6 +44,7 @@ export function FormulaSuggestionList({
 
     return (
         <View
+            accessibilityLabel="Formula suggestions"
             className="absolute border rounded-md overflow-hidden"
             style={{
                 left: anchor.left,
