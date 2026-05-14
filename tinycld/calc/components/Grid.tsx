@@ -23,6 +23,7 @@ import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { GridStoreProvider } from '../hooks/use-grid-store'
 import { useMenuDialogsStore } from '../hooks/use-menu-dialogs-store'
+import { usePivotForSheet } from '../hooks/use-pivot-for-sheet'
 import { createPrintDialogStore, PrintDialogProvider } from '../hooks/use-print-dialog'
 import { usePresence } from '../hooks/use-presence'
 import { useSheetActions } from '../hooks/use-sheet-actions'
@@ -36,6 +37,7 @@ import { FindReplaceDialogGate } from './FindReplaceDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
 import { MenuBar } from './menubar/MenuBar'
+import { PivotGrid } from './pivot/PivotGrid'
 import { PrintDialog } from './PrintDialog'
 import { Body } from './grid/Body'
 import { CellContextMenu } from './grid/CellContextMenu'
@@ -109,6 +111,23 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     // pattern; prevents a second concurrent Grid mount from sharing
     // dialog state.
     const printDialogStore = useMemo(() => createPrintDialogStore(), [])
+    // Hook call order above must NOT change between renders. Branching
+    // happens AFTER all hooks; the PivotGrid path skips the provider
+    // tree entirely but the providers' stores have already been
+    // initialized and simply have no subscribers, which is harmless.
+    const pivotDef = usePivotForSheet(doc, sheetId)
+    if (pivotDef != null && doc != null) {
+        return (
+            <PivotGrid
+                doc={doc}
+                def={pivotDef}
+                onOpenSidePanel={() => {
+                    // Side-panel hookup lands in Task 17; until then
+                    // the CTA is a no-op so the grid still renders.
+                }}
+            />
+        )
+    }
     return (
         <GridStoreProvider store={instance.store}>
             <FindStoreProvider store={findStore}>
