@@ -1,6 +1,10 @@
 import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import { useMemo } from 'react'
 import * as Y from 'yjs'
+import {
+    propagateSheetDelete,
+    propagateSheetRename,
+} from '../lib/pivot/lifecycle'
 import { parseYCellKey, yCellKey } from '../lib/y-cell-key'
 import {
     CELLS_MAP,
@@ -145,8 +149,12 @@ export function buildSheetActions(doc: Y.Doc | null): SheetActions {
             if (!(meta instanceof Y.Map)) {
                 return { ok: false, error: 'Sheet not found' }
             }
+            const oldName = meta.get('name')
             doc.transact(() => {
                 meta.set('name', trimmed)
+                if (typeof oldName === 'string') {
+                    propagateSheetRename(doc, oldName, trimmed)
+                }
             }, LOCAL_ORIGIN)
             return { ok: true }
         },
@@ -155,6 +163,7 @@ export function buildSheetActions(doc: Y.Doc | null): SheetActions {
             const meta = sheetsMap.get(id)
             if (!(meta instanceof Y.Map)) return
             doc.transact(() => {
+                propagateSheetDelete(doc, id)
                 sheetsMap.delete(id)
                 // Drop every cell whose key starts with this sheetId.
                 // Snapshot first — mutating the cells Y.Map while
