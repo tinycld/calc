@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	ycrdt "github.com/skyterra/y-crdt"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -353,4 +354,263 @@ func TestRoundTrip_ImportExportImport(t *testing.T) {
 	if model.Pivots[0].SourceRange != second.Pivots[0].SourceRange {
 		t.Errorf("SourceRange drift: %q -> %q", model.Pivots[0].SourceRange, second.Pivots[0].SourceRange)
 	}
+}
+
+// TestSerializeSnapshotToXLSX_EmitsPivots exercises the SaveRoom
+// snapshot path: a YDocSnapshot carrying a Pivots slice round-trips
+// through serializeSnapshotToXLSX and lands as a real PivotTable on
+// the output xlsx. Guards against the snapshot path drifting from the
+// model-only path (serializeWorkbook) — both should produce equivalent
+// pivot output for the same definition.
+func TestSerializeSnapshotToXLSX_EmitsPivots(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	snap := snapshotFromXLSX(t, original)
+	// Append a target sheet for the pivot to land on. The fixture is
+	// "tiny.xlsx" with sheets "People" + "Incomes"; we add a third.
+	snap.Sheets = append(snap.Sheets, SheetMeta{
+		ID:       "sheet3",
+		Name:     "PivotTarget",
+		Position: 2,
+	})
+	snap.Pivots = []PivotDefinitionDTO{
+		{
+			ID:              "p1",
+			SourceRange:     "People!A1:D8",
+			TargetSheetName: "PivotTarget",
+			Rows:            []PivotFieldDTO{{SourceColumn: "First Name"}},
+			Values: []PivotValueFieldDTO{
+				{SourceColumn: "Last Name", Aggregation: "count"},
+			},
+			RowGrandTotals: true,
+			ColGrandTotals: true,
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatal("empty output")
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("re-open: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	pivots, err := f.GetPivotTables("PivotTarget")
+	if err != nil {
+		t.Fatalf("GetPivotTables: %v", err)
+	}
+	if len(pivots) != 1 {
+		t.Fatalf("want 1 pivot on PivotTarget, got %d", len(pivots))
+	}
+	if got := pivots[0].DataRange; got != "People!A1:D8" {
+		t.Errorf("DataRange = %q, want People!A1:D8", got)
+	}
+	if len(pivots[0].Rows) != 1 || pivots[0].Rows[0].Data != "First Name" {
+		t.Errorf("Rows = %+v", pivots[0].Rows)
+	}
+	if len(pivots[0].Data) != 1 || pivots[0].Data[0].Data != "Last Name" {
+		t.Errorf("Data = %+v", pivots[0].Data)
+	}
+}
+
+// TestSerializeSnapshotToXLSX_OmitsPivotsWhenEmpty ensures the
+// snapshot path is a no-op for pivots when the snapshot doesn't carry
+// any — non-pivot workbooks must round-trip unaffected. (Behavior
+// preservation: pre-pivot snapshots must not gain new artifacts.)
+func TestSerializeSnapshotToXLSX_OmitsPivotsWhenEmpty(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	snap := snapshotFromXLSX(t, original)
+	// snap.Pivots is the zero value: nil.
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("re-open: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	for _, sheet := range f.GetSheetList() {
+		pts, err := f.GetPivotTables(sheet)
+		if err != nil {
+			t.Fatalf("GetPivotTables(%q): %v", sheet, err)
+		}
+		if len(pts) != 0 {
+			t.Errorf("sheet %q: unexpected pivots after round-trip with empty snap.Pivots: %+v", sheet, pts)
+		}
+	}
+}
+
+// TestSerializeSnapshotToXLSX_SkipsPivotWithNoValues mirrors the
+// model-only path's silent-skip rule: a pivot definition with no
+// Values is dropped (excelize requires at least one Data field). The
+// rest of the snapshot still serializes successfully.
+func TestSerializeSnapshotToXLSX_SkipsPivotWithNoValues(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	snap := snapshotFromXLSX(t, original)
+	snap.Sheets = append(snap.Sheets, SheetMeta{
+		ID: "sheet3", Name: "PivotTarget", Position: 2,
+	})
+	snap.Pivots = []PivotDefinitionDTO{
+		{
+			ID:              "no-values",
+			SourceRange:     "People!A1:D8",
+			TargetSheetName: "PivotTarget",
+			Rows:            []PivotFieldDTO{{SourceColumn: "First Name"}},
+			// Values omitted on purpose.
+		},
+	}
+
+	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("re-open: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	pts, err := f.GetPivotTables("PivotTarget")
+	if err != nil {
+		t.Fatalf("GetPivotTables: %v", err)
+	}
+	if len(pts) != 0 {
+		t.Errorf("pivot with no Values should be skipped; got %d", len(pts))
+	}
+}
+
+// TestSnapshotCollectsPivots exercises collectPivots end-to-end: build
+// a Y.Doc carrying a pivot Y.Map (matching the TS y-binding write
+// shape), apply the encoded update to a server-side handle, and verify
+// Snapshot() surfaces the pivot. This is the read path that wires
+// SaveRoom into the doc-side pivot state.
+func TestSnapshotCollectsPivots(t *testing.T) {
+	update := buildPivotsUpdate(t,
+		"sheet1", "Sheet1", 0, 8, 6,
+		"piv-1", "Sheet1!A1:C3", "PivotOut",
+	)
+
+	rt := NewRuntime()
+	handle, err := rt.NewDoc("pivots-room")
+	if err != nil {
+		t.Fatalf("NewDoc: %v", err)
+	}
+	t.Cleanup(func() { _ = handle.Close() })
+
+	if err := handle.ApplyUpdate(update); err != nil {
+		t.Fatalf("ApplyUpdate: %v", err)
+	}
+	snap, err := handle.(*sheetsDocHandle).Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if len(snap.Pivots) != 1 {
+		t.Fatalf("snap.Pivots = %d; want 1", len(snap.Pivots))
+	}
+	p := snap.Pivots[0]
+	if p.ID != "piv-1" {
+		t.Errorf("ID = %q, want piv-1", p.ID)
+	}
+	if p.SourceRange != "Sheet1!A1:C3" {
+		t.Errorf("SourceRange = %q", p.SourceRange)
+	}
+	if p.TargetSheetName != "PivotOut" {
+		t.Errorf("TargetSheetName = %q", p.TargetSheetName)
+	}
+	if len(p.Rows) != 1 || p.Rows[0].SourceColumn != "Region" {
+		t.Errorf("Rows = %+v", p.Rows)
+	}
+	if len(p.Cols) != 1 || p.Cols[0].SourceColumn != "Year" {
+		t.Errorf("Cols = %+v", p.Cols)
+	}
+	if len(p.Values) != 1 || p.Values[0].SourceColumn != "Sales" || p.Values[0].Aggregation != "sum" {
+		t.Errorf("Values = %+v", p.Values)
+	}
+	if !p.RowGrandTotals {
+		t.Errorf("RowGrandTotals = false; want true")
+	}
+}
+
+// buildPivotsUpdate constructs a y-crdt update mirroring the TS-side
+// writePivot output: a top-level "pivots" Y.Map keyed by ID, with
+// nested Y.Maps for scalars and Y.Arrays for rows/cols/values/filters.
+// One row, one col, one sum value; row totals on. Source/target sheets
+// are seeded so the snapshot has somewhere to anchor.
+func buildPivotsUpdate(t testing.TB, sheetID, sheetName string, sheetPos, rowCount, colCount int, pivotID, sourceRange, targetSheetName string) []byte {
+	t.Helper()
+	doc := ycrdt.NewDoc("pivot-builder", false, nil, nil, false)
+	sheetsMap := doc.GetMap("sheets").(*ycrdt.YMap)
+	pivotsMap := doc.GetMap("pivots").(*ycrdt.YMap)
+	doc.Transact(func(_ *ycrdt.Transaction) {
+		meta := ycrdt.NewYMap(nil)
+		meta.Set("name", sheetName)
+		meta.Set("position", sheetPos)
+		meta.Set("rowCount", rowCount)
+		meta.Set("colCount", colCount)
+		sheetsMap.Set(sheetID, meta)
+
+		pivotMap := ycrdt.NewYMap(nil)
+		pivotMap.Set("sourceRange", sourceRange)
+		pivotMap.Set("targetSheetName", targetSheetName)
+		pivotMap.Set("rows", buildFieldArray([]map[string]string{{"sourceColumn": "Region"}}))
+		pivotMap.Set("cols", buildFieldArray([]map[string]string{{"sourceColumn": "Year"}}))
+		pivotMap.Set("values", buildValueFieldArray([]map[string]string{
+			{"sourceColumn": "Sales", "aggregation": "sum"},
+		}))
+		pivotMap.Set("filters", ycrdt.NewYArray())
+		pivotMap.Set("filterSelections", ycrdt.NewYMap(nil))
+		pivotMap.Set("rowGrandTotals", true)
+		pivotMap.Set("colGrandTotals", false)
+		pivotMap.Set("rowSubtotals", true)
+		pivotMap.Set("colSubtotals", true)
+		pivotsMap.Set(pivotID, pivotMap)
+	}, nil)
+	out := ycrdt.EncodeStateAsUpdate(doc, nil)
+	if len(out) == 0 {
+		t.Fatal("buildPivotsUpdate produced empty bytes")
+	}
+	return out
+}
+
+func buildFieldArray(fields []map[string]string) *ycrdt.YArray {
+	arr := ycrdt.NewYArray()
+	for _, f := range fields {
+		m := ycrdt.NewYMap(nil)
+		for k, v := range f {
+			m.Set(k, v)
+		}
+		arr.Push(ycrdt.ArrayAny{m})
+	}
+	return arr
+}
+
+func buildValueFieldArray(fields []map[string]string) *ycrdt.YArray {
+	// values entries carry a required `aggregation` scalar in addition
+	// to the field shape; the helper accepts both keys in the map.
+	arr := ycrdt.NewYArray()
+	for _, f := range fields {
+		m := ycrdt.NewYMap(nil)
+		for k, v := range f {
+			m.Set(k, v)
+		}
+		arr.Push(ycrdt.ArrayAny{m})
+	}
+	return arr
 }

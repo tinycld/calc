@@ -134,19 +134,39 @@ func serializeWorkbook(model WorkbookModel) ([]byte, error) {
 		}
 	}
 
-	// Emit pivot definitions. Order is significant in excelize (pivot
-	// caches share workbook-level IDs), so we walk model.Pivots in order.
-	for _, p := range model.Pivots {
+	writePivots(f, model.Pivots)
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, fmt.Errorf("write xlsx: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// writePivots emits each pivot definition as an excelize PivotTable on
+// the workbook. Shared between serializeWorkbook (model-only path) and
+// serializeSnapshotToXLSX (snapshot-on-disk-bytes path) so both paths
+// agree on field mapping, naming, and the "skip when Values is empty"
+// rule.
+//
+// Behavior:
+//   - Pivots with no Values are skipped silently (excelize requires at
+//     least one Data field; v1 surfaces the def to clients via the
+//     Y.Doc but doesn't try to materialize it in xlsx).
+//   - AddPivotTable failures are logged and skipped rather than fatal,
+//     so a single malformed def doesn't poison the whole save. The
+//     Y.Doc keeps the original def around for the next attempt.
+//   - excelize v2.10.1 quirk: PivotTableRange / DataRange want the
+//     bare sheet name, even when it contains spaces — single-quoting
+//     breaks the parser's lookup against the workbook.
+//
+// Order is significant in excelize (pivot caches share workbook-level
+// IDs), so the caller's slice order is preserved verbatim.
+func writePivots(f *excelize.File, pivots []PivotDefinitionDTO) {
+	for _, p := range pivots {
 		if len(p.Values) == 0 {
-			// Excelize requires at least one Data field — skip silently
-			// for v1.
 			continue
 		}
-		// excelize v2.10.1 quirk: AddPivotTable rejects sheet names
-		// wrapped in single quotes inside DataRange / PivotTableRange
-		// (the parser does a literal sheet-name lookup against the
-		// workbook and `'Sheet 1'` doesn't match the bare `Sheet 1`).
-		// Pass the bare sheet name even when it contains spaces.
 		opts := &excelize.PivotTableOptions{
 			DataRange:           p.SourceRange,
 			PivotTableRange:     fmt.Sprintf("%s!A1:Z200", p.TargetSheetName),
@@ -159,17 +179,10 @@ func serializeWorkbook(model WorkbookModel) ([]byte, error) {
 			PivotTableStyleName: p.StyleName,
 		}
 		if err := f.AddPivotTable(opts); err != nil {
-			// Non-fatal: log and skip — Y.Doc keeps the def for next try.
 			fmt.Printf("calc: AddPivotTable %q: %v\n", p.ID, err)
 			continue
 		}
 	}
-
-	var buf bytes.Buffer
-	if err := f.Write(&buf); err != nil {
-		return nil, fmt.Errorf("write xlsx: %w", err)
-	}
-	return buf.Bytes(), nil
 }
 
 func toExcelizeFields(in []PivotFieldDTO, _ bool, _ string) []excelize.PivotTableField {
@@ -655,6 +668,11 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 			return nil, fmt.Errorf("apply comments: %w", err)
 		}
 	}
+
+	// Emit pivots last so all cells and sheets the pivot defs reference
+	// (both source ranges and target sheets) are present in the workbook
+	// by the time AddPivotTable runs.
+	writePivots(f, snap.Pivots)
 
 	buf, err := f.WriteToBuffer()
 	if err != nil {

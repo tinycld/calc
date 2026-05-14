@@ -16,6 +16,15 @@ import (
 type YDocSnapshot struct {
 	Sheets []SheetMeta
 	Cells  []CellEntry
+
+	// Pivots enumerates pivot table definitions read from the Y.Doc's
+	// top-level "pivots" Y.Map (see tinycld/calc/lib/pivot/y-binding.ts
+	// for the doc-side write shape). Empty when the doc holds no pivots.
+	// The serializer in persist.go consumes this slice and emits one
+	// excelize PivotTable per entry through the shared writePivots
+	// helper (see persist.go), matching the model-only path in
+	// serializeWorkbook.
+	Pivots []PivotDefinitionDTO
 }
 
 // SheetMeta describes a single worksheet in the doc, ordered (by the
