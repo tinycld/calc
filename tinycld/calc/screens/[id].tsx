@@ -119,6 +119,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                     undoState={undoState}
                     workbookName={itemName}
                     fileActions={fileActions}
+                    onActivateSheet={onSelect}
                 />
                 <SheetTabs
                     doc={doc}
