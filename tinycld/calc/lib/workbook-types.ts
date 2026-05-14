@@ -173,3 +173,42 @@ export function columnLabel(col: number): string {
     }
     return label || 'A'
 }
+
+export type PivotAggregation =
+    | 'sum'
+    | 'average'
+    | 'count'
+    | 'countNums'
+    | 'max'
+    | 'min'
+    | 'product'
+    | 'stdDev'
+    | 'stdDevp'
+    | 'var'
+    | 'varp'
+
+export interface PivotField {
+    sourceColumn: string
+    displayName?: string
+}
+
+export interface PivotValueField extends PivotField {
+    aggregation: PivotAggregation
+    numFmt?: string
+}
+
+export interface PivotDefinition {
+    id: string
+    sourceRange: string
+    targetSheetName: string
+    rows: PivotField[]
+    cols: PivotField[]
+    values: PivotValueField[]
+    filters: PivotField[]
+    filterSelections: Record<string, string[]>
+    rowGrandTotals: boolean
+    colGrandTotals: boolean
+    rowSubtotals: boolean
+    colSubtotals: boolean
+    styleName?: string
+}
