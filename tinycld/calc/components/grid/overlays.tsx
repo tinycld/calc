@@ -1,9 +1,12 @@
 import { useRef } from 'react'
 import { PanResponder, Platform, Pressable, Text, View } from 'react-native'
+import { useSheetMerges } from '../../hooks/use-cell-merge'
 import type { DragState } from '../../hooks/use-column-resize'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
 import type { RowDragState } from '../../hooks/use-row-resize'
+import { useWorkbook } from '../../hooks/use-workbook-context'
+import { expandRangeOverMergeList, type MergeRange } from '../../lib/merge'
 import {
     isDisjoint,
     primaryAnchor,
@@ -54,6 +57,7 @@ export function RemoteOverlays({ presenceOnSheet, colOffsets, rowOffsets }: Remo
 }
 
 interface LocalSelectionOverlayProps {
+    sheetId: string
     colOffsets: Float64Array
     rowOffsets: Float64Array
 }
@@ -69,9 +73,22 @@ interface LocalSelectionOverlayProps {
 // outline z-orders on top of any earlier overlapping outlines — see
 // plan Risk 6.
 //
+// Sub-range rectangles are expanded over any intersecting merges so
+// the green outline traces the full merged footprint (the active-edit
+// blue border already does this via the anchor cell's renderWidth /
+// renderHeight; this is the parity fix for non-edit selection). The
+// primary-anchor inner outline grows to the same merge when the
+// anchor cell is itself a merge anchor.
+//
 // Hidden during an edit session: the CellEditor's own border is the
 // active-edit affordance.
-export function LocalSelectionOverlay({ colOffsets, rowOffsets }: LocalSelectionOverlayProps) {
+export function LocalSelectionOverlay({
+    sheetId,
+    colOffsets,
+    rowOffsets,
+}: LocalSelectionOverlayProps) {
+    const { doc } = useWorkbook()
+    const merges = useSheetMerges(doc, sheetId)
     const selection = useGridStore(s => (s.editSession == null ? s.selection : null))
     if (selection == null || selection.ranges.length === 0) return null
 
@@ -79,12 +96,13 @@ export function LocalSelectionOverlay({ colOffsets, rowOffsets }: LocalSelection
     const overlays: React.ReactNode[] = []
     for (let i = 0; i < selection.ranges.length; i++) {
         const sr = selection.ranges[i]
-        const left = colOffsets[sr.range.startCol - 1] ?? 0
-        const right = colOffsets[sr.range.endCol] ?? left
+        const expanded = expandRangeOverMergeList(sr.range, merges)
+        const left = colOffsets[expanded.startCol - 1] ?? 0
+        const right = colOffsets[expanded.endCol] ?? left
         const width = right - left
         if (width <= 0) continue
-        const top = rowOffsets[sr.range.startRow - 1] ?? 0
-        const bottom = rowOffsets[sr.range.endRow] ?? top
+        const top = rowOffsets[expanded.startRow - 1] ?? 0
+        const bottom = rowOffsets[expanded.endRow] ?? top
         const height = bottom - top
         if (height <= 0) continue
         overlays.push(
@@ -105,20 +123,37 @@ export function LocalSelectionOverlay({ colOffsets, rowOffsets }: LocalSelection
     }
 
     // Inner outline on the primary anchor — only meaningful when the
-    // primary sub-range is bigger than 1 cell (matches the original
-    // single-cell behavior of NOT double-drawing). The anchor sits
-    // inside the primary sub-range by invariant.
+    // primary sub-range covers more than the anchor cell itself (so the
+    // user can tell anchor-vs-range apart). Tested against the
+    // *unexpanded* range: a single-cell click on a merge anchor is
+    // logically still a 1-cell selection — the outer outline already
+    // wraps the merged footprint, and we don't want to double up.
     const primary = selection.ranges[primaryIdx]
     const primaryAnchorCell = primary.anchor
-    const primaryRangeCovers1Cell =
+    const primaryCovers1Cell =
         primary.range.startRow === primary.range.endRow &&
         primary.range.startCol === primary.range.endCol
-    if (!primaryRangeCovers1Cell) {
-        const anchorLeft = colOffsets[primaryAnchorCell.col - 1] ?? 0
-        const anchorRight = colOffsets[primaryAnchorCell.col] ?? anchorLeft
+    if (!primaryCovers1Cell) {
+        const anchorMerge = findMergeAnchoredAt(
+            primaryAnchorCell.row,
+            primaryAnchorCell.col,
+            merges
+        )
+        const anchorStartCol = primaryAnchorCell.col
+        const anchorEndCol =
+            anchorMerge != null
+                ? anchorMerge.anchorCol + anchorMerge.colSpan - 1
+                : primaryAnchorCell.col
+        const anchorStartRow = primaryAnchorCell.row
+        const anchorEndRow =
+            anchorMerge != null
+                ? anchorMerge.anchorRow + anchorMerge.rowSpan - 1
+                : primaryAnchorCell.row
+        const anchorLeft = colOffsets[anchorStartCol - 1] ?? 0
+        const anchorRight = colOffsets[anchorEndCol] ?? anchorLeft
         const anchorWidth = anchorRight - anchorLeft
-        const anchorTop = rowOffsets[primaryAnchorCell.row - 1] ?? 0
-        const anchorBottom = rowOffsets[primaryAnchorCell.row] ?? anchorTop
+        const anchorTop = rowOffsets[anchorStartRow - 1] ?? 0
+        const anchorBottom = rowOffsets[anchorEndRow] ?? anchorTop
         const anchorHeight = anchorBottom - anchorTop
         if (anchorWidth > 0 && anchorHeight > 0) {
             overlays.push(
@@ -140,6 +175,17 @@ export function LocalSelectionOverlay({ colOffsets, rowOffsets }: LocalSelection
         }
     }
     return <>{overlays}</>
+}
+
+function findMergeAnchoredAt(
+    row: number,
+    col: number,
+    merges: MergeRange[]
+): MergeRange | null {
+    for (const m of merges) {
+        if (m.anchorRow === row && m.anchorCol === col) return m
+    }
+    return null
 }
 
 interface RefDragOverlayProps {
@@ -375,6 +421,7 @@ export function RowResizePreviewLine({
 }
 
 interface SelectionHandleOverlayProps {
+    sheetId: string
     colOffsets: Float64Array
     rowOffsets: Float64Array
     readOnly: boolean
@@ -412,6 +459,7 @@ const HIT_SLOP = 12
 // unreliable for mouse-only gestures), PanResponder on native.
 // Mirrors the dual-mode pattern used by useColumnResize.
 export function SelectionHandleOverlay({
+    sheetId,
     colOffsets,
     rowOffsets,
     readOnly,
@@ -420,6 +468,8 @@ export function SelectionHandleOverlay({
     // anchors (bottom-right corner). Disjoint selections hide the
     // handle entirely (plan §6.e); the fill operation is
     // fundamentally a single-rectangle extension.
+    const { doc } = useWorkbook()
+    const merges = useSheetMerges(doc, sheetId)
     const selection = useGridStore(s => (s.editSession == null ? s.selection : null))
     const disjoint = useGridStore(s => isDisjoint(s.selection))
     const store = useGridStoreApi()
@@ -436,8 +486,14 @@ export function SelectionHandleOverlay({
         if (isDisjoint(s.selection)) return false
         const r = primaryRange(s.selection)
         if (r == null) return false
-        startGridX.current = colOffsets[r.endCol] ?? 0
-        startGridY.current = rowOffsets[r.endRow] ?? 0
+        // Anchor the drag origin at the merge-expanded bottom-right —
+        // matches the rendered handle position. Without this, a click
+        // on the handle of a merged-anchor selection would jump because
+        // the origin sat at the unmerged anchor cell's corner while the
+        // dot rendered at the merged footprint's corner.
+        const expanded = expandRangeOverMergeList(r, merges)
+        startGridX.current = colOffsets[expanded.endCol] ?? 0
+        startGridY.current = rowOffsets[expanded.endRow] ?? 0
         startClientX.current = clientX
         startClientY.current = clientY
         return true
@@ -548,10 +604,14 @@ export function SelectionHandleOverlay({
     if (primary == null) return null
     const primaryAnchorCell = primaryAnchor(selection)
     if (primaryAnchorCell == null) return null
-    const endCol = primary.endCol
-    const endRow = primary.endRow
-    const right = colOffsets[endCol] ?? 0
-    const bottom = rowOffsets[endRow] ?? 0
+    // Position the handle at the bottom-right of the merge-expanded
+    // primary range so a single-cell selection on a merge anchor puts
+    // the dot at the merged footprint's corner, not the anchor cell's
+    // corner. Mirrors the green outline expansion in
+    // LocalSelectionOverlay.
+    const primaryExpanded = expandRangeOverMergeList(primary, merges)
+    const right = colOffsets[primaryExpanded.endCol] ?? 0
+    const bottom = rowOffsets[primaryExpanded.endRow] ?? 0
     if (right <= 0 || bottom <= 0) return null
 
     // Center the handle on the bottom-right corner of the bottom-

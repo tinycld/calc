@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { setYCell } from '../tinycld/calc/hooks/use-y-cell'
 import {
+    expandRangeOverMergeList,
     expandRangeOverMerges,
     findMergeContaining,
     getAllMerges,
@@ -121,5 +122,52 @@ describe('mergeCells / unmergeCells / getAllMerges', () => {
         mergeCells(doc, 'sheet1', { startRow: 2, endRow: 4, startCol: 2, endCol: 4 })
         const range = { startRow: 6, endRow: 7, startCol: 6, endCol: 7 }
         expect(expandRangeOverMerges(doc, 'sheet1', range)).toEqual(range)
+    })
+})
+
+describe('expandRangeOverMergeList', () => {
+    it('grows a single-cell selection on the merge anchor to the full merge', () => {
+        // This is the selection-overlay parity case: clicking the
+        // anchor of a 3×3 merge produces a 1×1 selection. The
+        // selection overlay expands it so the green box traces the
+        // merged footprint, matching the blue edit-mode border.
+        const merges = [{ anchorRow: 2, anchorCol: 2, rowSpan: 3, colSpan: 3 }]
+        expect(
+            expandRangeOverMergeList(
+                { startRow: 2, endRow: 2, startCol: 2, endCol: 2 },
+                merges
+            )
+        ).toEqual({ startRow: 2, endRow: 4, startCol: 2, endCol: 4 })
+    })
+
+    it('normalizes an inverted range even when no merges are present', () => {
+        expect(
+            expandRangeOverMergeList(
+                { startRow: 5, endRow: 2, startCol: 4, endCol: 1 },
+                []
+            )
+        ).toEqual({ startRow: 2, endRow: 5, startCol: 1, endCol: 4 })
+    })
+
+    it('leaves a range untouched when no merge overlaps', () => {
+        const merges = [{ anchorRow: 1, anchorCol: 1, rowSpan: 2, colSpan: 2 }]
+        const range = { startRow: 5, endRow: 6, startCol: 5, endCol: 6 }
+        expect(expandRangeOverMergeList(range, merges)).toEqual(range)
+    })
+
+    it('expands transitively when one merge pulls in another', () => {
+        // M1 covers (2,2)-(2,4). M2 covers (2,4)-(4,4). Selecting just
+        // (2,2) should pull in M1 (extends to col 4), and the new col-4
+        // overlap pulls in M2 (extends to row 4).
+        const merges = [
+            { anchorRow: 2, anchorCol: 2, rowSpan: 1, colSpan: 3 },
+            { anchorRow: 2, anchorCol: 4, rowSpan: 3, colSpan: 1 },
+        ]
+        expect(
+            expandRangeOverMergeList(
+                { startRow: 2, endRow: 2, startCol: 2, endCol: 2 },
+                merges
+            )
+        ).toEqual({ startRow: 2, endRow: 4, startCol: 2, endCol: 4 })
     })
 })

@@ -1,6 +1,6 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import * as Y from 'yjs'
-import { findMergeContaining, type MergeRange } from '../lib/merge'
+import { findMergeContaining, getAllMerges, type MergeRange } from '../lib/merge'
 import { MERGES_KEY, SHEETS_MAP } from '../lib/y-doc-bootstrap'
 
 // useCellMerge returns the merge that covers (sheetId, row, col), or
@@ -134,4 +134,87 @@ function sameMerge(a: MergeRange | null, b: MergeRange | null): boolean {
         a.rowSpan === b.rowSpan &&
         a.colSpan === b.colSpan
     )
+}
+
+// useSheetMerges returns every merge on the sheet as a plain array,
+// re-rendering on any add/remove/replace inside the sheet's merges
+// Y.Map. Single subscription per consumer (vs. useCellMerge's per-cell
+// snapshot) — built for whole-sheet renderers like LocalSelectionOverlay
+// that need to walk all merges to expand a selection rectangle over
+// the merges it intersects.
+//
+// Identity is stabilized so useSyncExternalStore can short-circuit
+// renders when the merge set is unchanged: the snapshot is rebuilt
+// only when sameMergeList returns false against the previous one.
+const EMPTY_MERGES: MergeRange[] = []
+
+export function useSheetMerges(doc: Y.Doc | null, sheetId: string): MergeRange[] {
+    const snapshotRef = useRef<MergeRange[]>(EMPTY_MERGES)
+
+    const subscribe = useCallback(
+        (onChange: () => void) => {
+            if (doc == null) return () => {}
+            const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+            const meta = sheetsMap.get(sheetId)
+            if (!(meta instanceof Y.Map)) return () => {}
+
+            let mergesMap: Y.Map<unknown> | undefined
+            const mergesHandler = () => onChange()
+            const detachMerges = () => {
+                if (mergesMap == null) return
+                try {
+                    mergesMap.unobserve(mergesHandler)
+                } catch {
+                    // already detached or destroyed; tolerate
+                }
+                mergesMap = undefined
+            }
+            const attachMerges = () => {
+                const next = meta.get(MERGES_KEY)
+                const nextMap = next instanceof Y.Map ? next : undefined
+                if (nextMap === mergesMap) return
+                detachMerges()
+                if (nextMap != null) {
+                    nextMap.observe(mergesHandler)
+                    mergesMap = nextMap
+                }
+            }
+            attachMerges()
+
+            const metaHandler = (event: Y.YMapEvent<unknown>) => {
+                if (!event.keysChanged.has(MERGES_KEY)) return
+                attachMerges()
+                onChange()
+            }
+            meta.observe(metaHandler)
+            return () => {
+                meta.unobserve(metaHandler)
+                detachMerges()
+            }
+        },
+        [doc, sheetId]
+    )
+
+    const getSnapshot = useCallback((): MergeRange[] => {
+        if (doc == null) {
+            snapshotRef.current = EMPTY_MERGES
+            return EMPTY_MERGES
+        }
+        const next = getAllMerges(doc, sheetId)
+        const prev = snapshotRef.current
+        if (sameMergeList(prev, next)) return prev
+        snapshotRef.current = next
+        return next
+    }, [doc, sheetId])
+
+    return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+function sameMergeList(a: MergeRange[], b: MergeRange[]): boolean {
+    if (a === b) return true
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+        if (!sameMerge(a[i], b[i])) return false
+    }
+    return true
 }

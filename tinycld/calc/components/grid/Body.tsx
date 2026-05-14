@@ -163,10 +163,15 @@ function SingleQuadrantBody({
                         colOffsets={colOffsets}
                         rowOffsets={rowOffsets}
                     />
-                    <LocalSelectionOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
+                    <LocalSelectionOverlay
+                        sheetId={sheetId}
+                        colOffsets={colOffsets}
+                        rowOffsets={rowOffsets}
+                    />
                     <CutMarchingAntsOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <FillPreviewOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <SelectionHandleOverlay
+                        sheetId={sheetId}
                         colOffsets={colOffsets}
                         rowOffsets={rowOffsets}
                         readOnly={readOnly}
@@ -407,6 +412,7 @@ function SplitBody({
                                 rowOffsets={brRowOffsets}
                             />
                             <LocalSelectionOverlay
+                                sheetId={sheetId}
                                 colOffsets={brColOffsets}
                                 rowOffsets={brRowOffsets}
                             />
@@ -419,6 +425,7 @@ function SplitBody({
                                 rowOffsets={brRowOffsets}
                             />
                             <SelectionHandleOverlay
+                                sheetId={sheetId}
                                 colOffsets={brColOffsets}
                                 rowOffsets={brRowOffsets}
                                 readOnly={readOnly}

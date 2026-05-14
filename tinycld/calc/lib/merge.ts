@@ -203,26 +203,22 @@ export function unmergeCells(
     }, LOCAL_ORIGIN)
 }
 
-// expandRangeOverMerges grows `range` so every merge it touches is
-// fully contained. Returns the original range when no merges
-// intersect. Used by selection helpers (shift-click extend, drag) and
-// by mergeSelection so a partial-overlap selection auto-grows to a
-// merge-respecting rectangle before committing.
-export function expandRangeOverMerges(
-    doc: Y.Doc,
-    sheetId: string,
-    range: CellRange
-): CellRange {
-    const all = getAllMerges(doc, sheetId)
-    if (all.length === 0) return range
+// expandRangeOverMergeList grows `range` so every merge it touches is
+// fully contained. Pure variant — takes a plain merge list, no Y.Doc
+// dependency. Returns the original range (after normalization) when no
+// merges intersect. Used by the Y.Doc-bound expandRangeOverMerges
+// below and by render-time consumers (the selection overlay) that
+// already have the merge list in hand via useSheetMerges.
+export function expandRangeOverMergeList(range: CellRange, merges: MergeRange[]): CellRange {
     let startRow = Math.min(range.startRow, range.endRow)
     let endRow = Math.max(range.startRow, range.endRow)
     let startCol = Math.min(range.startCol, range.endCol)
     let endCol = Math.max(range.startCol, range.endCol)
+    if (merges.length === 0) return { startRow, endRow, startCol, endCol }
     let changed = true
     while (changed) {
         changed = false
-        for (const m of all) {
+        for (const m of merges) {
             const mEndRow = m.anchorRow + m.rowSpan - 1
             const mEndCol = m.anchorCol + m.colSpan - 1
             if (
@@ -257,6 +253,19 @@ export function expandRangeOverMerges(
         }
     }
     return { startRow, endRow, startCol, endCol }
+}
+
+// expandRangeOverMerges grows `range` so every merge it touches is
+// fully contained. Returns the original range when no merges
+// intersect. Used by selection helpers (shift-click extend, drag) and
+// by mergeSelection so a partial-overlap selection auto-grows to a
+// merge-respecting rectangle before committing.
+export function expandRangeOverMerges(
+    doc: Y.Doc,
+    sheetId: string,
+    range: CellRange
+): CellRange {
+    return expandRangeOverMergeList(range, getAllMerges(doc, sheetId))
 }
 
 // snapPointToMerge returns the anchor of the merge containing (row,
