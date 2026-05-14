@@ -11,11 +11,11 @@ import {
 } from 'react-native'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
+import { useCellMerge } from '../../hooks/use-cell-merge'
 import { useWorkbook } from '../../hooks/use-workbook-context'
 import { useYCell } from '../../hooks/use-y-cell'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
 import { cellStyleToRenderProps } from '../../lib/cell-style-render'
-import { findMergeContaining } from '../../lib/merge'
 import {
     computeShiftArrowTarget,
     containsAny,
@@ -65,8 +65,11 @@ export const Cell = memo(function Cell({
     const cellValue = useYCell(doc, sheetId, row, col)
     // Merge handling is delegated here so Body's loop stays a simple
     // (row, col) walk: covered cells return null, anchor cells extend
-    // their rendered footprint over the merge's span.
-    const merge = doc != null ? findMergeContaining(doc, sheetId, row, col) : null
+    // their rendered footprint over the merge's span. useCellMerge
+    // subscribes to the sheet's merges Y.Map so the anchor cell re-
+    // renders when a merge is created — Cell is memoized and the
+    // selection-derived flags don't always flip for the anchor.
+    const merge = useCellMerge(doc, sheetId, row, col)
     const isMergedCovered =
         merge != null && (merge.anchorRow !== row || merge.anchorCol !== col)
     let renderWidth = width
