@@ -24,6 +24,7 @@ import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
 import { useMenuDialogsStore } from '../hooks/use-menu-dialogs-store'
 import { usePivotForSheet } from '../hooks/use-pivot-for-sheet'
+import { useReactiveFilter } from '../hooks/use-reactive-filter'
 import { createPrintDialogStore, PrintDialogProvider } from '../hooks/use-print-dialog'
 import { usePresence } from '../hooks/use-presence'
 import { useSheetActions } from '../hooks/use-sheet-actions'
@@ -312,6 +313,7 @@ function GridInner({
 
     const csvDownload = useCsvDownload(doc, sheetId, sheets, sheet?.name)
     const filter = useGridFilterControls({ doc, sheetId, store: instance.store })
+    useReactiveFilter(doc, sheetId, sheet?.frozenRows ?? 0)
     const printDialog = useGridPrintDialog(sheetId)
     const freeze = useGridFreezeControls(instance.store)
     const sheetActions = useSheetActions(doc)

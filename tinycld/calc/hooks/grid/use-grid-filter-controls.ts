@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react'
 import type * as Y from 'yjs'
+import { MIN_COLS, MIN_ROWS } from '../../components/grid/constants'
 import {
     applyValuesFilterFromSelection,
     clearFilter,
@@ -45,8 +46,12 @@ export function useGridFilterControls({
     const filterRange = filterView?.range ?? null
     const sheets = useYSheets(doc)
     const sheet = sheets.find(s => s.id === sheetId)
-    const rowCount = sheet?.rowCount ?? 0
-    const colCount = sheet?.colCount ?? 0
+    // The yjs metadata rowCount/colCount stay at 0 on a fresh sheet
+    // even though Grid renders MIN_ROWS×MIN_COLS. Filters need to span
+    // the displayed grid so writes into yet-untouched rows below the
+    // criteria source are still subject to the hide rule.
+    const rowCount = Math.max(sheet?.rowCount ?? 0, MIN_ROWS)
+    const colCount = Math.max(sheet?.colCount ?? 0, MIN_COLS)
     const frozenRows = sheet?.frozenRows ?? 0
 
     const activeFilterCols = useMemo(() => {

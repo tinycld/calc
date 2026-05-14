@@ -124,17 +124,29 @@ function matchesCriterion(
 
 // rowMatches returns true iff EVERY column criterion in `criteria`
 // passes for the row. Columns with no criterion are ignored.
+//
+// A row that is entirely blank in the filtered columns counts as
+// visible — the filter only suppresses rows whose populated cells fail
+// the criteria, never empty rows the user hasn't touched yet. Without
+// this, applying a filter across the displayed grid would instantly
+// hide every below-data row and the user couldn't type into them.
 function rowMatches(
     doc: Y.Doc,
     sheetId: string,
     row: number,
     criteria: Record<number, FilterCriterion>
 ): boolean {
+    let hasPopulated = false
     for (const colKey of Object.keys(criteria)) {
         const col = Number(colKey)
         if (!Number.isFinite(col)) continue
-        if (!matchesCriterion(doc, sheetId, row, col, criteria[col])) return false
+        const display = readCellDisplay(doc, sheetId, row, col)
+        if (display !== '') {
+            hasPopulated = true
+            if (!matchesCriterion(doc, sheetId, row, col, criteria[col])) return false
+        }
     }
+    if (!hasPopulated) return true
     return true
 }
 
