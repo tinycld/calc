@@ -33,6 +33,7 @@ import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { allRanges } from '../lib/selection-range'
+import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
 import { FindReplaceDialogGate } from './FindReplaceDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
@@ -121,10 +122,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
             <PivotGrid
                 doc={doc}
                 def={pivotDef}
-                onOpenSidePanel={() => {
-                    // Side-panel hookup lands in Task 17; until then
-                    // the CTA is a no-op so the grid still renders.
-                }}
+                onOpenSidePanel={() => usePivotPanelStore.getState().open(sheetId)}
             />
         )
     }
