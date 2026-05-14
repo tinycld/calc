@@ -82,7 +82,11 @@ export function buildSheetActions(doc: Y.Doc | null): SheetActions {
         sheetsMap.forEach(meta => {
             const name = meta.get('name')
             if (typeof name !== 'string') return
-            const m = name.match(/^Sheet (\d+)$/)
+            // Recognize both `Sheet N` (with space, our default) and
+            // `SheetN` (no space — excelize's default in the blank xlsx
+            // bootstrap), so the first add after a fresh workbook
+            // numbers from the existing Sheet1, not from 1.
+            const m = name.match(/^Sheet ?(\d+)$/)
             if (m == null) return
             const n = Number(m[1])
             if (Number.isFinite(n) && n > max) max = n
