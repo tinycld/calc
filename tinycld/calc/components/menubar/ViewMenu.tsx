@@ -10,6 +10,7 @@ export function ViewMenu(props: MenuBarProps) {
         <Menu>
             <MenuBarTrigger label="View" />
             <Menu.Portal>
+                <Menu.Overlay />
                 <Menu.Content placement="bottom" align="start">
                     <Menu.Sub>
                         <Menu.SubTrigger>

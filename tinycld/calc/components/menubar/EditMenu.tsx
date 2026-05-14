@@ -8,6 +8,7 @@ export function EditMenu(props: MenuBarProps) {
         <Menu>
             <MenuBarTrigger label="Edit" />
             <Menu.Portal>
+                <Menu.Overlay />
                 <Menu.Content placement="bottom" align="start">
                     <Menu.Item onPress={props.onUndo} isDisabled={!props.canUndo}>
                         <Menu.ItemTitle>Undo</Menu.ItemTitle>

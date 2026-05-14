@@ -20,6 +20,7 @@ export function FormatMenu(props: MenuBarProps) {
         <Menu>
             <MenuBarTrigger label="Format" />
             <Menu.Portal>
+                <Menu.Overlay />
                 <Menu.Content placement="bottom" align="start">
                     <Menu.Sub>
                         <Menu.SubTrigger>

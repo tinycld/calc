@@ -7,6 +7,7 @@ export function DataMenu(props: MenuBarProps) {
         <Menu>
             <MenuBarTrigger label="Data" />
             <Menu.Portal>
+                <Menu.Overlay />
                 <Menu.Content placement="bottom" align="start">
                     <Menu.Item onPress={props.onOpenSort} isDisabled={props.disabled}>
                         <Menu.ItemTitle>Sort range</Menu.ItemTitle>

@@ -27,6 +27,7 @@ export function FileMenu(props: MenuBarProps) {
         <Menu>
             <MenuBarTrigger label="File" />
             <Menu.Portal>
+                <Menu.Overlay />
                 <Menu.Content placement="bottom" align="start">
                     <Menu.Item onPress={() => router.push(orgHref('calc'))}>
                         <Menu.ItemTitle>New spreadsheet</Menu.ItemTitle>

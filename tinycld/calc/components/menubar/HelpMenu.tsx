@@ -15,6 +15,7 @@ export function HelpMenu(props: MenuBarProps) {
         <Menu>
             <MenuBarTrigger label="Help" />
             <Menu.Portal>
+                <Menu.Overlay />
                 <Menu.Content placement="bottom" align="start">
                     <Menu.Item onPress={openDocs}>
                         <Menu.ItemTitle>Documentation</Menu.ItemTitle>
