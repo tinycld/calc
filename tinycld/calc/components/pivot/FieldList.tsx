@@ -28,9 +28,9 @@ export function FieldList({
                         No fields found in source range.
                     </Text>
                 )}
-                {headers.map((h) => (
+                {headers.map((h, i) => (
                     <View
-                        key={h}
+                        key={`${i}:${h}`}
                         className="flex-row items-center justify-between"
                     >
                         <Text className="flex-1 text-sm text-foreground">

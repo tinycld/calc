@@ -76,9 +76,9 @@ export function FilterFieldRow({
                 {filterSummaryLabel(selected)}
             </Text>
             <View className="mt-2 flex-row flex-wrap gap-1">
-                {visible.map((v) => (
+                {visible.map((v, i) => (
                     <FilterValueChip
-                        key={v}
+                        key={`${i}:${v}`}
                         value={v}
                         active={selectedSet.has(v)}
                         disabled={disabled}
