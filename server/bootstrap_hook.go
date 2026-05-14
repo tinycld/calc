@@ -32,6 +32,11 @@ func makeXLSXBootstrap(app *pocketbase.PocketBase) func(roomID string, doc *ycrd
 			return fmt.Errorf("read xlsx for %s: %w", roomID, err)
 		}
 		if len(xlsxBytes) == 0 {
+			// Even an empty workbook needs the pivots map registered,
+			// so a peer that adds the first pivot has the type visible
+			// in the next EncodeStateAsUpdate (e.g. when the same
+			// client re-creates its doc on a route change).
+			doc.GetMap("pivots")
 			return nil
 		}
 		model, err := ReadWorkbookFromXLSX(xlsxBytes, 0, 0)

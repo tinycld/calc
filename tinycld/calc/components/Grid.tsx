@@ -21,8 +21,10 @@ import { useCalcShortcuts } from '../hooks/use-calc-shortcuts'
 import { useClearFormatting } from '../hooks/use-clear-formatting'
 import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
-import { GridStoreProvider } from '../hooks/use-grid-store'
+import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
 import { useMenuDialogsStore } from '../hooks/use-menu-dialogs-store'
+import { usePivotForSheet } from '../hooks/use-pivot-for-sheet'
+import { useReactiveFilter } from '../hooks/use-reactive-filter'
 import { createPrintDialogStore, PrintDialogProvider } from '../hooks/use-print-dialog'
 import { usePresence } from '../hooks/use-presence'
 import { useSheetActions } from '../hooks/use-sheet-actions'
@@ -31,11 +33,15 @@ import { useWorkbook } from '../hooks/use-workbook-context'
 import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
-import { allRanges } from '../lib/selection-range'
+import { buildA1Range } from '../lib/pivot/range-parse'
+import { allRanges, unionBoundingBox } from '../lib/selection-range'
+import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
+import { defaultTargetSheetName } from './pivot/new-pivot-dialog-helpers'
 import { FindReplaceDialogGate } from './FindReplaceDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
 import { MenuBar } from './menubar/MenuBar'
+import { PivotGrid } from './pivot/PivotGrid'
 import { PrintDialog } from './PrintDialog'
 import { Body } from './grid/Body'
 import { CellContextMenu } from './grid/CellContextMenu'
@@ -75,6 +81,12 @@ interface GridProps {
     // resolved at the screen layer so Grid stays agnostic to drive's
     // hook signature.
     fileActions: WorkbookFileActions
+    // Switches the workbook to a different sheet by id. The screen
+    // owns the URL-as-source-of-truth pattern, so this routes through
+    // `router.replace(orgHref('calc/[id]', { id, sheet: nextId }))`.
+    // Used by the pivot-insert flow to jump to the freshly-created
+    // pivot output sheet.
+    onActivateSheet: (sheetId: string) => void
 }
 
 // Top-level Grid component. Builds the per-instance Zustand store
@@ -97,6 +109,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
         undoState,
         workbookName,
         fileActions,
+        onActivateSheet,
     },
     ref
 ) {
@@ -109,6 +122,22 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
     // pattern; prevents a second concurrent Grid mount from sharing
     // dialog state.
     const printDialogStore = useMemo(() => createPrintDialogStore(), [])
+    // Hook call order above must NOT change between renders. Branching
+    // happens AFTER all hooks; the PivotGrid path skips the provider
+    // tree entirely but the providers' stores have already been
+    // initialized and simply have no subscribers, which is harmless.
+    const pivotDef = usePivotForSheet(doc, sheetId)
+    if (pivotDef != null && doc != null) {
+        return (
+            <PivotGrid
+                doc={doc}
+                def={pivotDef}
+                sheetId={sheetId}
+                onOpenSidePanel={() => usePivotPanelStore.getState().open(sheetId)}
+                readOnly={readOnly}
+            />
+        )
+    }
     return (
         <GridStoreProvider store={instance.store}>
             <FindStoreProvider store={findStore}>
@@ -124,6 +153,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                         gridRef={ref}
                         workbookName={workbookName}
                         fileActions={fileActions}
+                        onActivateSheet={onActivateSheet}
                     />
                 </PrintDialogProvider>
             </FindStoreProvider>
@@ -142,6 +172,7 @@ interface GridInnerProps {
     gridRef: React.ForwardedRef<GridHandle>
     workbookName: string
     fileActions: WorkbookFileActions
+    onActivateSheet: (sheetId: string) => void
 }
 
 function GridInner({
@@ -155,6 +186,7 @@ function GridInner({
     gridRef,
     workbookName,
     fileActions,
+    onActivateSheet,
 }: GridInnerProps) {
     const { doc, awareness } = useWorkbook()
     const sheets = useYSheets(doc)
@@ -281,6 +313,7 @@ function GridInner({
 
     const csvDownload = useCsvDownload(doc, sheetId, sheets, sheet?.name)
     const filter = useGridFilterControls({ doc, sheetId, store: instance.store })
+    useReactiveFilter(doc, sheetId, sheet?.frozenRows ?? 0)
     const printDialog = useGridPrintDialog(sheetId)
     const freeze = useGridFreezeControls(instance.store)
     const sheetActions = useSheetActions(doc)
@@ -288,6 +321,23 @@ function GridInner({
     const allSheets = useAllYSheets(doc)
     const openFunctionList = useMenuDialogsStore(s => s.openFunctionList)
     const openKeyboardShortcuts = useMenuDialogsStore(s => s.openKeyboardShortcuts)
+
+    // Pre-fill the pivot-insert dialog from the current selection's
+    // bounding box (Excel/Sheets convention). Subscribing to four
+    // primitives keeps the memo'd Toolbar from re-rendering on
+    // unrelated state changes — same shape as useGridFreezeControls.
+    // When there's no selection, fall back to the active sheet's used
+    // range so the user gets a sensible default either way.
+    const selStartRow = useGridStore(s => unionBoundingBox(s.selection)?.startRow ?? null)
+    const selStartCol = useGridStore(s => unionBoundingBox(s.selection)?.startCol ?? null)
+    const selEndRow = useGridStore(s => unionBoundingBox(s.selection)?.endRow ?? null)
+    const selEndCol = useGridStore(s => unionBoundingBox(s.selection)?.endCol ?? null)
+    const activeSheetName = sheet?.name ?? 'Sheet1'
+    const pivotSourceRangeDefault =
+        selStartRow != null && selStartCol != null && selEndRow != null && selEndCol != null
+            ? buildA1Range(activeSheetName, selStartRow, selStartCol, selEndRow, selEndCol)
+            : buildA1Range(activeSheetName, 1, 1, Math.max(rows, 1), Math.max(cols, 1))
+    const pivotTargetSheetNameDefault = defaultTargetSheetName(activeSheetName)
 
     // Shared prop identity for the toolbar and the menubar; both
     // consume the same bag so the menubar mirroring stays in lockstep
@@ -340,6 +390,10 @@ function GridInner({
         onSetFrozenRows: freeze.setFrozenRows,
         onSetFrozenCols: freeze.setFrozenCols,
         onUnfreeze: freeze.unfreeze,
+        doc,
+        pivotSourceRangeDefault,
+        pivotTargetSheetNameDefault,
+        onPivotSheetActivated: onActivateSheet,
     }
 
     return (

@@ -193,8 +193,8 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
 
     const onCreateFilter = useCallback(() => {
         if (doc == null || range == null) return
-        applyValuesFilterFromSelection(doc, sheetId, range, rowCount, frozenRows)
-    }, [doc, sheetId, range, rowCount, frozenRows])
+        applyValuesFilterFromSelection(doc, sheetId, range, displayedRowCount, frozenRows)
+    }, [doc, sheetId, range, displayedRowCount, frozenRows])
 
     const onRemoveFilter = useCallback(() => {
         if (doc == null) return

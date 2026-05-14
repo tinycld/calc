@@ -1,4 +1,5 @@
 import * as Y from 'yjs'
+import { writePivot } from './pivot/y-binding'
 import type { CellKind, CellRaw, CellStyle, WorkbookModel } from './workbook-types'
 import { yCellKey } from './y-cell-key'
 
@@ -37,6 +38,18 @@ export const CELLS_MAP = 'cells'
 // only when the cell has at least one tracked style attribute. Absence
 // is significant — see CellStyle in workbook-types.ts.
 export const STYLE_KEY = 'style'
+
+// PIVOTS_MAP is the top-level Y.Map name holding pivot definitions,
+// keyed by PivotDefinition.id. Each value is a Y.Map mirroring the
+// PivotDefinition shape (scalars as keys; rows/cols/values/filters as
+// Y.Arrays of Y.Maps; filterSelections as a nested Y.Map of Y.Arrays).
+export const PIVOTS_MAP = 'pivots'
+
+// PIVOT_SHEET_KEY is the per-sheet meta key that, when set, marks
+// the sheet as a pivot's dedicated output sheet. Value is the
+// PivotDefinition.id this sheet belongs to. Grid.tsx branches on
+// this to render engine output instead of the cells Y.Map.
+export const PIVOT_SHEET_KEY = 'pivotId'
 
 export interface YSheetMeta {
     name: string
@@ -183,6 +196,22 @@ export function bootstrapYDocFromWorkbook(doc: Y.Doc, model: WorkbookModel): voi
                     }
                 }
                 cellsMap.set(yCellKey(sheetId, row, col), cell)
+            }
+        }
+
+        if (model.pivots != null) {
+            const sheetIdByName: Record<string, string> = {}
+            for (let i = 0; i < model.sheets.length; i++) {
+                sheetIdByName[model.sheets[i].name] = `sheet${i + 1}`
+            }
+            for (const def of model.pivots) {
+                writePivot(doc, def)
+                const targetSheetId = sheetIdByName[def.targetSheetName]
+                if (targetSheetId == null) continue
+                const targetMeta = sheetsMap.get(targetSheetId)
+                if (targetMeta instanceof Y.Map) {
+                    targetMeta.set(PIVOT_SHEET_KEY, def.id)
+                }
             }
         }
     })

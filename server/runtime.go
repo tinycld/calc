@@ -168,8 +168,10 @@ func (h *sheetsDocHandle) Snapshot() (YDocSnapshot, error) {
 
 	sheetsRaw := h.doc.GetMap("sheets")
 	cellsRaw := h.doc.GetMap("cells")
+	pivotsRaw := h.doc.GetMap("pivots")
 	sheetsMap, _ := sheetsRaw.(*ycrdt.YMap)
 	cellsMap, _ := cellsRaw.(*ycrdt.YMap)
+	pivotsMap, _ := pivotsRaw.(*ycrdt.YMap)
 
 	snap := YDocSnapshot{}
 	if sheetsMap != nil {
@@ -185,6 +187,9 @@ func (h *sheetsDocHandle) Snapshot() (YDocSnapshot, error) {
 			return YDocSnapshot{}, err
 		}
 		snap.Cells = cells
+	}
+	if pivotsMap != nil {
+		snap.Pivots = collectPivots(pivotsMap)
 	}
 	return snap, nil
 }
@@ -314,6 +319,154 @@ func collectCells(cellsMap *ycrdt.YMap) ([]CellEntry, error) {
 		return nil, collectErr
 	}
 	return out, nil
+}
+
+// collectPivots walks the top-level "pivots" YMap and returns the
+// pivot definitions in the doc. Map key is the pivot ID; value is a
+// YMap mirroring the write shape in tinycld/calc/lib/pivot/y-binding.ts
+// (sourceRange/targetSheetName scalars; rows/cols/values/filters
+// Y.Arrays; filterSelections nested Y.Map of Y.Arrays; per-flag bools;
+// optional styleName scalar).
+//
+// Malformed entries (non-YMap values, missing required fields, etc.)
+// are skipped silently — a partial snapshot is better than a failed
+// save. The order entries appear in is iteration order on the YMap,
+// which is stable per-doc but not user-meaningful; callers that need
+// deterministic ordering should sort downstream.
+func collectPivots(pivotsMap *ycrdt.YMap) []PivotDefinitionDTO {
+	if pivotsMap.GetSize() == 0 {
+		return nil
+	}
+	out := make([]PivotDefinitionDTO, 0, pivotsMap.GetSize())
+	pivotsMap.ForEach(func(id string, value any, _ *ycrdt.YMap) {
+		entry, ok := value.(*ycrdt.YMap)
+		if !ok {
+			return
+		}
+		dto := PivotDefinitionDTO{
+			ID:               id,
+			SourceRange:      stringFromAny(entry.Get("sourceRange")),
+			TargetSheetName:  stringFromAny(entry.Get("targetSheetName")),
+			Rows:             decodePivotFields(entry, "rows"),
+			Cols:             decodePivotFields(entry, "cols"),
+			Values:           decodePivotValueFields(entry, "values"),
+			Filters:          decodePivotFields(entry, "filters"),
+			FilterSelections: decodeFilterSelections(entry, "filterSelections"),
+			RowGrandTotals:   boolFromAny(entry.Get("rowGrandTotals")),
+			ColGrandTotals:   boolFromAny(entry.Get("colGrandTotals")),
+			RowSubtotals:     boolFromAny(entry.Get("rowSubtotals")),
+			ColSubtotals:     boolFromAny(entry.Get("colSubtotals")),
+			StyleName:        stringFromAny(entry.Get("styleName")),
+		}
+		out = append(out, dto)
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// decodePivotFields reads a Y.Array of Y.Maps (rows/cols/filters) and
+// returns the per-field DTOs. Missing array or non-Array value yields
+// nil; non-Map elements within the array are skipped.
+func decodePivotFields(parent *ycrdt.YMap, key string) []PivotFieldDTO {
+	arr, ok := parent.Get(key).(*ycrdt.YArray)
+	if !ok || arr.GetLength() == 0 {
+		return nil
+	}
+	out := make([]PivotFieldDTO, 0, arr.GetLength())
+	arr.ForEach(func(item any, _ ycrdt.Number, _ ycrdt.IAbstractType) {
+		m, ok := item.(*ycrdt.YMap)
+		if !ok {
+			return
+		}
+		out = append(out, PivotFieldDTO{
+			SourceColumn: stringFromAny(m.Get("sourceColumn")),
+			DisplayName:  stringFromAny(m.Get("displayName")),
+		})
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// decodePivotValueFields reads the "values" Y.Array of Y.Maps and
+// returns the per-value DTOs. Aggregation falls back to "sum" on
+// missing or unrecognized inputs (the validation lives downstream in
+// excelizeSubtotal). NumFmt is carried through verbatim — see
+// PivotValueFieldDTO docstring for why the export path then drops it.
+func decodePivotValueFields(parent *ycrdt.YMap, key string) []PivotValueFieldDTO {
+	arr, ok := parent.Get(key).(*ycrdt.YArray)
+	if !ok || arr.GetLength() == 0 {
+		return nil
+	}
+	out := make([]PivotValueFieldDTO, 0, arr.GetLength())
+	arr.ForEach(func(item any, _ ycrdt.Number, _ ycrdt.IAbstractType) {
+		m, ok := item.(*ycrdt.YMap)
+		if !ok {
+			return
+		}
+		out = append(out, PivotValueFieldDTO{
+			SourceColumn: stringFromAny(m.Get("sourceColumn")),
+			DisplayName:  stringFromAny(m.Get("displayName")),
+			Aggregation:  stringFromAny(m.Get("aggregation")),
+			NumFmt:       stringFromAny(m.Get("numFmt")),
+		})
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// decodeFilterSelections reads the nested filterSelections Y.Map (one
+// Y.Array of string per column) and returns the equivalent Go map.
+// Returns nil for absent or empty maps so the DTO's omitempty tag
+// drops it on the wire.
+func decodeFilterSelections(parent *ycrdt.YMap, key string) map[string][]string {
+	nested, ok := parent.Get(key).(*ycrdt.YMap)
+	if !ok || nested.GetSize() == 0 {
+		return nil
+	}
+	out := map[string][]string{}
+	nested.ForEach(func(col string, value any, _ *ycrdt.YMap) {
+		arr, ok := value.(*ycrdt.YArray)
+		if !ok || arr.GetLength() == 0 {
+			return
+		}
+		vals := make([]string, 0, arr.GetLength())
+		arr.ForEach(func(item any, _ ycrdt.Number, _ ycrdt.IAbstractType) {
+			if s, ok := item.(string); ok {
+				vals = append(vals, s)
+			}
+		})
+		if len(vals) > 0 {
+			out[col] = vals
+		}
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// stringFromAny extracts a string scalar from a y-crdt-decoded value;
+// non-string inputs return "".
+func stringFromAny(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// boolFromAny extracts a bool scalar from a y-crdt-decoded value;
+// non-bool inputs return false.
+func boolFromAny(v any) bool {
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return false
 }
 
 // decodeCellStyle converts a style YMap (groups → leaves, mirroring

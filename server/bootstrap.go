@@ -18,7 +18,8 @@ import (
 // bootstrap path on first joiner. Field names use camelCase JSON tags
 // so the wire shape matches the TS interface byte-for-byte.
 type WorkbookModel struct {
-	Sheets []WorksheetModel `json:"sheets"`
+	Sheets []WorksheetModel     `json:"sheets"`
+	Pivots []PivotDefinitionDTO `json:"pivots,omitempty"`
 }
 
 type WorksheetModel struct {
@@ -105,7 +106,53 @@ func ReadWorkbookFromXLSX(xlsxBytes []byte, rowCap, colCap int) (WorkbookModel, 
 		}
 		out.Sheets = append(out.Sheets, ws)
 	}
+	for _, sheetName := range sheetNames {
+		pivots, err := readPivotsForSheet(f, sheetName)
+		if err != nil {
+			return WorkbookModel{}, fmt.Errorf("calc: read pivots for %q: %w", sheetName, err)
+		}
+		out.Pivots = append(out.Pivots, pivots...)
+	}
+	// Promote any pivot whose target sheet collides with an existing
+	// non-empty data sheet by relocating it to a dedicated "<sheet>
+	// pivot" sheet name (design §8). Excel-authored xlsx usually
+	// already places the pivot on a dedicated sheet, so this is a
+	// safety net for the in-sheet case where the user dropped the
+	// pivot into a region that already holds data.
+	out.Pivots = ensureDistinctTargets(out.Pivots, out.Sheets)
 	return out, nil
+}
+
+// ensureDistinctTargets walks the imported pivots and rewrites the
+// target sheet name for any pivot whose target collides with an
+// existing non-empty sheet. Naming follows "<sheet> pivot" then
+// "<sheet> pivot (2)", "<sheet> pivot (3)", … until a free name is
+// found. The collision rule is intentionally permissive: a pivot
+// whose target sheet exists but is empty (e.g. excelize.NewSheet
+// followed by AddPivotTable into PivotSheet!A1) stays put — the
+// pivot can paint freely without clobbering anything. Only when the
+// target already has data do we relocate.
+func ensureDistinctTargets(pivots []PivotDefinitionDTO, sheets []WorksheetModel) []PivotDefinitionDTO {
+	taken := make(map[string]bool, len(sheets))
+	cellCount := make(map[string]int, len(sheets))
+	for _, s := range sheets {
+		taken[s.Name] = true
+		cellCount[s.Name] = len(s.Cells)
+	}
+	for i, p := range pivots {
+		if cellCount[p.TargetSheetName] > 0 {
+			n := 2
+			base := fmt.Sprintf("%s pivot", strings.TrimSpace(p.TargetSheetName))
+			candidate := base
+			for taken[candidate] {
+				candidate = fmt.Sprintf("%s (%d)", base, n)
+				n++
+			}
+			pivots[i].TargetSheetName = candidate
+			taken[candidate] = true
+		}
+	}
+	return pivots
 }
 
 func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (WorksheetModel, error) {
@@ -589,6 +636,16 @@ func readWorkbookCellStyle(f *excelize.File, sheet, ref string) *CellStyle {
 func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 	sheetsAny := doc.GetMap("sheets")
 	cellsAny := doc.GetMap("cells")
+	// Register the pivots top-level map even on workbooks with no
+	// pivots yet, so y-crdt knows about the type before any client
+	// update arrives. Without this, a peer that adds the first pivot
+	// has their update applied to the server doc, but the type is
+	// only visible after an explicit GetMap call — and any
+	// EncodeStateAsUpdate that happens before SaveRoom touches it
+	// (e.g. a late-joiner's SyncReply, or the same client tearing
+	// down and re-creating its doc on a route change) misses the
+	// pivot in the encoded delta.
+	doc.GetMap("pivots")
 	sheetsMap, ok := sheetsAny.(*ycrdt.YMap)
 	if !ok {
 		return fmt.Errorf("calc: bootstrap: sheets map is not a YMap")

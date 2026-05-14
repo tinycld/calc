@@ -290,6 +290,49 @@ describe('applyValuesFilterFromSelection', () => {
         expect(readRowHeight(doc, 'sheet1', 3)).toBe(0)
     })
 
+    it('leaves rows blank in every filtered column visible regardless of allowed set', () => {
+        // Regression: when the source selection has no blank cells, the
+        // allowed-values set excludes ''. A naive rowMatches would then
+        // hide every populated-but-blank row below the source — which
+        // makes "Filter from selection across the whole sheet" instantly
+        // hide every untouched row and prevent the user from typing
+        // into them. rowMatches must treat all-blank-in-filtered-cols
+        // rows as visible; only rows with at least one populated
+        // filtered-col cell are subject to the criteria check.
+        const doc = new Y.Doc()
+        seedSheet(doc, 'sheet1', 1)
+        setYCell(doc, 'sheet1', 0, 1, 'Name')
+        // Source rows 1-3 are all non-blank; allowed set is
+        // {'Alice', 'Bob', 'Cherry'} with NO '' entry.
+        setYCell(doc, 'sheet1', 1, 1, 'Alice')
+        setYCell(doc, 'sheet1', 2, 1, 'Bob')
+        setYCell(doc, 'sheet1', 3, 1, 'Cherry')
+        // Row 5 has a value not in the allowed set — should be hidden.
+        setYCell(doc, 'sheet1', 5, 1, 'Eve')
+        // Row 7 is blank in the filtered column — should stay visible
+        // because the row hasn't been written to yet.
+
+        applyValuesFilterFromSelection(
+            doc,
+            'sheet1',
+            { startRow: 1, endRow: 3, startCol: 1, endCol: 1 },
+            10,
+            1
+        )
+
+        expect(readRowHeight(doc, 'sheet1', 1)).toBeUndefined() // Alice
+        expect(readRowHeight(doc, 'sheet1', 2)).toBeUndefined() // Bob
+        expect(readRowHeight(doc, 'sheet1', 3)).toBeUndefined() // Cherry
+        // Row 4 is blank — visible (would be hidden under the strict
+        // "blank not in allowed set" semantics this rule replaces).
+        expect(readRowHeight(doc, 'sheet1', 4)).toBeUndefined()
+        // Row 5 has a populated cell that doesn't match — hidden.
+        expect(readRowHeight(doc, 'sheet1', 5)).toBe(0)
+        // Rows 6-9 are blank — visible.
+        expect(readRowHeight(doc, 'sheet1', 6)).toBeUndefined()
+        expect(readRowHeight(doc, 'sheet1', 7)).toBeUndefined()
+    })
+
     it('counts blank cells as a valid value', () => {
         const doc = new Y.Doc()
         seedSheet(doc, 'sheet1', 1)

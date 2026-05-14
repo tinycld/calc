@@ -99,6 +99,185 @@ func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string, loadC
 	return nil
 }
 
+// serializeWorkbook is the model-only serialization path: build a fresh
+// xlsx from a WorkbookModel (including pivot defs), without needing a
+// Y.Doc. Used by tests; production goes through serializeSnapshotToXLSX.
+func serializeWorkbook(model WorkbookModel) ([]byte, error) {
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+
+	// Replace the default Sheet1 with the first model sheet's name, so
+	// the workbook starts cleanly named.
+	if len(model.Sheets) > 0 {
+		_ = f.SetSheetName("Sheet1", model.Sheets[0].Name)
+	}
+
+	for i, s := range model.Sheets {
+		if i > 0 {
+			if _, err := f.NewSheet(s.Name); err != nil {
+				return nil, fmt.Errorf("new sheet %q: %w", s.Name, err)
+			}
+		}
+		// Write each cell at its (row,col).
+		for key, v := range s.Cells {
+			r, c := parseModelCellKey(key)
+			if r < 1 || c < 1 {
+				continue
+			}
+			ref, err := excelize.CoordinatesToCellName(c, r)
+			if err != nil {
+				continue
+			}
+			if err := writeModelCell(f, s.Name, ref, v); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	writePivots(f, model.Pivots)
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, fmt.Errorf("write xlsx: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// writePivots emits each pivot definition as an excelize PivotTable on
+// the workbook. Shared between serializeWorkbook (model-only path) and
+// serializeSnapshotToXLSX (snapshot-on-disk-bytes path) so both paths
+// agree on field mapping, naming, and the "skip when Values is empty"
+// rule.
+//
+// Behavior:
+//   - Pivots with no Values are skipped silently (excelize requires at
+//     least one Data field; v1 surfaces the def to clients via the
+//     Y.Doc but doesn't try to materialize it in xlsx).
+//   - AddPivotTable failures are logged and skipped rather than fatal,
+//     so a single malformed def doesn't poison the whole save. The
+//     Y.Doc keeps the original def around for the next attempt.
+//   - excelize v2.10.1 quirk: PivotTableRange / DataRange want the
+//     bare sheet name, even when it contains spaces — single-quoting
+//     breaks the parser's lookup against the workbook.
+//
+// Order is significant in excelize (pivot caches share workbook-level
+// IDs), so the caller's slice order is preserved verbatim.
+func writePivots(f *excelize.File, pivots []PivotDefinitionDTO) {
+	for _, p := range pivots {
+		if len(p.Values) == 0 {
+			continue
+		}
+		opts := &excelize.PivotTableOptions{
+			DataRange:           p.SourceRange,
+			PivotTableRange:     fmt.Sprintf("%s!A1:Z200", p.TargetSheetName),
+			Rows:                toExcelizeFields(p.Rows, false, ""),
+			Columns:             toExcelizeFields(p.Cols, false, ""),
+			Data:                toExcelizeValueFields(p.Values),
+			Filter:              toExcelizeFields(p.Filters, false, ""),
+			RowGrandTotals:      p.RowGrandTotals,
+			ColGrandTotals:      p.ColGrandTotals,
+			PivotTableStyleName: p.StyleName,
+		}
+		if err := f.AddPivotTable(opts); err != nil {
+			fmt.Printf("calc: AddPivotTable %q: %v\n", p.ID, err)
+			continue
+		}
+	}
+}
+
+func toExcelizeFields(in []PivotFieldDTO, _ bool, _ string) []excelize.PivotTableField {
+	out := make([]excelize.PivotTableField, 0, len(in))
+	for _, f := range in {
+		out = append(out, excelize.PivotTableField{Data: f.SourceColumn, Name: f.DisplayName})
+	}
+	return out
+}
+
+// toExcelizeValueFields intentionally does NOT propagate v.NumFmt onto
+// excelize.PivotTableField.NumFmt. The excelize field is `int` (built-in
+// numFmt ID 0..49); a free-form pattern string has no representation
+// there. See docs/pivot.md "Per-value numFmt round-trip" for the
+// documented divergence.
+func toExcelizeValueFields(in []PivotValueFieldDTO) []excelize.PivotTableField {
+	out := make([]excelize.PivotTableField, 0, len(in))
+	for _, v := range in {
+		out = append(out, excelize.PivotTableField{
+			Data:     v.SourceColumn,
+			Name:     v.DisplayName,
+			Subtotal: excelizeSubtotal(v.Aggregation),
+		})
+	}
+	return out
+}
+
+func excelizeSubtotal(agg string) string {
+	switch agg {
+	case "sum":
+		return "Sum"
+	case "average":
+		return "Average"
+	case "count":
+		return "Count"
+	case "countNums":
+		return "CountNums"
+	case "max":
+		return "Max"
+	case "min":
+		return "Min"
+	case "product":
+		return "Product"
+	case "stdDev":
+		return "StdDev"
+	case "stdDevp":
+		return "StdDevp"
+	case "var":
+		return "Var"
+	case "varp":
+		return "Varp"
+	}
+	return "Sum"
+}
+
+// parseModelCellKey parses the "row:col" keys used by
+// WorksheetModel.Cells (a different shape from runtime.go's
+// parseCellKey, which takes a 3-part "sheetID:row:col"). Returns
+// (0,0) on any malformed input — callers treat that as "skip".
+func parseModelCellKey(key string) (row, col int) {
+	parts := strings.SplitN(key, ":", 2)
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	r, errR := strconv.Atoi(parts[0])
+	c, errC := strconv.Atoi(parts[1])
+	if errR != nil || errC != nil {
+		return 0, 0
+	}
+	return r, c
+}
+
+func writeModelCell(f *excelize.File, sheet, ref string, v CellValueDTO) error {
+	if v.Formula != "" {
+		return f.SetCellFormula(sheet, ref, v.Formula)
+	}
+	switch v.Kind {
+	case "number":
+		if n, ok := v.Raw.(float64); ok {
+			return f.SetCellFloat(sheet, ref, n, -1, 64)
+		}
+	case "boolean":
+		if b, ok := v.Raw.(bool); ok {
+			return f.SetCellBool(sheet, ref, b)
+		}
+	}
+	if s, ok := v.Raw.(string); ok && s != "" {
+		return f.SetCellStr(sheet, ref, s)
+	}
+	if v.Display != "" {
+		return f.SetCellStr(sheet, ref, v.Display)
+	}
+	return nil
+}
+
 // serializeSnapshotToXLSX reads the original .xlsx bytes, applies the
 // Y.Doc snapshot's sheet metadata + cell entries on top, and returns
 // the rewritten .xlsx bytes.
@@ -489,6 +668,11 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 			return nil, fmt.Errorf("apply comments: %w", err)
 		}
 	}
+
+	// Emit pivots last so all cells and sheets the pivot defs reference
+	// (both source ranges and target sheets) are present in the workbook
+	// by the time AddPivotTable runs.
+	writePivots(f, snap.Pivots)
 
 	buf, err := f.WriteToBuffer()
 	if err != nil {

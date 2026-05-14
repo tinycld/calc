@@ -14,9 +14,11 @@ import {
 } from 'lucide-react-native'
 import { memo } from 'react'
 import { Text, View } from 'react-native'
+import type * as Y from 'yjs'
 import type { HorizontalAlign } from '../hooks/grid/use-grid-format-controls'
 import type { BorderPresetId } from '../lib/border-presets'
 import type { CellBorders } from '../lib/workbook-types'
+import { PivotInsertButton } from './pivot/PivotInsertButton'
 import { BordersMenu } from './toolbar/BordersMenu'
 import { FillColorMenu } from './toolbar/FillColorMenu'
 import { FontSizeStepper } from './toolbar/FontSizeStepper'
@@ -92,6 +94,16 @@ export interface ToolbarProps {
     onSetFrozenRows: (n: number) => void
     onSetFrozenCols: (n: number) => void
     onUnfreeze: () => void
+
+    // Pivot table insert. `doc` is null while the realtime room is
+    // still handshaking; the button stays disabled until the doc
+    // arrives. The defaults pre-fill the new-pivot dialog with the
+    // current selection / active sheet name; onPivotSheetActivated
+    // switches the workbook to the freshly-created output sheet.
+    doc: Y.Doc | null
+    pivotSourceRangeDefault: string
+    pivotTargetSheetNameDefault: string
+    onPivotSheetActivated: (sheetId: string) => void
 }
 
 // memo'd so that selection-range churn during a drag (which only
@@ -133,6 +145,10 @@ function ToolbarImpl(props: ToolbarProps) {
         horizontalAlign,
         onSetHorizontalAlign,
         onOpenFind,
+        doc,
+        pivotSourceRangeDefault,
+        pivotTargetSheetNameDefault,
+        onPivotSheetActivated,
     } = props
 
     return (
@@ -224,6 +240,14 @@ function ToolbarImpl(props: ToolbarProps) {
             <ToolbarDivider />
 
             <ToolbarButton icon={Search} onPress={onOpenFind} label="Find and replace" />
+            <ToolbarDivider />
+
+            <PivotInsertButton
+                doc={doc}
+                defaultSourceRange={pivotSourceRangeDefault}
+                defaultTargetSheetName={pivotTargetSheetNameDefault}
+                onActivateSheet={onPivotSheetActivated}
+            />
         </View>
     )
 }
