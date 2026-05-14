@@ -873,9 +873,10 @@ test.describe('Calc', () => {
             })
             await page.mouse.up()
 
-            // Open the merge menu and click Merge all.
-            await page.getByRole('button', { name: 'Merge cells' }).click()
-            await page.getByText('Merge all', { exact: true }).click()
+            // Open Format → Merge cells → Merge all from the menubar.
+            await page.getByRole('button', { name: 'Format', exact: true }).click()
+            await page.getByRole('menuitem', { name: 'Merge cells' }).click()
+            await page.getByRole('menuitem', { name: 'Merge all', exact: true }).click()
 
             // B1 and C1 should no longer be selectable as their own cells.
             await expect(page.getByLabel('Cell B1', { exact: true })).toHaveCount(0)
@@ -887,8 +888,9 @@ test.describe('Calc', () => {
             expect(mergedBox.width).toBeGreaterThan(96 * 2)
 
             // Unmerge restores the individual cells.
-            await page.getByRole('button', { name: 'Merge cells' }).click()
-            await page.getByText('Unmerge', { exact: true }).click()
+            await page.getByRole('button', { name: 'Format', exact: true }).click()
+            await page.getByRole('menuitem', { name: 'Merge cells' }).click()
+            await page.getByRole('menuitem', { name: 'Unmerge', exact: true }).click()
             await expect(page.getByLabel('Cell B1', { exact: true })).toBeVisible()
             await expect(page.getByLabel('Cell C1', { exact: true })).toBeVisible()
         })
@@ -1005,7 +1007,7 @@ test.describe('Sort & Filter', () => {
         await typeIntoCell(page, formulaBar, 'A3', 'Cherry')
 
         // Right-click the column-A header and open the new modal.
-        await page.getByRole('button', { name: 'Select column A' }).click({ button: 'right' })
+        await page.getByLabel('Select column A', { exact: true }).click({ button: 'right' })
         await page.getByRole('menuitem', { name: 'Create filter…' }).click()
 
         // Default op is "is equal to"; type Banana and Apply.
@@ -1139,6 +1141,13 @@ test.describe('Find & Replace', () => {
         await typeIntoCell(page, formulaBar, 'A2', 'banana')
         await typeIntoCell(page, formulaBar, 'A3', 'apple pie')
 
+        // Wait past the realtime undo manager's captureTimeout (500ms —
+        // see core's use-y-undo-manager.ts) so the seed edits and the
+        // upcoming replace-all land in distinct undo steps. Without
+        // this gap, all four would merge into one step and the Cmd+Z
+        // below would clear the seed too.
+        await page.waitForTimeout(600)
+
         // Click into the body (not a cell editor) so Cmd+F is captured
         // by the global handler with no editor in flight.
         await page.getByLabel('Cell B1', { exact: true }).click()
@@ -1179,7 +1188,12 @@ test.describe('Find & Replace', () => {
         await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('orange pie')
 
         // Cmd+Z reverts the entire replace-all in a single step.
+        // Click a cell, then Escape to drop formula-bar focus — RN-Web's
+        // TextInput swallows Cmd+Z in the target phase, so the bubble-
+        // phase tinykeys listener on window never sees it while the
+        // formula bar is focused.
         await page.getByLabel('Cell B1', { exact: true }).click()
+        await page.keyboard.press('Escape')
         await page.keyboard.press(`${mod}+z`)
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('apple')
         await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('apple pie')
@@ -1280,28 +1294,35 @@ test.describe('Freeze panes', () => {
         // Type a value into A1 so the cell text is visually identifiable
         // before and after scroll.
         await typeIntoCell(page, formulaBar, 'A1', 'PINNED-A1')
-        // Add some data further down so there is content to scroll past.
+        // Marker further down to confirm the body actually scrolls
+        // when wheeled. A20 is the deepest cell guaranteed to be in
+        // the initial viewport — the menubar trimmed body height to
+        // roughly 20 visible rows.
         await typeIntoCell(page, formulaBar, 'A20', '20')
-        await typeIntoCell(page, formulaBar, 'A40', '40')
 
-        const beforeFreezeY = await cellTop(page, 'A1')
-        expect(beforeFreezeY).not.toBeNull()
+        await page.getByRole('button', { name: 'View', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Freeze' }).click()
+        await page.getByRole('menuitem', { name: '1 row', exact: true }).click()
 
-        await page.getByRole('button', { name: 'Freeze' }).click()
-        await page.getByText('Freeze 1 row').click()
+        // Snapshot A1's on-screen position *after* the freeze takes
+        // effect — that's the position it should hold while the body
+        // scrolls underneath it.
+        const beforeY = await cellTop(page, 'A1')
+        expect(beforeY).not.toBeNull()
 
-        // Scroll the body vertically. The bottom-right quadrant's
-        // vertical scrollbar lives inside the body subtree — easier
-        // to drive via the wheel event on the visible cell area.
-        await page.getByLabel('Cell A20', { exact: true }).scrollIntoViewIfNeeded()
+        // Scroll the body vertically. The sheet renders MIN_ROWS=50
+        // rows of content (~1400px tall) so a 500px wheel scroll has
+        // plenty of room to move. Hover the A20 area first so wheel
+        // events target the body's free-quadrant scroll surface.
+        await page.getByLabel('Cell A20', { exact: true }).hover()
         await page.mouse.wheel(0, 500)
 
-        const afterFreezeY = await cellTop(page, 'A1')
-        expect(afterFreezeY).not.toBeNull()
-        // A1 sits in the top-left frozen quadrant which doesn't scroll —
+        const afterY = await cellTop(page, 'A1')
+        expect(afterY).not.toBeNull()
+        // A1 sits in the top frozen quadrant which doesn't scroll —
         // its on-screen Y position should be unchanged (allow a tiny
         // sub-pixel rendering drift).
-        expect(Math.abs((afterFreezeY ?? 0) - (beforeFreezeY ?? 0))).toBeLessThan(2)
+        expect(Math.abs((afterY ?? 0) - (beforeY ?? 0))).toBeLessThan(2)
     })
 
     test('Freeze 1 column keeps column A pinned during horizontal scroll', async ({ page }) => {
@@ -1313,8 +1334,9 @@ test.describe('Freeze panes', () => {
         await typeIntoCell(page, formulaBar, 'H1', '8')
         await typeIntoCell(page, formulaBar, 'P1', '16')
 
-        await page.getByRole('button', { name: 'Freeze' }).click()
-        await page.getByText('Freeze 1 column').click()
+        await page.getByRole('button', { name: 'View', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Freeze' }).click()
+        await page.getByRole('menuitem', { name: '1 column', exact: true }).click()
 
         const beforeX = await cellLeft(page, 'A1')
         expect(beforeX).not.toBeNull()
@@ -1338,15 +1360,27 @@ test.describe('Freeze panes', () => {
         // Freeze, then unfreeze; assert the freeze menu's Unfreeze
         // item drops the pane back to a single quadrant by checking
         // that A1 once again moves with vertical scroll.
-        await page.getByRole('button', { name: 'Freeze' }).click()
-        await page.getByText('Freeze 1 row').click()
-        await page.getByRole('button', { name: 'Freeze' }).click()
-        await page.getByText('Unfreeze').click()
+        await page.getByRole('button', { name: 'View', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Freeze' }).click()
+        await page.getByRole('menuitem', { name: '1 row', exact: true }).click()
+        await page.getByRole('button', { name: 'View', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Freeze' }).click()
+        await page.getByRole('menuitem', { name: 'Unfreeze', exact: true }).click()
 
         const beforeY = await cellTop(page, 'A1')
         expect(beforeY).not.toBeNull()
-        await page.mouse.move(400, 300)
-        await page.mouse.wheel(0, 200)
+        // Hover a non-anchor cell so the wheel event lands inside the
+        // body's scroll surface. A5 is in the initial viewport but
+        // not the active anchor, so it doesn't enter edit mode on
+        // hover and reliably routes wheel events to the body.
+        await page.getByLabel('Cell A5', { exact: true }).hover()
+        // Scroll by less than A1's distance from the top of the body
+        // — at 28px cell-height with ~4 rows of OVERSCAN, scrolling
+        // 50px keeps A1 inside the rendered range so we can still
+        // measure its new (lower-on-screen) position.
+        await page.mouse.wheel(0, 50)
+        // Give the ScrollView a frame to settle before re-measuring.
+        await page.waitForTimeout(100)
         const afterY = await cellTop(page, 'A1')
         // After unfreeze the body is one ScrollView; A1 should have
         // moved upward (negative direction) when the body scrolled.
@@ -1452,9 +1486,12 @@ test.describe('Calc CSV import/export', () => {
         await typeIntoCell(page, formulaBar, 'A3', 'Bob')
         await typeIntoCell(page, formulaBar, 'B3', '37')
 
-        await page.getByRole('button', { name: 'Download' }).click()
+        await page.getByRole('button', { name: 'File', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Download', exact: true }).hover()
         const downloadPromise = page.waitForEvent('download')
-        await page.getByText('Download as CSV (current sheet)').click()
+        await page
+            .getByRole('menuitem', { name: 'Download as CSV (current sheet)' })
+            .click()
         const download = await downloadPromise
         expect(download.suggestedFilename()).toMatch(/\.csv$/)
 
@@ -1484,6 +1521,10 @@ test.describe('Calc CSV import/export', () => {
 
         await page.getByRole('button', { name: 'Confirm CSV import' }).click()
         await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
+        // The import lands on a fresh sheet named "Imported" so the
+        // pre-existing blank Sheet1 stays untouched; activate that
+        // tab to view the imported rows.
+        await page.getByLabel('Sheet Imported', { exact: true }).click({ timeout: 75_000 })
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Title', {
             timeout: 75_000,
         })
