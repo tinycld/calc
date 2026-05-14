@@ -13,10 +13,15 @@
 
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+import { __pivotForSheetHookInternals as pivotForSheet } from '../tinycld/calc/hooks/use-pivot-for-sheet'
 import { __pivotsHookInternals as pivots } from '../tinycld/calc/hooks/use-pivots'
 import { writePivot } from '../tinycld/calc/lib/pivot/y-binding'
 import type { PivotDefinition } from '../tinycld/calc/lib/workbook-types'
-import { PIVOTS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
+import {
+    PIVOT_SHEET_KEY,
+    PIVOTS_MAP,
+    SHEETS_MAP,
+} from '../tinycld/calc/lib/y-doc-bootstrap'
 
 function makeDef(overrides: Partial<PivotDefinition> = {}): PivotDefinition {
     return {
@@ -158,6 +163,111 @@ describe('usePivots data-flow contract', () => {
 
     it('subscribe returns a no-op cleanup when doc is null', () => {
         const off = pivots.subscribe(null, () => {})
+        expect(() => off()).not.toThrow()
+    })
+})
+
+// usePivotForSheet uses the same node-friendly internals pattern as
+// usePivots: the hook itself is a thin useSyncExternalStore wrapper
+// over a subscribe + computeSnapshot pair, and we drive the data-flow
+// contract directly without React.
+
+function runPivotForSheetSim(doc: Y.Doc, sheetId: string) {
+    const snapshotState = pivotForSheet.createSnapshotState()
+    const reads: (PivotDefinition | null)[] = []
+    const read = () => {
+        const next = pivotForSheet.computeSnapshot(doc, sheetId, snapshotState)
+        reads.push(next)
+        return next
+    }
+    read()
+    const unsubscribe = pivotForSheet.subscribe(doc, () => {
+        read()
+    })
+    return {
+        reads,
+        latest: () => reads[reads.length - 1],
+        unsubscribe,
+    }
+}
+
+describe('usePivotForSheet data-flow contract', () => {
+    it('returns null when sheet has no pivotId meta', () => {
+        const doc = new Y.Doc()
+        const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+        sheetsMap.set('s1', new Y.Map())
+        const sim = runPivotForSheetSim(doc, 's1')
+        expect(sim.latest()).toBeNull()
+        sim.unsubscribe()
+    })
+
+    it('returns the matching pivot when pivotId is set on the sheet meta', () => {
+        const doc = new Y.Doc()
+        writePivot(doc, makeDef())
+        const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+        const meta = new Y.Map<unknown>()
+        meta.set(PIVOT_SHEET_KEY, 'p1')
+        sheetsMap.set('s2', meta)
+        const sim = runPivotForSheetSim(doc, 's2')
+        expect(sim.latest()?.id).toBe('p1')
+        sim.unsubscribe()
+    })
+
+    it('emits a fresh snapshot when the pivot scalar field changes', () => {
+        const doc = new Y.Doc()
+        writePivot(doc, makeDef())
+        const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+        const meta = new Y.Map<unknown>()
+        meta.set(PIVOT_SHEET_KEY, 'p1')
+        sheetsMap.set('s2', meta)
+        const sim = runPivotForSheetSim(doc, 's2')
+        const before = sim.latest()?.sourceRange
+        const entry = doc.getMap<Y.Map<unknown>>(PIVOTS_MAP).get('p1') as Y.Map<unknown>
+        entry.set('sourceRange', 'Sheet1!A1:C7')
+        expect(sim.latest()?.sourceRange).not.toBe(before)
+        expect(sim.latest()?.sourceRange).toBe('Sheet1!A1:C7')
+        sim.unsubscribe()
+    })
+
+    it('emits a null snapshot when the sheet loses its pivotId', () => {
+        const doc = new Y.Doc()
+        writePivot(doc, makeDef())
+        const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+        const meta = new Y.Map<unknown>()
+        meta.set(PIVOT_SHEET_KEY, 'p1')
+        sheetsMap.set('s2', meta)
+        const sim = runPivotForSheetSim(doc, 's2')
+        expect(sim.latest()?.id).toBe('p1')
+        meta.delete(PIVOT_SHEET_KEY)
+        expect(sim.latest()).toBeNull()
+        sim.unsubscribe()
+    })
+
+    it('returns the same snapshot identity when nothing changed', () => {
+        // React invariant: useSyncExternalStore loops forever if
+        // getSnapshot returns a fresh object on every call.
+        const doc = new Y.Doc()
+        writePivot(doc, makeDef())
+        const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+        const meta = new Y.Map<unknown>()
+        meta.set(PIVOT_SHEET_KEY, 'p1')
+        sheetsMap.set('s2', meta)
+        const snapshotState = pivotForSheet.createSnapshotState()
+        const a = pivotForSheet.computeSnapshot(doc, 's2', snapshotState)
+        const b = pivotForSheet.computeSnapshot(doc, 's2', snapshotState)
+        expect(a).toBe(b)
+    })
+
+    it('returns null stably when doc is null', () => {
+        const snapshotState = pivotForSheet.createSnapshotState()
+        const a = pivotForSheet.computeSnapshot(null, 's1', snapshotState)
+        const b = pivotForSheet.computeSnapshot(null, 's1', snapshotState)
+        expect(a).toBeNull()
+        expect(b).toBeNull()
+    })
+
+    it('subscribe returns a no-op cleanup when doc is null', () => {
+        const off = pivotForSheet.subscribe(null, () => {})
         expect(() => off()).not.toThrow()
     })
 })
