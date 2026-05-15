@@ -47,14 +47,12 @@ export function PivotGrid({
     const view = selectPivotGridViewState(def, result)
     const panelOpen = selectPivotPanelOpen(openForSheetId, sheetId)
     return (
-        <View className="flex-1 flex-row">
-            <View className="flex-1">
-                <PivotBody view={view} onOpenSidePanel={onOpenSidePanel} />
-            </View>
-            <PivotPanelContainer
-                isVisible={panelOpen}
+        <View className="flex-1">
+            <PivotBody view={view} onOpenSidePanel={onOpenSidePanel} />
+            <PivotSidePanel
                 doc={doc}
                 def={def}
+                isOpen={panelOpen}
                 onClose={close}
                 readOnly={readOnly}
             />
@@ -75,32 +73,6 @@ function PivotBody({ view, onOpenSidePanel }: PivotBodyProps) {
         return <PivotBanner error={view.error} onEdit={onOpenSidePanel} />
     }
     return <PivotMatrix matrix={buildPivotGridCellMatrix(view.rendered)} />
-}
-
-interface PivotPanelContainerProps {
-    isVisible: boolean
-    doc: Y.Doc
-    def: PivotDefinition
-    onClose: () => void
-    readOnly: boolean | undefined
-}
-
-function PivotPanelContainer({
-    isVisible,
-    doc,
-    def,
-    onClose,
-    readOnly,
-}: PivotPanelContainerProps) {
-    if (!isVisible) return null
-    return (
-        <PivotSidePanel
-            doc={doc}
-            def={def}
-            onClose={onClose}
-            readOnly={readOnly}
-        />
-    )
 }
 
 interface PivotMatrixProps {

@@ -126,6 +126,10 @@ export function FormatMenu(props: MenuBarProps) {
                 </Menu.SubContent>
             </Menu.Sub>
             <Separator />
+            <Menu.Item onPress={props.onOpenConditionalFormatting}>
+                <Menu.ItemTitle>Conditional formatting…</Menu.ItemTitle>
+            </Menu.Item>
+            <Separator />
             <Menu.Item onPress={props.onClearFormatting} isDisabled={props.disabled}>
                 <Menu.ItemTitle>Clear formatting</Menu.ItemTitle>
                 <MenuShortcut keys="⌘\" />

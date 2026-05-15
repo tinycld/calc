@@ -224,20 +224,26 @@ func collectSheets(sheetsMap *ycrdt.YMap) ([]SheetMeta, error) {
 		}
 		color, _ := meta.Get("color").(string)
 		hidden, _ := meta.Get("hidden").(bool)
+		cfRules, err := decodeConditionalFormats(meta, "conditionalFormats")
+		if err != nil {
+			collectErr = err
+			return
+		}
 		out = append(out, SheetMeta{
-			ID:         sheetID,
-			Name:       name,
-			Position:   numberFromAny(meta.Get("position")),
-			RowCount:   numberFromAny(meta.Get("rowCount")),
-			ColCount:   numberFromAny(meta.Get("colCount")),
-			RowHeights: decodeSparseIntMap(meta, "rowHeights"),
-			ColWidths:  decodeSparseIntMap(meta, "colWidths"),
-			RowStyles:  rowStyles,
-			Color:      color,
-			Hidden:     hidden,
-			Merges:     decodeMerges(meta, "merges"),
-			FrozenRows: numberFromAny(meta.Get("frozenRows")),
-			FrozenCols: numberFromAny(meta.Get("frozenCols")),
+			ID:                 sheetID,
+			Name:               name,
+			Position:           numberFromAny(meta.Get("position")),
+			RowCount:           numberFromAny(meta.Get("rowCount")),
+			ColCount:           numberFromAny(meta.Get("colCount")),
+			RowHeights:         decodeSparseIntMap(meta, "rowHeights"),
+			ColWidths:          decodeSparseIntMap(meta, "colWidths"),
+			RowStyles:          rowStyles,
+			Color:              color,
+			Hidden:             hidden,
+			Merges:             decodeMerges(meta, "merges"),
+			FrozenRows:         numberFromAny(meta.Get("frozenRows")),
+			FrozenCols:         numberFromAny(meta.Get("frozenCols")),
+			ConditionalFormats: cfRules,
 		})
 	})
 	if collectErr != nil {
@@ -708,6 +714,99 @@ func decodeMerges(meta *ycrdt.YMap, key string) []MergeRange {
 			RowSpan:   rowSpan,
 			ColSpan:   colSpan,
 		})
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// decodeConditionalFormats reads the per-sheet conditionalFormats
+// Y.Array (rules in priority order) and returns the corresponding
+// snapshot DTOs. Shape mirrors the TS y-binding writeRule output.
+// Malformed entries are skipped silently so a partial corruption
+// doesn't tank an otherwise-valid save.
+func decodeConditionalFormats(meta *ycrdt.YMap, key string) ([]ConditionalFormatRule, error) {
+	arr, ok := meta.Get(key).(*ycrdt.YArray)
+	if !ok || arr.GetLength() == 0 {
+		return nil, nil
+	}
+	out := make([]ConditionalFormatRule, 0, arr.GetLength())
+	var collectErr error
+	arr.ForEach(func(item any, _ ycrdt.Number, _ ycrdt.IAbstractType) {
+		if collectErr != nil {
+			return
+		}
+		m, ok := item.(*ycrdt.YMap)
+		if !ok {
+			return
+		}
+		id := stringFromAny(m.Get("id"))
+		if id == "" {
+			return
+		}
+		ranges := decodeStringArray(m, "ranges")
+		condRaw, ok := m.Get("condition").(*ycrdt.YMap)
+		if !ok {
+			return
+		}
+		cond := ConditionalCondition{Type: stringFromAny(condRaw.Get("type"))}
+		if cond.Type == "" {
+			return
+		}
+		if v1 := stringFromAny(condRaw.Get("value1")); v1 != "" {
+			cond.Value1 = &v1
+		}
+		if v2 := stringFromAny(condRaw.Get("value2")); v2 != "" {
+			cond.Value2 = &v2
+		}
+		if formula := stringFromAny(condRaw.Get("formula")); formula != "" {
+			cond.Formula = &formula
+		}
+		if opaqueMap, ok := condRaw.Get("opaqueXlsx").(*ycrdt.YMap); ok && opaqueMap.GetSize() > 0 {
+			blob := map[string]interface{}{}
+			opaqueMap.ForEach(func(k string, v any, _ *ycrdt.YMap) {
+				blob[k] = v
+			})
+			cond.OpaqueXlsx = blob
+		}
+		rule := ConditionalFormatRule{
+			ID:        id,
+			Ranges:    ranges,
+			Condition: cond,
+		}
+		if styleMap, ok := m.Get("style").(*ycrdt.YMap); ok {
+			cs, err := decodeCellStyle(styleMap)
+			if err != nil {
+				collectErr = fmt.Errorf("decode CF rule %s style: %w", id, err)
+				return
+			}
+			rule.Style = cs
+		}
+		out = append(out, rule)
+	})
+	if collectErr != nil {
+		return nil, collectErr
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+// decodeStringArray walks a Y.Array<string> off a parent meta map
+// and returns the contained string values, skipping non-string
+// entries silently. Returns nil for absent or empty arrays.
+func decodeStringArray(parent *ycrdt.YMap, key string) []string {
+	arr, ok := parent.Get(key).(*ycrdt.YArray)
+	if !ok || arr.GetLength() == 0 {
+		return nil
+	}
+	out := make([]string, 0, arr.GetLength())
+	arr.ForEach(func(item any, _ ycrdt.Number, _ ycrdt.IAbstractType) {
+		if s, ok := item.(string); ok && s != "" {
+			out = append(out, s)
+		}
 	})
 	if len(out) == 0 {
 		return nil

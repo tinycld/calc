@@ -2,9 +2,10 @@ import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Menu } from '@tinycld/core/ui/menu'
 import { AlignCenter, AlignLeft, AlignRight, ChevronDown } from 'lucide-react-native'
 import type { ComponentType } from 'react'
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { Pressable, View } from 'react-native'
 import type { HorizontalAlign } from '../../hooks/grid/use-grid-format-controls'
+import { useOpenMenu } from '../../lib/stores/open-menu-store'
 import { ToolbarButton } from './ToolbarButton'
 
 const ALIGN_OPTIONS: ReadonlyArray<{
@@ -30,7 +31,7 @@ export function HorizontalAlignMenu({ align, disabled, onSetAlign }: HorizontalA
     const fg = useThemeColor('foreground')
     const muted = useThemeColor('muted-foreground')
     const accent = useThemeColor('accent')
-    const [isOpen, setIsOpen] = useState(false)
+    const [isOpen, setIsOpen] = useOpenMenu('toolbar:horizontal-align')
 
     const active = align ?? 'left'
     const ActiveIcon = ALIGN_OPTIONS.find(o => o.value === active)?.icon ?? AlignLeft
@@ -40,22 +41,34 @@ export function HorizontalAlignMenu({ align, disabled, onSetAlign }: HorizontalA
             onSetAlign(value)
             setIsOpen(false)
         },
-        [onSetAlign]
+        [onSetAlign, setIsOpen]
     )
 
     return (
         <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <Menu.Trigger>
-                <ToolbarButton label="Horizontal align" disabled={disabled} width={36}>
-                    <View className="flex-row items-center" style={{ gap: 2 }}>
-                        <ActiveIcon size={14} color={fg} />
-                        <ChevronDown size={10} color={muted} />
-                    </View>
-                </ToolbarButton>
-            </Menu.Trigger>
+            <View
+                {...(typeof document !== 'undefined'
+                    ? { 'data-calc-menu': 'trigger' }
+                    : {})}
+            >
+                <Menu.Trigger>
+                    <ToolbarButton label="Horizontal align" disabled={disabled} width={36}>
+                        <View className="flex-row items-center" style={{ gap: 2 }}>
+                            <ActiveIcon size={14} color={fg} />
+                            <ChevronDown size={10} color={muted} />
+                        </View>
+                    </ToolbarButton>
+                </Menu.Trigger>
+            </View>
             <Menu.Portal>
                 <Menu.Content placement="bottom" align="start">
-                    <View className="flex-row items-center" style={{ padding: 4, gap: 2 }}>
+                    <View
+                        className="flex-row items-center"
+                        style={{ padding: 4, gap: 2 }}
+                        {...(typeof document !== 'undefined'
+                            ? { 'data-calc-menu': 'content' }
+                            : {})}
+                    >
                         {ALIGN_OPTIONS.map(option => {
                             const Icon = option.icon
                             const isActive = option.value === active

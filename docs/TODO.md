@@ -74,7 +74,15 @@ recommended implementation order.
 
 Not ship-blockers, but the difference between "MVP" and "competitive":
 
-- Conditional formatting
+- ~~Conditional formatting~~ — **done.** Per-sheet rules with 18 condition
+  types (Sheets parity) plus custom formulas, authored in a right-side
+  drawer. Font + fill styles overlay on top of any explicit cell style;
+  first matching rule wins. Round-trips through excelize on save/import;
+  rule kinds the authoring UI doesn't yet model (top-N, duplicates,
+  color scales, data bars, icon sets, time-period relative dates)
+  round-trip as opaque so an imported Excel/Sheets workbook isn't
+  corrupted on save. See `lib/conditional-format/` and
+  `server/conditional_format.go`.
 - Data validation (dropdowns especially)
 - Named ranges
 - Print / PDF export

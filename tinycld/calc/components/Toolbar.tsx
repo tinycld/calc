@@ -153,7 +153,7 @@ function ToolbarImpl(props: ToolbarProps) {
 
     return (
         <View
-            className="flex-row items-center bg-surface-secondary border-b border-border"
+            className="flex-row items-center bg-surface-secondary border-b border-border overflow-visible"
             style={{ height: 32, paddingHorizontal: 4 }}
             {...(typeof document !== 'undefined' ? { 'data-test-id': 'calc-toolbar' } : {})}
         >

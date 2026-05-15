@@ -1,7 +1,11 @@
 import { captureException } from '@tinycld/core/lib/errors'
 import { useEffect } from 'react'
 import type * as Y from 'yjs'
-import { createFormulaBridge, type FormulaBridge } from '../lib/formula/bridge'
+import {
+    createFormulaBridge,
+    type FormulaBridge,
+    unregisterFormulaBridge,
+} from '../lib/formula/bridge'
 
 // useFormulaBridge starts a FormulaBridge against the given Y.Doc on
 // mount and tears it down on unmount or when the doc identity changes.
@@ -19,6 +23,7 @@ export function useFormulaBridge(doc: Y.Doc | null): void {
             b => {
                 if (cancelled) {
                     b.stop()
+                    unregisterFormulaBridge(doc)
                     return
                 }
                 bridge = b
@@ -30,6 +35,7 @@ export function useFormulaBridge(doc: Y.Doc | null): void {
         return () => {
             cancelled = true
             bridge?.stop()
+            unregisterFormulaBridge(doc)
         }
     }, [doc])
 }

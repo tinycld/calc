@@ -1,6 +1,14 @@
 import type { TextStyle, ViewStyle } from 'react-native'
 import { normalizeColor } from './normalize-color'
-import type { CellBorderEdge, CellBorderLineStyle, CellStyle } from './workbook-types'
+import type {
+    CellAlignment,
+    CellBorderEdge,
+    CellBorderLineStyle,
+    CellBorders,
+    CellFill,
+    CellFont,
+    CellStyle,
+} from './workbook-types'
 
 // CellRenderStyle is the bundle of RN style values produced from a
 // partial CellStyle. A single helper produces all three layers
@@ -188,5 +196,78 @@ function pickBorderStyle(
         if (best == null || rank(candidate) > rank(best)) best = candidate
     }
     return best
+}
+
+// mergeCellStyles composes two partial CellStyles, with `overlay`
+// winning per leaf attribute. Used by the cell render path to stack a
+// conditional-formatting rule's style on top of the cell's explicit
+// style: the rule's `font.color` overrides the cell's `font.color`,
+// but the cell's `font.bold` survives if the rule doesn't set it.
+//
+// "Per leaf" is shallow inside groups: every key the overlay sets
+// replaces the base's matching key, and other keys in the same group
+// come through from the base unchanged. For border edges (which are
+// themselves objects), the overlay edge wholesale replaces the base
+// edge — matching the existing setYCellStyle merge semantics.
+//
+// Returns undefined when both inputs are absent.
+export function mergeCellStyles(
+    base: CellStyle | undefined,
+    overlay: CellStyle | undefined
+): CellStyle | undefined {
+    if (base == null && overlay == null) return undefined
+    if (overlay == null) return base
+    if (base == null) return overlay
+    const out: CellStyle = {}
+    const font = mergeFont(base.font, overlay.font)
+    if (font != null) out.font = font
+    const fill = mergeFill(base.fill, overlay.fill)
+    if (fill != null) out.fill = fill
+    const alignment = mergeAlignment(base.alignment, overlay.alignment)
+    if (alignment != null) out.alignment = alignment
+    const borders = mergeBorders(base.borders, overlay.borders)
+    if (borders != null) out.borders = borders
+    const numFmt = overlay.numFmt ?? base.numFmt
+    if (numFmt != null) out.numFmt = numFmt
+    return out
+}
+
+function mergeFont(base: CellFont | undefined, overlay: CellFont | undefined): CellFont | undefined {
+    if (base == null && overlay == null) return undefined
+    if (overlay == null) return base
+    if (base == null) return overlay
+    return { ...base, ...overlay }
+}
+
+function mergeFill(base: CellFill | undefined, overlay: CellFill | undefined): CellFill | undefined {
+    if (base == null && overlay == null) return undefined
+    if (overlay == null) return base
+    if (base == null) return overlay
+    return { ...base, ...overlay }
+}
+
+function mergeAlignment(
+    base: CellAlignment | undefined,
+    overlay: CellAlignment | undefined
+): CellAlignment | undefined {
+    if (base == null && overlay == null) return undefined
+    if (overlay == null) return base
+    if (base == null) return overlay
+    return { ...base, ...overlay }
+}
+
+function mergeBorders(
+    base: CellBorders | undefined,
+    overlay: CellBorders | undefined
+): CellBorders | undefined {
+    if (base == null && overlay == null) return undefined
+    if (overlay == null) return base
+    if (base == null) return overlay
+    return {
+        top: overlay.top !== undefined ? overlay.top : base.top,
+        right: overlay.right !== undefined ? overlay.right : base.right,
+        bottom: overlay.bottom !== undefined ? overlay.bottom : base.bottom,
+        left: overlay.left !== undefined ? overlay.left : base.left,
+    }
 }
 

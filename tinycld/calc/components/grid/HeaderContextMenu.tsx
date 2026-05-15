@@ -5,11 +5,15 @@ import type * as Y from 'yjs'
 import { useClipboard } from '../../hooks/use-clipboard'
 import { useFilterView } from '../../hooks/use-filter-view'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
+import { useSheetConditionalFormats } from '../../hooks/use-sheet-conditional-formats'
 import { useYSheets } from '../../hooks/use-y-sheets'
 import { autosizeCol, commitColWidth, commitRowHeight } from './resize-actions'
+import { rangeToSheetRelativeA1 } from '../../lib/conditional-format/a1'
+import { anyRuleOverlapsRect } from '../../lib/conditional-format/range-index'
 import { clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
-import { isDisjoint, primaryRange } from '../../lib/selection-range'
+import { allRanges, isDisjoint, primaryRange } from '../../lib/selection-range'
+import { useConditionalFormatPanelStore } from '../../lib/stores/conditional-format-panel-store'
 import { detectHeaderRow, sortRange } from '../../lib/sort'
 import { columnLabel } from '../../lib/workbook-types'
 import { DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT } from '../../lib/dimensions'
@@ -193,6 +197,28 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
         store.getState().closeHeaderMenu()
     }, [store, clickedIndex])
 
+    const sheetRules = useSheetConditionalFormats(doc, sheetId)
+    const hasRuleOnSelection =
+        range != null &&
+        anyRuleOverlapsRect(sheetRules, {
+            startRow: range.startRow,
+            startCol: range.startCol,
+            endRow: range.endRow,
+            endCol: range.endCol,
+        })
+
+    const onOpenConditionalFormatting = useCallback(() => {
+        const defaultRanges = allRanges(selection).map((r) =>
+            rangeToSheetRelativeA1(r.startRow, r.startCol, r.endRow, r.endCol)
+        )
+        useConditionalFormatPanelStore.getState().open(sheetId, { defaultRanges })
+        onClose()
+    }, [selection, sheetId, onClose])
+
+    const conditionalFormattingMenuLabel = hasRuleOnSelection
+        ? 'Edit conditional formatting…'
+        : 'Conditional formatting…'
+
     const onRemoveFilter = useCallback(() => {
         if (doc == null) return
         clearFilter(doc, sheetId)
@@ -284,6 +310,10 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
                         <Menu.Item onPress={onResetColWidth}>
                             <Menu.ItemTitle>Reset to default width</Menu.ItemTitle>
                         </Menu.Item>
+                        <Separator className="my-1 mx-2" />
+                        <Menu.Item onPress={onOpenConditionalFormatting}>
+                            <Menu.ItemTitle>{conditionalFormattingMenuLabel}</Menu.ItemTitle>
+                        </Menu.Item>
                     </Menu.Content>
                 </Menu.Portal>
             </Menu>
@@ -334,6 +364,10 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
                     <Separator className="my-1 mx-2" />
                     <Menu.Item onPress={onResetRowHeight}>
                         <Menu.ItemTitle>Reset to default height</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Separator className="my-1 mx-2" />
+                    <Menu.Item onPress={onOpenConditionalFormatting}>
+                        <Menu.ItemTitle>{conditionalFormattingMenuLabel}</Menu.ItemTitle>
                     </Menu.Item>
                 </Menu.Content>
             </Menu.Portal>

@@ -2,10 +2,11 @@ import { useThemeColor } from "@tinycld/core/lib/use-app-theme";
 import { Menu } from "@tinycld/core/ui/menu";
 import { Grid3x3 } from "lucide-react-native";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useBordersPickerStore } from "../../hooks/use-borders-picker-store";
 import type { BorderPresetId } from "../../lib/border-presets";
+import { useOpenMenu } from "../../lib/stores/open-menu-store";
 import type { CellBorderEdge, CellBorderLineStyle, CellBorders } from "../../lib/workbook-types";
 import {
 	BorderNoneIcon,
@@ -20,7 +21,7 @@ import {
 	BorderHorizontalIcon,
 	type Icon,
 } from "../icons";
-import { COLOR_PALETTE } from "./ColorPickerMenu";
+import { BORDERS_PALETTE } from "./ColorPickerMenu";
 import { ToolbarButton } from "./ToolbarButton";
 
 interface PatternOption {
@@ -71,7 +72,7 @@ export function BordersMenu({
 	const accent = useThemeColor("accent");
 	const border = useThemeColor("border");
 	const muted = useThemeColor("muted-foreground");
-	const [isOpen, setIsOpen] = useState(false);
+	const [isOpen, setIsOpen] = useOpenMenu("toolbar:borders");
 	const pickerColor = useBordersPickerStore((s) => s.color);
 	const pickerStyle = useBordersPickerStore((s) => s.style);
 	const setPickerColor = useBordersPickerStore((s) => s.setColor);
@@ -82,19 +83,31 @@ export function BordersMenu({
 			onSetBorders(id);
 			setIsOpen(false);
 		},
-		[onSetBorders],
+		[onSetBorders, setIsOpen],
 	);
 
 	const activeId = matchActiveOption(borders);
 
 	return (
 		<Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-			<Menu.Trigger>
-				<ToolbarButton label="Borders" icon={Grid3x3} disabled={disabled} />
-			</Menu.Trigger>
+			<View
+				{...(typeof document !== "undefined"
+					? { "data-calc-menu": "trigger" }
+					: {})}
+			>
+				<Menu.Trigger>
+					<ToolbarButton label="Borders" icon={Grid3x3} disabled={disabled} />
+				</Menu.Trigger>
+			</View>
 			<Menu.Portal>
 				<Menu.Content placement="bottom" align="start">
-					<View className="flex-row" style={{ padding: 8, gap: 8 }}>
+					<View
+						className="flex-row"
+						style={{ padding: 8, gap: 8 }}
+						{...(typeof document !== "undefined"
+							? { "data-calc-menu": "content" }
+							: {})}
+					>
 						<View style={{ width: 5 * 28, gap: 2 }}>
 							<View className="flex-row" style={{ gap: 2 }}>
 								{PATTERN_OPTIONS.slice(0, 5).map((option) => (
@@ -208,13 +221,13 @@ function ColorSwatchRow({
 		<View style={{ gap: 4 }}>
 			<Text style={{ fontSize: 11, color: muted }}>Color</Text>
 			<View className="flex-row flex-wrap" style={{ gap: 4 }}>
-				{COLOR_PALETTE.map((swatch) => {
-					const isActive = color === swatch.value;
-					const isDefault = swatch.value === "";
+				{BORDERS_PALETTE.map((swatch) => {
+					const isActive = color === swatch.hex;
+					const isDefault = swatch.hex === "";
 					return (
 						<Pressable
 							key={swatch.label}
-							onPress={() => onSelect(swatch.value || "#000000")}
+							onPress={() => onSelect(swatch.hex || "#000000")}
 							accessibilityLabel={swatch.label}
 							accessibilityRole="button"
 							style={{
@@ -223,7 +236,7 @@ function ColorSwatchRow({
 								borderRadius: 3,
 								borderWidth: isActive ? 2 : 1,
 								borderColor: isActive ? accent : border,
-								backgroundColor: isDefault ? "transparent" : swatch.value,
+								backgroundColor: isDefault ? "transparent" : swatch.hex,
 								alignItems: "center",
 								justifyContent: "center",
 							}}

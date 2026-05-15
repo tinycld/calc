@@ -146,6 +146,31 @@ export interface WorksheetModel {
     // grid renders the freeze on first open. Absent / 0 = no freeze.
     frozenRows?: number
     frozenCols?: number
+    // Optional list of conditional-formatting rules imported from the
+    // xlsx. Bootstrap seeds these into the sheet's
+    // conditionalFormats Y.Array; round-trips back through the
+    // snapshot pipeline. The shape lives in
+    // lib/conditional-format/types.ts; declared as a structural type
+    // here to avoid a require-cycle through workbook-types.
+    conditionalFormats?: ConditionalFormatRuleModel[]
+}
+
+// ConditionalFormatRuleModel is the import-time shape of one CF rule.
+// Kept structurally separate from the doc-side CFRule (which uses the
+// same shape) so workbook-types stays free of doc/Yjs dependencies.
+export interface ConditionalFormatRuleModel {
+    id: string
+    ranges: string[]
+    condition: ConditionalFormatConditionModel
+    style: CellStyle
+}
+
+export interface ConditionalFormatConditionModel {
+    type: string
+    value1?: string
+    value2?: string
+    formula?: string
+    opaqueXlsx?: Record<string, unknown>
 }
 
 export interface MergeRangeModel {

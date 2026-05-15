@@ -1,7 +1,8 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
+import { useWebStyles } from '@tinycld/core/lib/use-web-styles'
 import type { ComponentType, ReactNode } from 'react'
 import { forwardRef } from 'react'
-import { Pressable, View } from 'react-native'
+import { Platform, Pressable, View } from 'react-native'
 
 export interface ToolbarButtonProps {
     icon?: ComponentType<{ size?: number; color?: string }>
@@ -12,6 +13,42 @@ export interface ToolbarButtonProps {
     label: string
     width?: number
 }
+
+// Tooltip appears above the button. The toolbar sits below the menu
+// bar, so there's room overhead, and an above-tooltip doesn't get
+// clipped by the row of UI directly below (formula bar, banners) —
+// react-native-web's View emits overflow:hidden by default, which
+// would clip a below-tooltip extending into a sibling row.
+//
+// The 200ms delay matches platform conventions and avoids flashing
+// tooltips during quick toolbar scans.
+const tooltipCSS = `
+    .calc-toolbar-tooltip {
+        position: relative;
+        display: inline-flex;
+    }
+    .calc-toolbar-tooltip::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: calc(100% + 4px);
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        line-height: 1;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s ease-in 0.2s;
+        background: var(--calc-tooltip-bg);
+        color: var(--calc-tooltip-fg);
+        z-index: 10;
+    }
+    .calc-toolbar-tooltip:hover::after {
+        opacity: 1;
+    }
+`
 
 // Shared toolbar button. The icon prop is the common case (Lucide
 // component); for buttons whose visual is text or a composition (e.g.
@@ -24,8 +61,12 @@ export const ToolbarButton = forwardRef<View, ToolbarButtonProps>(function Toolb
     { icon: Icon, children, active = false, disabled = false, onPress, label, width = 28 },
     ref
 ) {
+    useWebStyles('calc-toolbar-tooltip', tooltipCSS)
     const fg = useThemeColor('foreground')
-    return (
+    const tooltipBg = useThemeColor('foreground')
+    const tooltipFg = useThemeColor('background')
+
+    const button = (
         <Pressable
             ref={ref}
             onPress={onPress}
@@ -38,6 +79,23 @@ export const ToolbarButton = forwardRef<View, ToolbarButtonProps>(function Toolb
         >
             {Icon != null ? <Icon size={14} color={fg} /> : children}
         </Pressable>
+    )
+
+    if (Platform.OS !== 'web') return button
+
+    const tooltipStyle = {
+        '--calc-tooltip-bg': tooltipBg,
+        '--calc-tooltip-fg': tooltipFg,
+    }
+
+    return (
+        <div
+            data-tooltip={label}
+            className="calc-toolbar-tooltip"
+            style={tooltipStyle as never}
+        >
+            {button}
+        </div>
     )
 })
 

@@ -669,6 +669,24 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		}
 	}
 
+	// Apply conditional-formatting rules per sheet. Done after the
+	// per-cell value/style writes so the dxf style indices excelize
+	// generates here don't collide with cell-style indices, and
+	// before pivots so pivot output ranges can carry their own
+	// conditional formats if a future enhancement wants that.
+	for _, meta := range snap.Sheets {
+		if len(meta.ConditionalFormats) == 0 {
+			continue
+		}
+		name, ok := sheetNameByID[meta.ID]
+		if !ok {
+			continue
+		}
+		if err := writeConditionalFormats(f, name, meta.ConditionalFormats); err != nil {
+			return nil, fmt.Errorf("write conditional formats on %s: %w", name, err)
+		}
+	}
+
 	// Emit pivots last so all cells and sheets the pivot defs reference
 	// (both source ranges and target sheets) are present in the workbook
 	// by the time AddPivotTable runs.

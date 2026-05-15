@@ -88,6 +88,42 @@ type SheetMeta struct {
 	// both are zero.
 	FrozenRows int
 	FrozenCols int
+
+	// ConditionalFormats enumerates conditional-formatting rules
+	// authored against this sheet, in priority order (first match
+	// wins). Mirrors the per-sheet conditionalFormats Y.Array on the
+	// doc side (see tinycld/calc/lib/conditional-format/y-binding.ts).
+	// Empty/nil when the sheet has no rules. Round-trips through
+	// excelize's GetConditionalFormats / SetConditionalFormat on save.
+	ConditionalFormats []ConditionalFormatRule
+}
+
+// ConditionalFormatRule mirrors the doc-side CFRule (see
+// tinycld/calc/lib/conditional-format/types.ts). Type fields stay
+// strings so adding a new condition flavor on the TS side doesn't
+// require a Go-side enum extension; the bootstrap/serializer maps
+// unknown types to the opaque-passthrough path.
+type ConditionalFormatRule struct {
+	ID        string
+	Ranges    []string
+	Condition ConditionalCondition
+	Style     *CellStyle
+}
+
+// ConditionalCondition is the per-rule comparison spec. Pointer
+// fields preserve the absent / empty distinction so the wire
+// round-trip is lossless.
+type ConditionalCondition struct {
+	Type    string                 `json:"type"`
+	Value1  *string                `json:"value1,omitempty"`
+	Value2  *string                `json:"value2,omitempty"`
+	Formula *string                `json:"formula,omitempty"`
+	// OpaqueXlsx carries the original excelize options for rules
+	// whose Type isn't yet modelled in the calc UI (top-N,
+	// duplicates, color scales, etc.). The serializer re-emits the
+	// blob verbatim on save so an imported workbook survives a
+	// round-trip unmodified. Nil for native types authored in calc.
+	OpaqueXlsx map[string]interface{} `json:"opaqueXlsx,omitempty"`
 }
 
 // MergeRange is one merged-cell rectangle anchored at (AnchorRow,

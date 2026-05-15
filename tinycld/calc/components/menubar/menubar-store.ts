@@ -1,28 +1,29 @@
-import { create } from '@tinycld/core/lib/store'
+import { useOpenMenuStore } from '../../lib/stores/open-menu-store'
 
 export type MenuBarId = 'file' | 'edit' | 'view' | 'format' | 'data' | 'help'
 
-interface MenuBarState {
-    openMenuId: MenuBarId | null
-    open: (id: MenuBarId) => void
-    close: () => void
-    /**
-     * Toggle a specific menu. Clicking the currently-open menu closes
-     * it; clicking any other menu swaps to it.
-     */
-    toggle: (id: MenuBarId) => void
+const MENUBAR_PREFIX = 'menubar:'
+
+export function menuBarRegistryId(id: MenuBarId): string {
+    return `${MENUBAR_PREFIX}${id}`
 }
 
-// Local to calc's menubar — shared across the six top-level menus so
-// they can hand off cleanly. When one is open, hovering or clicking
-// another trigger swaps instantly (Sheets/Excel menubar feel) rather
-// than requiring the user to dismiss the first one first.
-export const useMenuBarStore = create<MenuBarState>()(set => ({
-    openMenuId: null,
-    open: id => set({ openMenuId: id }),
-    close: () => set({ openMenuId: null }),
-    toggle: id =>
-        set(state => ({
-            openMenuId: state.openMenuId === id ? null : id,
-        })),
-}))
+// Selectors against the shared open-menu registry. The menubar's
+// six top-level menus participate in the same single-open pool as
+// the toolbar pickers — opening one closes whichever was open
+// elsewhere — but the hover-swap behavior still needs to know
+// whether the *currently open* menu is itself a menubar menu, so
+// it can hand off to a sibling.
+
+export function useOpenMenuBarId(): MenuBarId | null {
+    return useOpenMenuStore((s) => {
+        if (s.openId == null) return null
+        if (!s.openId.startsWith(MENUBAR_PREFIX)) return null
+        return s.openId.slice(MENUBAR_PREFIX.length) as MenuBarId
+    })
+}
+
+export function useIsMenuBarOpen(id: MenuBarId): boolean {
+    const registryId = menuBarRegistryId(id)
+    return useOpenMenuStore((s) => s.openId === registryId)
+}

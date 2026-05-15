@@ -7,13 +7,18 @@ import { useFilterView } from '../../hooks/use-filter-view'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { setYCell } from '../../hooks/use-y-cell'
 import { useYSheets } from '../../hooks/use-y-sheets'
+import { rangeToSheetRelativeA1 } from '../../lib/conditional-format/a1'
+import { anyRuleOverlapsRect } from '../../lib/conditional-format/range-index'
+import { useSheetConditionalFormats } from '../../hooks/use-sheet-conditional-formats'
 import { applyValuesFilterFromSelection, clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
 import {
+    allRanges,
     forEachCellInSelection,
     isDisjoint,
     primaryRange,
 } from '../../lib/selection-range'
+import { useConditionalFormatPanelStore } from '../../lib/stores/conditional-format-panel-store'
 import { detectHeaderRow, sortRange } from '../../lib/sort'
 import { columnLabel } from '../../lib/workbook-types'
 import { MIN_COLS, MIN_ROWS } from './constants'
@@ -204,6 +209,24 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     const onMergeAll = useCallback(() => store.getState().mergeSelection(), [store])
     const onUnmergeMenuAction = useCallback(() => store.getState().unmergeSelection(), [store])
 
+    const sheetRules = useSheetConditionalFormats(doc, sheetId)
+    const hasRuleOnSelection =
+        range != null &&
+        anyRuleOverlapsRect(sheetRules, {
+            startRow: range.startRow,
+            startCol: range.startCol,
+            endRow: range.endRow,
+            endCol: range.endCol,
+        })
+
+    const onOpenConditionalFormatting = useCallback(() => {
+        const defaultRanges = allRanges(selection).map((r) =>
+            rangeToSheetRelativeA1(r.startRow, r.startCol, r.endRow, r.endCol)
+        )
+        useConditionalFormatPanelStore.getState().open(sheetId, { defaultRanges })
+        onClose()
+    }, [selection, sheetId, onClose])
+
     return (
         <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
             <Menu.Portal>
@@ -357,6 +380,14 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                     </Menu.Item>
                     <Menu.Item onPress={onUnmergeMenuAction} isDisabled={disjoint}>
                         <Menu.ItemTitle>Unmerge</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Separator className="my-1 mx-2" />
+                    <Menu.Item onPress={onOpenConditionalFormatting}>
+                        <Menu.ItemTitle>
+                            {hasRuleOnSelection
+                                ? 'Edit conditional formatting…'
+                                : 'Conditional formatting…'}
+                        </Menu.ItemTitle>
                     </Menu.Item>
                 </Menu.Content>
             </Menu.Portal>

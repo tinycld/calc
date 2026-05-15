@@ -1,7 +1,15 @@
 import { useMemo } from 'react'
 import { X } from 'lucide-react-native'
 import { Switch } from '@tinycld/core/ui/switch'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import {
+    Drawer,
+    DrawerBackdrop,
+    DrawerBody,
+    DrawerCloseButton,
+    DrawerContent,
+    DrawerHeader,
+} from '@tinycld/core/ui/drawer'
+import { Text, View } from 'react-native'
 import * as Y from 'yjs'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {
@@ -28,7 +36,9 @@ import {
 } from './pivot-side-panel-helpers'
 import { ValueFieldRow } from './ValueFieldRow'
 
-// Side panel composer for editing a pivot definition. Lays out the
+// Side panel composer for editing a pivot definition. Renders in a
+// right-anchored core Drawer; `isOpen` drives visibility and the
+// backdrop click + close-button both call `onClose`. Lays out the
 // source range readout, the FieldList of available source headers,
 // four FieldSlots (Rows / Columns / Values / Filters), and the
 // grand-totals / subtotals toggles. All mutations route through the
@@ -54,6 +64,7 @@ import { ValueFieldRow } from './ValueFieldRow'
 export interface PivotSidePanelProps {
     doc: Y.Doc
     def: PivotDefinition
+    isOpen: boolean
     onClose: () => void
     readOnly?: boolean
 }
@@ -61,19 +72,32 @@ export interface PivotSidePanelProps {
 export function PivotSidePanel({
     doc,
     def,
+    isOpen,
     onClose,
     readOnly,
 }: PivotSidePanelProps) {
-    const iconColor = useThemeColor('muted-foreground')
+    const iconColor = useThemeColor('foreground')
     const { headers, distinctByColumn } = useMemo(
         () => readSourceMetadata(doc, def),
         [doc, def]
     )
 
     return (
-        <View className="w-[360px] flex-1 border-l border-border bg-background">
-            <PanelHeader iconColor={iconColor} onClose={onClose} />
-            <ScrollView className="flex-1 px-4 py-3">
+        <Drawer isOpen={isOpen} onClose={onClose} anchor="right" size="md">
+            <DrawerBackdrop />
+            <DrawerContent>
+                <DrawerHeader>
+                    <Text className="text-base font-medium text-foreground">
+                        Pivot editor
+                    </Text>
+                    <DrawerCloseButton
+                        onPress={onClose}
+                        accessibilityLabel="Close pivot panel"
+                    >
+                        <X size={18} color={iconColor} />
+                    </DrawerCloseButton>
+                </DrawerHeader>
+                <DrawerBody>
                 <Text className="text-xs font-medium uppercase text-muted-foreground">
                     Source
                 </Text>
@@ -226,31 +250,9 @@ export function PivotSidePanel({
                         accessibilityLabel="Toggle column subtotals"
                     />
                 </FieldSlot>
-            </ScrollView>
-        </View>
-    )
-}
-
-interface PanelHeaderProps {
-    iconColor: string
-    onClose: () => void
-}
-
-function PanelHeader({ iconColor, onClose }: PanelHeaderProps) {
-    return (
-        <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
-            <Text className="text-sm font-medium text-foreground">
-                Pivot editor
-            </Text>
-            <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Close pivot panel"
-                onPress={onClose}
-                className="rounded-md p-1"
-            >
-                <X size={16} color={iconColor} />
-            </Pressable>
-        </View>
+                </DrawerBody>
+            </DrawerContent>
+        </Drawer>
     )
 }
 

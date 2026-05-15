@@ -1,10 +1,10 @@
 import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
-import { Table } from 'lucide-react-native'
 import { useCallback, useState } from 'react'
 import * as Y from 'yjs'
 import { writePivot } from '../../lib/pivot/y-binding'
 import { usePivotPanelStore } from '../../lib/stores/pivot-panel-store'
 import { PIVOT_SHEET_KEY, SHEETS_MAP } from '../../lib/y-doc-bootstrap'
+import { PivotTableIcon } from '../icons'
 import { ToolbarButton } from '../toolbar/ToolbarButton'
 import {
     buildInitialPivotDefinition,
@@ -93,7 +93,7 @@ export function PivotInsertButton({
     return (
         <>
             <ToolbarButton
-                icon={Table}
+                icon={PivotTableIcon}
                 label="Insert pivot table"
                 disabled={disabled || doc == null}
                 onPress={open}

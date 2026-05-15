@@ -1,9 +1,10 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Menu, Separator } from '@tinycld/core/ui/menu'
 import { Check, ChevronDown } from 'lucide-react-native'
-import { Fragment, useCallback, useState } from 'react'
+import { Fragment, useCallback } from 'react'
 import { Text, View } from 'react-native'
 import { findPresetByNumFmt, NUMBER_FORMAT_PRESETS } from '../../lib/number-format/presets'
+import { useOpenMenu } from '../../lib/stores/open-menu-store'
 import { ToolbarButton } from './ToolbarButton'
 
 // Re-exported so the Format menubar can render the same preset list
@@ -26,7 +27,7 @@ export function NumberFormatMenu({
 }: NumberFormatMenuProps) {
     const fg = useThemeColor('foreground')
     const muted = useThemeColor('muted-foreground')
-    const [isOpen, setIsOpen] = useState(false)
+    const [isOpen, setIsOpen] = useOpenMenu('toolbar:number-format')
     const activeId = findPresetByNumFmt(currentNumFmt)?.id
 
     const onSelect = useCallback(
@@ -34,48 +35,60 @@ export function NumberFormatMenu({
             onApplyPreset(id)
             setIsOpen(false)
         },
-        [onApplyPreset]
+        [onApplyPreset, setIsOpen]
     )
 
     return (
         <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <Menu.Trigger>
-                <ToolbarButton label="Number format" disabled={disabled} width={48}>
-                    <View className="flex-row items-center" style={{ gap: 2 }}>
-                        <Text style={{ fontSize: 12, color: fg }}>123</Text>
-                        <ChevronDown size={12} color={muted} />
-                    </View>
-                </ToolbarButton>
-            </Menu.Trigger>
+            <View
+                {...(typeof document !== 'undefined'
+                    ? { 'data-calc-menu': 'trigger' }
+                    : {})}
+            >
+                <Menu.Trigger>
+                    <ToolbarButton label="Number format" disabled={disabled} width={48}>
+                        <View className="flex-row items-center" style={{ gap: 2 }}>
+                            <Text style={{ fontSize: 12, color: fg }}>123</Text>
+                            <ChevronDown size={12} color={muted} />
+                        </View>
+                    </ToolbarButton>
+                </Menu.Trigger>
+            </View>
             <Menu.Portal>
                 <Menu.Content placement="bottom" align="start">
-                    {NUMBER_FORMAT_PRESETS.map((preset, index) => {
-                        const prev = NUMBER_FORMAT_PRESETS[index - 1]
-                        const showSeparator = prev != null && prev.group !== preset.group
-                        const isActive = preset.id === activeId
-                        return (
-                            <Fragment key={preset.id}>
-                                {showSeparator ? <Separator /> : null}
-                                <Menu.Item onPress={() => onSelect(preset.id)}>
-                                    <View
-                                        style={{ width: 16, alignItems: 'center' }}
-                                        accessibilityElementsHidden
-                                    >
-                                        {isActive ? <Check size={12} color={fg} /> : null}
-                                    </View>
-                                    <Menu.ItemTitle>{preset.label}</Menu.ItemTitle>
-                                    {preset.sample !== '' ? (
-                                        <Text
-                                            className="ml-auto"
-                                            style={{ fontSize: 12, color: muted }}
+                    <View
+                        {...(typeof document !== 'undefined'
+                            ? { 'data-calc-menu': 'content' }
+                            : {})}
+                    >
+                        {NUMBER_FORMAT_PRESETS.map((preset, index) => {
+                            const prev = NUMBER_FORMAT_PRESETS[index - 1]
+                            const showSeparator = prev != null && prev.group !== preset.group
+                            const isActive = preset.id === activeId
+                            return (
+                                <Fragment key={preset.id}>
+                                    {showSeparator ? <Separator /> : null}
+                                    <Menu.Item onPress={() => onSelect(preset.id)}>
+                                        <View
+                                            style={{ width: 16, alignItems: 'center' }}
+                                            accessibilityElementsHidden
                                         >
-                                            {preset.sample}
-                                        </Text>
-                                    ) : null}
-                                </Menu.Item>
-                            </Fragment>
-                        )
-                    })}
+                                            {isActive ? <Check size={12} color={fg} /> : null}
+                                        </View>
+                                        <Menu.ItemTitle>{preset.label}</Menu.ItemTitle>
+                                        {preset.sample !== '' ? (
+                                            <Text
+                                                className="ml-auto"
+                                                style={{ fontSize: 12, color: muted }}
+                                            >
+                                                {preset.sample}
+                                            </Text>
+                                        ) : null}
+                                    </Menu.Item>
+                                </Fragment>
+                            )
+                        })}
+                    </View>
                 </Menu.Content>
             </Menu.Portal>
         </Menu>

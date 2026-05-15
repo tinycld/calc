@@ -6,6 +6,8 @@ import type {
 } from 'hyperformula'
 import * as Y from 'yjs'
 import { setYCellFormulaResult } from '../../hooks/use-y-cell'
+import { bumpConditionalFormatVersion } from '../conditional-format/version-store'
+import { rewriteFormula } from '../clipboard/rewrite-formula'
 import { parseYCellKey, yCellKey } from '../y-cell-key'
 import { CELLS_MAP, readYCell, SHEETS_MAP, type YCellValue, ydocSheetIds } from '../y-doc-bootstrap'
 import { HYPERFORMULA_LICENSE_KEY } from './hyperformula-license'
@@ -168,6 +170,60 @@ export class FormulaBridge {
             // non-formula / no-op writes internally.
             setYCellFormulaResult(this.doc, sheetId, address.row + 1, address.col + 1, raw)
         }
+        // Coarse-invalidate the conditional-formatting custom-formula
+        // cache. Cells that hold a custom-formula rule subscribe to the
+        // version counter and re-evaluate on the next render. Cheap:
+        // the cells without CF rules don't subscribe.
+        bumpConditionalFormatVersion()
+    }
+
+    // evaluateFormulaAt computes a formula in the *context* of a
+    // specific cell — i.e. its relative refs resolve as if it were
+    // entered at (row, col) on the named sheet. Used by the
+    // conditional-formatting evaluator for `customFormula` rules,
+    // where the same rule formula evaluates differently per cell in
+    // the range (=$B1="Yes" matches B-column row-by-row).
+    //
+    // Implementation: rewrite relative refs by (row-1, col-1) so the
+    // refs land where they would if the formula had been typed at
+    // (row, col), then call hf.calculateFormula at sheet origin. This
+    // reuses the clipboard rewriter (which already preserves `$`
+    // absoluteness and short-circuits cross-sheet refs).
+    //
+    // Returns null when the sheet is unknown, the formula doesn't
+    // parse, or HF emits an error result. The caller treats null as
+    // "rule does not match".
+    evaluateFormulaAt(
+        formula: string,
+        sheetName: string,
+        row: number,
+        col: number
+    ): unknown {
+        const hfId = this.findSheetIdByName(sheetName)
+        if (hfId == null) return null
+        // The clipboard rewriter requires a leading `=`. The CF
+        // evaluator strips it on storage and re-adds here.
+        const rewritten = rewriteFormula(`=${formula}`, row - 1, col - 1)
+        try {
+            return this.hf.calculateFormula(rewritten, hfId)
+        } catch {
+            return null
+        }
+    }
+
+    private findSheetIdByName(sheetName: string): number | null {
+        // sheetIdToHf is keyed by Y.Doc sheetId ('sheet1'), not by the
+        // display name. Walk both maps to find the HF id whose Y.Doc
+        // sheet name matches the input. We expect <10 sheets per
+        // workbook so the linear scan is fine.
+        const sheetsMap = this.doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
+        for (const [yId, hfId] of this.sheetIdToHf) {
+            const meta = sheetsMap.get(yId)
+            if (!(meta instanceof Y.Map)) continue
+            const name = meta.get('name')
+            if (name === sheetName) return hfId
+        }
+        return null
     }
 
     private attachDocObservers(): void {
@@ -267,5 +323,24 @@ export async function createFormulaBridge(doc: Y.Doc): Promise<FormulaBridge> {
     })
     const bridge = new FormulaBridge(doc, hf)
     bridge.start()
+    registerFormulaBridge(doc, bridge)
     return bridge
+}
+
+// Per-doc registry so the conditional-format evaluator (which is
+// invoked from the cell render path, not from the bridge owner) can
+// reach the running bridge without prop-drilling. The registry is a
+// WeakMap so an unmounted doc isn't pinned in memory.
+const bridgesByDoc: WeakMap<Y.Doc, FormulaBridge> = new WeakMap()
+
+export function registerFormulaBridge(doc: Y.Doc, bridge: FormulaBridge): void {
+    bridgesByDoc.set(doc, bridge)
+}
+
+export function unregisterFormulaBridge(doc: Y.Doc): void {
+    bridgesByDoc.delete(doc)
+}
+
+export function getFormulaBridge(doc: Y.Doc): FormulaBridge | null {
+    return bridgesByDoc.get(doc) ?? null
 }

@@ -1,6 +1,13 @@
 import * as Y from 'yjs'
+import { CONDITIONAL_FORMATS_KEY } from './conditional-format/y-binding'
 import { writePivot } from './pivot/y-binding'
-import type { CellKind, CellRaw, CellStyle, WorkbookModel } from './workbook-types'
+import type {
+    CellKind,
+    CellRaw,
+    CellStyle,
+    ConditionalFormatRuleModel,
+    WorkbookModel,
+} from './workbook-types'
 import { yCellKey } from './y-cell-key'
 
 // MERGES_KEY is the per-sheet meta key holding the merged-range Y.Map.

@@ -55,6 +55,12 @@ type WorksheetModel struct {
 	RowHeights map[int]int        `json:"rowHeights,omitempty"`
 	ColWidths  map[int]int        `json:"colWidths,omitempty"`
 	RowStyles  map[int]*CellStyle `json:"rowStyles,omitempty"`
+	// ConditionalFormats enumerates rules imported from the source
+	// xlsx via excelize.GetConditionalFormats. Bootstrap seeds them
+	// into the per-sheet conditionalFormats Y.Array so the doc-side
+	// authoring UI sees them on first open. Empty/nil when the
+	// source has no rules.
+	ConditionalFormats []ConditionalFormatRule `json:"conditionalFormats,omitempty"`
 }
 
 // MergeRangeDTO mirrors the TS MergeRangeModel: a merged cell anchor
@@ -225,19 +231,24 @@ func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (Work
 	if err != nil {
 		return WorksheetModel{}, fmt.Errorf("col widths: %w", err)
 	}
+	cfRules, err := readConditionalFormats(f, sheetName)
+	if err != nil {
+		return WorksheetModel{}, fmt.Errorf("conditional formats: %w", err)
+	}
 	return WorksheetModel{
-		Name:       sheetName,
-		RowCount:   rowCount,
-		ColCount:   colCount,
-		Cells:      cells,
-		Color:      tabColor,
-		Hidden:     hidden,
-		Merges:     merges,
-		FrozenRows: frozenRows,
-		FrozenCols: frozenCols,
-		RowHeights: rowHeights,
-		ColWidths:  colWidths,
-		RowStyles:  rowStyles,
+		Name:               sheetName,
+		RowCount:           rowCount,
+		ColCount:           colCount,
+		Cells:              cells,
+		Color:              tabColor,
+		Hidden:             hidden,
+		Merges:             merges,
+		FrozenRows:         frozenRows,
+		FrozenCols:         frozenCols,
+		RowHeights:         rowHeights,
+		ColWidths:          colWidths,
+		RowStyles:          rowStyles,
+		ConditionalFormats: cfRules,
 	}, nil
 }
 
@@ -740,6 +751,13 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 					meta.Set("colWidths", widthsMap)
 				}
 			}
+			if len(sheet.ConditionalFormats) > 0 {
+				cfArr := buildConditionalFormatsYArray(sheet.ConditionalFormats)
+				if cfArr != nil {
+					meta.Set("conditionalFormats", cfArr)
+				}
+			}
+
 			if len(sheet.RowStyles) > 0 {
 				stylesMap := ycrdt.NewYMap(nil)
 				wroteAny := false
@@ -919,4 +937,66 @@ func jsonFieldKey(field reflect.StructField) string {
 		}
 	}
 	return tag
+}
+
+// buildConditionalFormatsYArray seeds the per-sheet rules Y.Array
+// from imported model rules. Shape MUST stay in sync with the TS
+// y-binding writeRule (lib/conditional-format/y-binding.ts) — same
+// field names and nesting so a peer joining mid-session via doc
+// update sees a structurally identical tree.
+//
+// Returns nil when no rules pass the structural sanity check (id +
+// at least one range, or an opaque blob), so callers can skip the
+// meta key.
+func buildConditionalFormatsYArray(rules []ConditionalFormatRule) *ycrdt.YArray {
+	if len(rules) == 0 {
+		return nil
+	}
+	arr := ycrdt.NewYArray()
+	wroteAny := false
+	for _, rule := range rules {
+		if rule.ID == "" {
+			continue
+		}
+		m := ycrdt.NewYMap(nil)
+		m.Set("id", rule.ID)
+		rangesArr := ycrdt.NewYArray()
+		for _, r := range rule.Ranges {
+			if r == "" {
+				continue
+			}
+			rangesArr.Push(ycrdt.ArrayAny{r})
+		}
+		m.Set("ranges", rangesArr)
+		condMap := ycrdt.NewYMap(nil)
+		condMap.Set("type", rule.Condition.Type)
+		if rule.Condition.Value1 != nil {
+			condMap.Set("value1", *rule.Condition.Value1)
+		}
+		if rule.Condition.Value2 != nil {
+			condMap.Set("value2", *rule.Condition.Value2)
+		}
+		if rule.Condition.Formula != nil && *rule.Condition.Formula != "" {
+			condMap.Set("formula", *rule.Condition.Formula)
+		}
+		if rule.Condition.OpaqueXlsx != nil {
+			opaqueMap := ycrdt.NewYMap(nil)
+			for k, v := range rule.Condition.OpaqueXlsx {
+				opaqueMap.Set(k, normalizeRawForY(v))
+			}
+			condMap.Set("opaqueXlsx", opaqueMap)
+		}
+		m.Set("condition", condMap)
+		if rule.Style != nil {
+			if styleMap := buildStyleYMapFromStyle(rule.Style); styleMap != nil {
+				m.Set("style", styleMap)
+			}
+		}
+		arr.Push(ycrdt.ArrayAny{m})
+		wroteAny = true
+	}
+	if !wroteAny {
+		return nil
+	}
+	return arr
 }

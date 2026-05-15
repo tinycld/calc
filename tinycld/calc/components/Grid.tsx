@@ -33,10 +33,13 @@ import { useWorkbook } from '../hooks/use-workbook-context'
 import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
+import { rangeToSheetRelativeA1 } from '../lib/conditional-format/a1'
 import { buildA1Range } from '../lib/pivot/range-parse'
 import { allRanges, unionBoundingBox } from '../lib/selection-range'
+import { useConditionalFormatPanelStore } from '../lib/stores/conditional-format-panel-store'
 import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
 import { defaultTargetSheetName } from './pivot/new-pivot-dialog-helpers'
+import { ConditionalFormatPanel } from './conditional-format/ConditionalFormatPanel'
 import { FindReplaceDialogGate } from './FindReplaceDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
@@ -338,6 +341,17 @@ function GridInner({
     const openFunctionList = useMenuDialogsStore(s => s.openFunctionList)
     const openKeyboardShortcuts = useMenuDialogsStore(s => s.openKeyboardShortcuts)
 
+    // Opens the conditional-formatting drawer, seeded with the
+    // current selection as the default range for a new rule. The
+    // panel store keys by sheet id so multi-sheet workbooks keep
+    // independent panel state.
+    const onOpenConditionalFormatting = useCallback(() => {
+        const selection = instance.store.getState().selection
+        const defaultRanges = allRanges(selection)
+            .map(r => rangeToSheetRelativeA1(r.startRow, r.startCol, r.endRow, r.endCol))
+        useConditionalFormatPanelStore.getState().open(sheetId, { defaultRanges })
+    }, [instance.store, sheetId])
+
     // Pre-fill the pivot-insert dialog from the current selection's
     // bounding box (Excel/Sheets convention). Subscribing to four
     // primitives keeps the memo'd Toolbar from re-rendering on
@@ -427,6 +441,7 @@ function GridInner({
                 onOpenFindReplace={onOpenFind}
                 onOpenFunctionList={openFunctionList}
                 onOpenKeyboardShortcuts={openKeyboardShortcuts}
+                onOpenConditionalFormatting={onOpenConditionalFormatting}
                 allSheets={allSheets}
                 onShowSheet={id => sheetActions.showSheet(id)}
             />
@@ -530,6 +545,11 @@ function GridInner({
                 onHover={suggestions.onHover}
             />
             <FindReplaceDialogGate actions={findActions} />
+            <ConditionalFormatPanel
+                doc={doc}
+                sheetId={sheetId}
+                readOnly={readOnly}
+            />
         </View>
     )
 }

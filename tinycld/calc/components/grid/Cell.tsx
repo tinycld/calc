@@ -12,10 +12,11 @@ import {
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
 import { useCellMerge } from '../../hooks/use-cell-merge'
+import { useConditionalStyleForCell } from '../../hooks/use-conditional-style'
 import { useWorkbook } from '../../hooks/use-workbook-context'
 import { useYCell } from '../../hooks/use-y-cell'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
-import { cellStyleToRenderProps } from '../../lib/cell-style-render'
+import { cellStyleToRenderProps, mergeCellStyles } from '../../lib/cell-style-render'
 import {
     computeShiftArrowTarget,
     containsAny,
@@ -63,6 +64,13 @@ export const Cell = memo(function Cell({
     const { doc } = useWorkbook()
     const store = useGridStoreApi()
     const cellValue = useYCell(doc, sheetId, row, col)
+    // Conditional formatting: rules attached to this sheet produce an
+    // overlay CellStyle when they match this cell. The overlay wins
+    // per attribute over the cell's explicit style — see
+    // mergeCellStyles. Must run unconditionally before any early
+    // return so the hook order stays stable across the editing /
+    // merged-covered transitions below.
+    const conditionalStyle = useConditionalStyleForCell(doc, sheetId, cellValue, row, col)
     // Merge handling is delegated here so Body's loop stays a simple
     // (row, col) walk: covered cells return null, anchor cells extend
     // their rendered footprint over the merge's span. useCellMerge
@@ -607,7 +615,9 @@ export const Cell = memo(function Cell({
     }
 
     const showRemoteDraft = remoteDraft != null
-    const renderStyle = cellStyleToRenderProps(cellValue?.style)
+    const renderStyle = cellStyleToRenderProps(
+        mergeCellStyles(cellValue?.style, conditionalStyle)
+    )
     // Remote-draft display layers a peer's color + italic on top of
     // the cell's own style. Spread the style-derived textStyle first
     // so the remote-draft color and italic override (matching the
