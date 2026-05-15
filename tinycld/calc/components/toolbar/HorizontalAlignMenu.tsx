@@ -3,7 +3,7 @@ import { Menu } from '@tinycld/core/ui/menu'
 import { AlignCenter, AlignLeft, AlignRight, ChevronDown } from 'lucide-react-native'
 import type { ComponentType } from 'react'
 import { useCallback } from 'react'
-import { Pressable, View } from 'react-native'
+import { Platform, Pressable, View } from 'react-native'
 import type { HorizontalAlign } from '../../hooks/grid/use-grid-format-controls'
 import { useOpenMenu } from '../../lib/stores/open-menu-store'
 import { ToolbarButton } from './ToolbarButton'
@@ -46,11 +46,7 @@ export function HorizontalAlignMenu({ align, disabled, onSetAlign }: HorizontalA
 
     return (
         <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <View
-                {...(typeof document !== 'undefined'
-                    ? { 'data-calc-menu': 'trigger' }
-                    : {})}
-            >
+            <View {...(typeof document !== 'undefined' ? { 'data-calc-menu': 'trigger' } : {})}>
                 <Menu.Trigger>
                     <ToolbarButton label="Horizontal align" disabled={disabled} width={36}>
                         <View className="flex-row items-center" style={{ gap: 2 }}>
@@ -79,6 +75,11 @@ export function HorizontalAlignMenu({ align, disabled, onSetAlign }: HorizontalA
                                     accessibilityLabel={option.label}
                                     accessibilityRole="button"
                                     accessibilityState={{ selected: isActive }}
+                                    hitSlop={
+                                        Platform.OS === 'web'
+                                            ? undefined
+                                            : { top: 6, bottom: 6, left: 4, right: 4 }
+                                    }
                                     className={`items-center justify-center rounded ${isActive ? 'bg-accent' : ''}`}
                                     style={{
                                         width: 28,

@@ -3,7 +3,7 @@ import { Menu } from '@tinycld/core/ui/menu'
 import { Ban } from 'lucide-react-native'
 import type { ComponentType, ReactNode } from 'react'
 import { useCallback } from 'react'
-import { Pressable, Text, View } from 'react-native'
+import { Platform, Pressable, Text, View } from 'react-native'
 import { useOpenMenu } from '../../lib/stores/open-menu-store'
 import { ToolbarButton } from './ToolbarButton'
 
@@ -168,11 +168,7 @@ export function ColorPickerMenu({
 
     return (
         <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <View
-                {...(typeof document !== 'undefined'
-                    ? { 'data-calc-menu': 'trigger' }
-                    : {})}
-            >
+            <View {...(typeof document !== 'undefined' ? { 'data-calc-menu': 'trigger' } : {})}>
                 <Menu.Trigger>
                     <ToolbarButton label={label} disabled={disabled}>
                         <View className="items-center justify-center">
@@ -194,6 +190,11 @@ export function ColorPickerMenu({
                             onPress={() => onSelect('')}
                             accessibilityLabel="Clear"
                             accessibilityRole="button"
+                            hitSlop={
+                                Platform.OS === 'web'
+                                    ? undefined
+                                    : { top: 6, bottom: 6, left: 4, right: 4 }
+                            }
                             className="flex-row items-center rounded"
                             style={{ paddingVertical: 6, paddingHorizontal: 4, gap: 8 }}
                         >
@@ -210,6 +211,11 @@ export function ColorPickerMenu({
                                         onPress={() => onSelect(swatch.hex)}
                                         accessibilityLabel={swatch.label}
                                         accessibilityRole="button"
+                                        hitSlop={
+                                            Platform.OS === 'web'
+                                                ? undefined
+                                                : { top: 6, bottom: 6, left: 4, right: 4 }
+                                        }
                                         style={{
                                             width: SWATCH_SIZE,
                                             height: SWATCH_SIZE,

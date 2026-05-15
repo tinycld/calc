@@ -74,6 +74,7 @@ export const ToolbarButton = forwardRef<View, ToolbarButtonProps>(function Toolb
             accessibilityLabel={label}
             accessibilityRole="button"
             accessibilityState={{ disabled, selected: active }}
+            hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
             className={`items-center justify-center rounded ${active ? 'bg-accent' : ''}`}
             style={{ width, height: 24, marginHorizontal: 1, opacity: disabled ? 0.4 : 1 }}
         >
@@ -89,11 +90,7 @@ export const ToolbarButton = forwardRef<View, ToolbarButtonProps>(function Toolb
     }
 
     return (
-        <div
-            data-tooltip={label}
-            className="calc-toolbar-tooltip"
-            style={tooltipStyle as never}
-        >
+        <div data-tooltip={label} className="calc-toolbar-tooltip" style={tooltipStyle as never}>
             {button}
         </div>
     )
