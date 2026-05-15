@@ -7,6 +7,7 @@ import {
     Text,
     TextInput,
     type TextInputSelectionChangeEventData,
+    type View,
 } from 'react-native'
 import { useDragGesture } from '@tinycld/core/lib/gestures'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
@@ -153,9 +154,33 @@ export const Cell = memo(function Cell({
     // ref. Reset on every gesture end.
     const dragModeRef = useRef<DragMode>(null)
 
+    // Ref forwarded to the Pressable's underlying View. Used to
+    // measureInWindow on native drag-start since RN doesn't surface
+    // the target's screen rect in the gesture event.
+    const pressableRef = useRef<View | null>(null)
+    // Screen-space top-left of this cell, captured at drag-start.
+    // onDragMove subtracts this from ctx.pointer (pageX/Y on native,
+    // clientX/Y on web) to convert to a cell-local offset, then adds
+    // the cell's absolute grid origin (colOffsets/rowOffsets) to get
+    // grid coordinates of the pointer.
+    const cellOriginRef = useRef<{ x: number; y: number } | null>(null)
+
     const drag = useDragGesture({
         disabled: readOnly,
         onDragStart: ctx => {
+            // Capture this cell's screen-space top-left so onDragMove
+            // can convert ctx.pointer (clientX/Y on web, pageX/Y on
+            // native) to a cell-local offset. Web supplies the rect via
+            // getBoundingClientRect; native has to measureInWindow.
+            if (ctx.startRect != null) {
+                cellOriginRef.current = { x: ctx.startRect.left, y: ctx.startRect.top }
+            } else if (pressableRef.current != null) {
+                pressableRef.current.measureInWindow((x, y) => {
+                    cellOriginRef.current = { x, y }
+                })
+            } else {
+                cellOriginRef.current = { x: 0, y: 0 }
+            }
             // On web, the down-time onMouseDown handler may have already
             // chosen a mode (shift / ctrl / formula-edit ref). In that
             // case just engage; onDragMove dispatches off dragModeRef.
@@ -191,14 +216,14 @@ export const Cell = memo(function Cell({
             if (mode == null) return
             const absLeft = colOffsets[col - 1] ?? 0
             const absTop = rowOffsets[row - 1] ?? 0
-            // ctx.startRect is non-null on web (cell's bounding rect).
-            // On native it's null — fall back to 0 so we use raw pointer
-            // page coords. Either way we reconstruct grid coordinates
-            // from the pointer.
-            const startX = ctx.startRect?.left ?? 0
-            const startY = ctx.startRect?.top ?? 0
-            const gridX = absLeft + (ctx.pointer.x - startX)
-            const gridY = absTop + (ctx.pointer.y - startY)
+            // cellOriginRef holds this cell's screen-space top-left
+            // (from getBoundingClientRect on web, measureInWindow on
+            // native). Subtracting it from ctx.pointer gives the
+            // pointer offset inside the cell; adding the cell's
+            // absolute grid origin yields the pointer's grid coords.
+            const origin = cellOriginRef.current ?? { x: 0, y: 0 }
+            const gridX = absLeft + (ctx.pointer.x - origin.x)
+            const gridY = absTop + (ctx.pointer.y - origin.y)
             const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
             if (target == null) return
             if (mode === 'ref') {
@@ -212,6 +237,7 @@ export const Cell = memo(function Cell({
                 store.getState().cellRefDragEnd()
             }
             dragModeRef.current = null
+            cellOriginRef.current = null
         },
     })
 
@@ -238,9 +264,10 @@ export const Cell = memo(function Cell({
     // ref-acceptable position, falling through to the normal select/
     // edit gesture.
     const onPress = () => {
-        // mousedown already handled the gesture (shift-extend or
-        // drag-extend) — don't double-act here and collapse the
-        // range. The flag is consumed exactly once per click.
+        // Suppress the click that fires after one of: a drag just
+        // ended, a down-time modifier action ran (shift / ctrl /
+        // ref-tap), or onPress was explicitly told to skip. The flag
+        // is consumed exactly once per click.
         if (skipNextPressRef.current || drag.wasDragged) {
             skipNextPressRef.current = false
             // A down-time mode (set by webMouseDownProp without any
@@ -425,6 +452,7 @@ export const Cell = memo(function Cell({
 
     return (
         <Pressable
+            ref={pressableRef}
             onPress={onPress}
             onLongPress={onLongPress}
             onKeyDown={onCellKeyDown}
