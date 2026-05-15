@@ -1,4 +1,4 @@
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native'
+import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import { useFormulaFunctionNames } from '../../hooks/use-formula-function-names'
 import { useMenuDialogsStore } from '../../hooks/use-menu-dialogs-store'
 
@@ -49,6 +49,7 @@ export function FunctionListDialog() {
                         onPress={close}
                         accessibilityRole="button"
                         accessibilityLabel="Close function list"
+                        hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                         className="mt-3 self-end px-3 py-1 rounded bg-surface-secondary"
                     >
                         <Text className="text-sm text-foreground">Close</Text>

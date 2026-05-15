@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native'
+import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import { type CalcShortcutDoc, getCalcShortcutDocs } from '../../hooks/use-calc-shortcuts'
 import { useMenuDialogsStore } from '../../hooks/use-menu-dialogs-store'
 import { displayKeys } from './display-keys'
@@ -74,6 +74,7 @@ export function KeyboardShortcutsDialog() {
                         onPress={close}
                         accessibilityRole="button"
                         accessibilityLabel="Close keyboard shortcuts"
+                        hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                         className="mt-3 self-end px-3 py-1 rounded bg-surface-secondary"
                     >
                         <Text className="text-sm text-foreground">Close</Text>
