@@ -39,7 +39,10 @@ var errNoShare = errors.New("calc: no drive_shares row for this user/item")
 func registerRealtime(app *pocketbase.PocketBase) {
 	runtime := NewRuntime()
 	runtime.SetBootstrap(makeXLSXBootstrap(app))
+
+	journal := realtime.NewPocketBaseJournal(app)
 	coordinator := realtime.NewSaveCoordinator(MakeProductionFlush(app))
+	coordinator.SetJournal(roomKindCalc, journal)
 
 	realtime.RegisterRoomKindWith(roomKindCalc, realtime.RoomKindOptions{
 		Authorize: func(auth *core.Record, roomID string) error {
@@ -49,8 +52,10 @@ func registerRealtime(app *pocketbase.PocketBase) {
 			return checkDriveItemAccess(app, auth.Id, roomID)
 		},
 		RuntimeProvider: runtime,
+		Journal:         journal,
 		OnRoomCreate:    coordinator.OnRoomCreate,
 		OnDocUpdate:     coordinator.OnDocUpdate,
+		OnDocUpdateSeq:  coordinator.NoteSeq,
 		OnEmpty:         coordinator.OnRoomEmpty,
 	})
 }
