@@ -253,7 +253,7 @@ export function useColumnResize({
 let cachedCtx: CanvasRenderingContext2D | null | undefined
 function getCanvasCtx(): CanvasRenderingContext2D | null {
     if (cachedCtx !== undefined) return cachedCtx
-    if (typeof document === 'undefined') {
+    if (Platform.OS !== 'web') {
         cachedCtx = null
         return null
     }

@@ -46,7 +46,6 @@ export function CommentPopover({ driveItemId, sheetId }: CommentPopoverProps) {
     useEffect(() => {
         if (Platform.OS !== 'web') return
         if (target == null) return
-        if (typeof document === 'undefined') return
         let attached = false
         const handler = (event: PointerEvent) => {
             const targetNode = event.target as Node | null

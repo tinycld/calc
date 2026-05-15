@@ -57,7 +57,6 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     useEffect(() => {
         if (Platform.OS !== 'web') return
         if (target == null) return
-        if (typeof document === 'undefined') return
         const handler = (event: PointerEvent) => {
             const targetNode = event.target as Node | null
             const node = contentRef.current as unknown as Node | null

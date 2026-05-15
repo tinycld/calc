@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Platform } from 'react-native'
 import { useOpenMenuStore } from '../lib/stores/open-menu-store'
 
 // Document-level mousedown handler that closes the active calc menu
@@ -14,7 +15,7 @@ import { useOpenMenuStore } from '../lib/stores/open-menu-store'
 export function useOpenMenuOutsideClick(): void {
     const close = useOpenMenuStore((s) => s.close)
     useEffect(() => {
-        if (typeof document === 'undefined') return
+        if (Platform.OS !== 'web') return
         const onMouseDown = (e: MouseEvent) => {
             const target = e.target as Element | null
             if (target == null) return
