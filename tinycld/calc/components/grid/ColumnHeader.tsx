@@ -1,7 +1,14 @@
 import { useRef } from 'react'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { FilterX } from 'lucide-react-native'
-import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
+import {
+    type GestureResponderEvent,
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    View,
+} from 'react-native'
 import {
     type DragState,
     HANDLE_VISUAL_WIDTH,
@@ -302,10 +309,15 @@ function appendHeaderCells(
                 }
                 filter.store.getState().selectColumn(col, rowCount)
             }
+            const onLongPress = (e: GestureResponderEvent) => {
+                const { pageX, pageY } = e.nativeEvent
+                filter.store.getState().openHeaderMenu('col', col, rowCount, pageX, pageY)
+            }
             out.push(
                 <Pressable
                     key={`h-${col}`}
                     onPress={onPlainPress}
+                    onLongPress={onLongPress}
                     accessibilityLabel={`Select column ${columnLabel(col)}`}
                     className={`border-r border-b border-border flex-row items-center justify-center ${
                         isActive ? 'bg-accent' : 'bg-surface-secondary'

@@ -1,6 +1,13 @@
 import { useRef } from 'react'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
+import {
+    type GestureResponderEvent,
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    View,
+} from 'react-native'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import {
     NATIVE_ROW_HANDLE_HIT_SLOP,
@@ -226,10 +233,15 @@ function appendRowHeaderCells(
                 }
                 store.getState().selectRow(row, colCount)
             }
+            const onLongPress = (e: GestureResponderEvent) => {
+                const { pageX, pageY } = e.nativeEvent
+                store.getState().openHeaderMenu('row', row, colCount, pageX, pageY)
+            }
             out.push(
                 <Pressable
                     key={`h-${row}`}
                     onPress={onPlainPress}
+                    onLongPress={onLongPress}
                     accessibilityLabel={`Select row ${row}`}
                     className={`border-r border-b border-border items-center justify-center ${
                         isActive ? 'bg-accent' : 'bg-surface-secondary'

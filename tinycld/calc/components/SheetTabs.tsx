@@ -2,7 +2,14 @@ import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Menu, Separator } from '@tinycld/core/ui/menu'
 import { Plus } from 'lucide-react-native'
 import { useCallback, useState } from 'react'
-import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
+import {
+    type GestureResponderEvent,
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    View,
+} from 'react-native'
 import type * as Y from 'yjs'
 import { useSheetActions } from '../hooks/use-sheet-actions'
 import { useSheetTabsStore } from '../hooks/use-sheet-tabs-store'
@@ -127,14 +134,19 @@ function SheetTab({
     // Web: native contextmenu + dblclick. Native: long-press surfaces
     // the context menu (RN Pressable has no contextmenu event); single
     // press selects, with rename triggered exclusively from the menu.
+    //
+    // iPad runs Expo Web (Platform.OS === 'web') but has no right-click,
+    // so the web branch also wires onLongPress on a Pressable inside
+    // the wrapping div — touch surfaces the context menu at the
+    // gesture's pageX/pageY, mirroring the right-click path.
     const handleSelect = useCallback(() => onSelect(sheet.id), [onSelect, sheet.id])
-    const handleLongPress = useCallback(() => {
-        // measureInWindow would give exact tab origin; for now anchor
-        // to (0,0) so the popover lands at the screen corner. Long-
-        // press on a single-cell-tall strip is rare on touch — the
-        // primary path is right-click on web.
-        onOpenContextMenu(sheet.id, 0, 0)
-    }, [onOpenContextMenu, sheet.id])
+    const handleLongPress = useCallback(
+        (e: GestureResponderEvent) => {
+            const { pageX, pageY } = e.nativeEvent
+            onOpenContextMenu(sheet.id, pageX, pageY)
+        },
+        [onOpenContextMenu, sheet.id]
+    )
 
     if (Platform.OS === 'web') {
         return (
@@ -145,14 +157,21 @@ function SheetTab({
                 }}
                 onDoubleClick={() => onStartRename(sheet.id)}
             >
-                <TabBody
-                    sheet={sheet}
-                    isActive={isActive}
-                    isRenaming={isRenaming}
+                <Pressable
                     onPress={handleSelect}
-                    onRenameCommit={onRenameCommit}
-                    onRenameCancel={onRenameCancel}
-                />
+                    onLongPress={handleLongPress}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: isActive }}
+                >
+                    <TabBody
+                        sheet={sheet}
+                        isActive={isActive}
+                        isRenaming={isRenaming}
+                        onPress={handleSelect}
+                        onRenameCommit={onRenameCommit}
+                        onRenameCancel={onRenameCancel}
+                    />
+                </Pressable>
             </div>
         )
     }
