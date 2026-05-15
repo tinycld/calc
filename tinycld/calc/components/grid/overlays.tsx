@@ -1,5 +1,6 @@
+import { useDragGesture } from '@tinycld/core/lib/gestures'
 import { useRef } from 'react'
-import { PanResponder, Platform, Pressable, Text, View } from 'react-native'
+import { Platform, Pressable, Text, View } from 'react-native'
 import { useSheetMerges } from '../../hooks/use-cell-merge'
 import type { DragState } from '../../hooks/use-column-resize'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
@@ -441,23 +442,24 @@ const HIT_SLOP = 12
 // projection writes per-cell, and the post-fill selection covers the
 // extended rectangle.
 //
-// Web escape hatch: holding shift while dragging routes the gesture
+// Web escape hatch: holding shift at drag-start routes the gesture
 // to extendSelectionTo instead of fillDragMove. This preserves the
 // pre-fill drag-to-extend behavior for the rare case where the user
 // wants to grow the selection without filling. Modifier state is
-// re-checked on each pointermove (PointerEvent carries shiftKey on
-// web), so releasing/pressing shift mid-drag flips the mode for the
-// next move. Native has no shift key — touch users always get fill;
-// "Extend selection to here" lives in the long-press cell context
-// menu as the touch-side fallback.
+// captured at down-time (useDragGesture's contract) — toggling shift
+// mid-drag does not flip the mode. Native has no shift key — touch
+// users always get fill; "Extend selection to here" lives in the
+// long-press cell context menu as the touch-side fallback.
 //
 // Hidden during edit sessions so the dot doesn't sit on top of the
 // CellEditor's caret. Hidden in readOnly mode since there's no
 // meaningful gesture there.
 //
-// Web vs. native: PointerEvents on web (RN-Web's PanResponder is
-// unreliable for mouse-only gestures), PanResponder on native.
-// Mirrors the dual-mode pattern used by useColumnResize.
+// Web vs. native: useDragGesture papers over the platform split — web
+// uses PointerEvents with setPointerCapture, native uses PanResponder,
+// both feed the same callback shape. The delta-based fill math
+// (startClientX/Y + d) works on either coord frame as long as we read
+// ctx.pointer.x/y consistently in both captureStart and handleMove.
 export function SelectionHandleOverlay({
     sheetId,
     colOffsets,
@@ -522,80 +524,30 @@ export function SelectionHandleOverlay({
         store.getState().fillDragEnd()
     }
 
-    // Native: PanResponder, since touch gestures route through it
-    // reliably on iOS/Android. PageX/Y is screen-space; we use it
-    // the same way as the web clientX/Y branch. Touch always drives
-    // fill — no shift key on a touchscreen, and the "extend
-    // selection" fallback lives in the long-press cell context menu.
+    // useDragGesture papers over the web/native split. Both branches
+    // feed ctx.pointer.x/y in the same frame they captured at start
+    // (web: clientX/Y, native: pageX/Y), so the delta math in
+    // handleMove works without any per-platform conversion.
     //
-    // The should-set callbacks return false on web so RN-Web's
-    // responder system doesn't claim the mousedown ahead of our
-    // onMouseDown handler — the web path is driven entirely by the
-    // document-level pointer listeners installed below.
-    //
-    // Recreated per render rather than memoized — the overlay only
-    // mounts when a selection exists (rare event).
-    const isNative = Platform.OS !== 'web'
-    const panHandlers = PanResponder.create({
-        onStartShouldSetPanResponder: () => isNative,
-        onStartShouldSetPanResponderCapture: () => isNative,
-        onMoveShouldSetPanResponder: () => isNative,
-        onPanResponderGrant: e => {
-            const { pageX, pageY } = e.nativeEvent
-            if (!captureStart(pageX, pageY)) return
-            if (!store.getState().fillDragStart()) return
+    // Shift-modifier capture: useDragGesture reports modifiers at
+    // down-time only (ctx.pointer.shiftKey). Toggling shift mid-drag
+    // no longer flips the mode — the rest of calc's drag gestures
+    // behave the same way, and live modifier tracking isn't a calc
+    // use case anywhere else.
+    const fillDrag = useDragGesture({
+        disabled: readOnly,
+        onDragStart: ctx => {
+            if (!captureStart(ctx.pointer.x, ctx.pointer.y)) return false
+            if (!store.getState().fillDragStart()) return false
+            return true
         },
-        onPanResponderMove: e => {
-            const { pageX, pageY } = e.nativeEvent
-            handleMove(pageX, pageY, false)
+        onDragMove: ctx => {
+            handleMove(ctx.pointer.x, ctx.pointer.y, ctx.pointer.shiftKey)
         },
-        onPanResponderRelease: () => handleEnd(),
-        onPanResponderTerminate: () => handleEnd(),
-        onPanResponderTerminationRequest: () => false,
-    }).panHandlers
-
-    // Web: drag-detection via the underlying View's onMouseDown (the
-    // earliest event we can hook before any focus shift), plus
-    // document-level pointer listeners for the duration of the drag.
-    // RN-Web doesn't reliably surface raw onPointerDown/Move/Up to
-    // user props on a Pressable child, and onPressIn (RN-Web's
-    // press-start equivalent) interferes with the click-away commit
-    // path used elsewhere — so mousedown is the safe wiring point.
-    // Document listeners always fire regardless of any responder
-    // claims, and they self-clean on pointerup or pointercancel.
-    const onMouseDown = (e: {
-        button?: number
-        clientX?: number
-        clientY?: number
-        preventDefault: () => void
-        stopPropagation: () => void
-    }) => {
-        if (Platform.OS !== 'web') return
-        if (typeof document === 'undefined') return
-        if (e.button != null && e.button !== 0) return
-        // Stop the cell underneath from also starting a drag-select.
-        e.preventDefault()
-        e.stopPropagation()
-        const clientX = typeof e.clientX === 'number' ? e.clientX : 0
-        const clientY = typeof e.clientY === 'number' ? e.clientY : 0
-        if (!captureStart(clientX, clientY)) return
-        // Bootstrap the fill drag eagerly. If the selection is empty
-        // (the only way fillDragStart returns false), bail entirely
-        // so we don't leak document listeners. Shift-drag-extend is
-        // the escape hatch ON TOP of an active fill — without a
-        // fillDragStart, there's nothing to extend either.
-        if (!store.getState().fillDragStart()) return
-        const onMove = (ev: PointerEvent) => handleMove(ev.clientX, ev.clientY, ev.shiftKey)
-        const cleanup = () => {
-            document.removeEventListener('pointermove', onMove)
-            document.removeEventListener('pointerup', cleanup)
-            document.removeEventListener('pointercancel', cleanup)
+        onDragEnd: () => {
             handleEnd()
-        }
-        document.addEventListener('pointermove', onMove)
-        document.addEventListener('pointerup', cleanup)
-        document.addEventListener('pointercancel', cleanup)
-    }
+        },
+    })
 
     if (selection == null || readOnly) return null
     // Hide handle on disjoint selections — plan §6.e and Risk 5.
@@ -642,9 +594,7 @@ export function SelectionHandleOverlay({
                     // biome-ignore lint/suspicious/noExplicitAny: web-only cursor key on RN ViewStyle
                 } as any
             }
-            // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
-            {...({ onMouseDown } as any)}
-            {...panHandlers}
+            {...fillDrag.handlers}
         />
     )
 }
