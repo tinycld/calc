@@ -2,6 +2,7 @@ package calc
 
 import (
 	"errors"
+	"math"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
@@ -57,6 +58,18 @@ func registerRealtime(app *pocketbase.PocketBase) {
 		OnDocUpdate:     coordinator.OnDocUpdate,
 		OnDocUpdateSeq:  coordinator.NoteSeq,
 		OnEmpty:         coordinator.OnRoomEmpty,
+	})
+
+	// Cascade-clean WAL rows when a drive_items record (calc workbook)
+	// is deleted. Scoped to room_kind = "calc"; other kinds register
+	// their own parallel hook. math.MaxInt64 as the upper bound
+	// effectively truncates every row regardless of seq.
+	app.OnRecordAfterDeleteSuccess("drive_items").BindFunc(func(e *core.RecordEvent) error {
+		if err := journal.Truncate(roomKindCalc, e.Record.Id, math.MaxInt64); err != nil {
+			app.Logger().Warn("calc: WAL cleanup on drive_items delete failed",
+				"itemID", e.Record.Id, "err", err)
+		}
+		return e.Next()
 	})
 }
 
