@@ -1,6 +1,6 @@
 import { Modal, ModalBackdrop, ModalContent } from '@tinycld/core/ui/modal'
 import { useCallback, useMemo, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import { type CsvDelimiter, parseCsv } from '../lib/csv/decode'
 
 // CsvImportDialog is the confirm-and-preview surface for an in-flight
@@ -131,6 +131,7 @@ function DelimiterChooser({ value, onChange }: DelimiterChooserProps) {
                             accessibilityLabel={`Delimiter ${choice.label}`}
                             accessibilityState={{ selected: isActive }}
                             onPress={() => onChange(choice.id)}
+                            hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                             className={
                                 isActive
                                     ? 'px-3 py-1.5 rounded-md bg-accent'
@@ -192,6 +193,7 @@ function RadioRow({ label, isSelected, onPress }: RadioRowProps) {
             accessibilityState={{ selected: isSelected }}
             accessibilityLabel={label}
             onPress={onPress}
+            hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
             className="flex-row items-center gap-2 py-1"
         >
             <View
