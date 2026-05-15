@@ -30,7 +30,6 @@ export function CutMarchingAntsOverlay({ colOffsets, rowOffsets }: CutMarchingAn
     // mounts find the existing <style> and skip the insert.
     useEffect(() => {
         if (Platform.OS !== 'web') return
-        if (typeof document === 'undefined') return
         if (document.getElementById(ANTS_STYLE_ID) != null) return
         const style = document.createElement('style')
         style.id = ANTS_STYLE_ID
