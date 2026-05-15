@@ -10,6 +10,7 @@ import {
     type View,
 } from 'react-native'
 import { useDragGesture } from '@tinycld/core/lib/gestures'
+import { FORMULA_BAR_ACCESSORY_ID } from '../formula-accessory-id'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
 import { useCellMerge } from '../../hooks/use-cell-merge'
@@ -561,6 +562,9 @@ function CellEditor({
             onBlur={onSubmit}
             onFocus={onFocus}
             onKeyPress={onKeyPress}
+            inputAccessoryViewID={
+                Platform.OS === 'ios' ? FORMULA_BAR_ACCESSORY_ID : undefined
+            }
             style={{
                 position: 'absolute',
                 left,

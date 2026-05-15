@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useMemo } from 'react'
-import { type LayoutChangeEvent, View } from 'react-native'
+import { InputAccessoryView, type LayoutChangeEvent, Platform, View } from 'react-native'
 import { useFindActions } from '../hooks/find/use-find-actions'
 import { createFindStore } from '../hooks/find/use-find-store'
 import { FindStoreProvider, useFindStoreApi } from '../hooks/find/use-find-store-context'
@@ -41,7 +41,9 @@ import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
 import { defaultTargetSheetName } from './pivot/new-pivot-dialog-helpers'
 import { ConditionalFormatPanel } from './conditional-format/ConditionalFormatPanel'
 import { FindReplaceDialogGate } from './FindReplaceDialog'
+import { FORMULA_BAR_ACCESSORY_ID } from './formula-accessory-id'
 import { FormulaBar } from './FormulaBar'
+import { FormulaBarKeyboardAccessory } from './FormulaBarKeyboardAccessory'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
 import { MenuBar } from './menubar/MenuBar'
 import { PivotGrid } from './pivot/PivotGrid'
@@ -550,6 +552,15 @@ function GridInner({
                 sheetId={sheetId}
                 readOnly={readOnly}
             />
+            {Platform.OS === 'ios' && (
+                <InputAccessoryView nativeID={FORMULA_BAR_ACCESSORY_ID}>
+                    <FormulaBarKeyboardAccessory
+                        onSpecialKey={suggestions.onSpecialKey}
+                        onCancel={formulaBar.onCancel}
+                        onOpenFunctionList={openFunctionList}
+                    />
+                </InputAccessoryView>
+            )}
         </View>
     )
 }

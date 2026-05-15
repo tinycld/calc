@@ -2,11 +2,13 @@ import { forwardRef, useCallback } from 'react'
 import {
     type LayoutChangeEvent,
     type NativeSyntheticEvent,
+    Platform,
     Text,
     TextInput,
     type TextInputSelectionChangeEventData,
     View,
 } from 'react-native'
+import { FORMULA_BAR_ACCESSORY_ID } from './formula-accessory-id'
 
 // SpecialKey is the limited set of keys Grid wants to intercept for
 // suggestion-popover navigation. The formula bar dispatches them up
@@ -114,6 +116,9 @@ export const FormulaBar = forwardRef<TextInput, FormulaBarProps>(function Formul
                 onKeyPress={onKeyPress}
                 onLayout={onLayout}
                 accessibilityLabel="Formula bar"
+                inputAccessoryViewID={
+                    Platform.OS === 'ios' ? FORMULA_BAR_ACCESSORY_ID : undefined
+                }
                 style={{ flex: 1, height: 22, fontSize: 12, paddingHorizontal: 4 }}
                 className="text-foreground"
             />
