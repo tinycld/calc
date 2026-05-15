@@ -64,6 +64,7 @@ import {
     RowResizePreviewLine,
     SelectionHandleOverlay,
 } from './overlays'
+import { SelectionEdgeHandles } from './SelectionEdgeHandles'
 
 interface BodyProps {
     horizontalRef: React.RefObject<ScrollView | null>
@@ -172,6 +173,11 @@ function SingleQuadrantBody({
                     <FillPreviewOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <SelectionHandleOverlay
                         sheetId={sheetId}
+                        colOffsets={colOffsets}
+                        rowOffsets={rowOffsets}
+                        readOnly={readOnly}
+                    />
+                    <SelectionEdgeHandles
                         colOffsets={colOffsets}
                         rowOffsets={rowOffsets}
                         readOnly={readOnly}
@@ -426,6 +432,11 @@ function SplitBody({
                             />
                             <SelectionHandleOverlay
                                 sheetId={sheetId}
+                                colOffsets={brColOffsets}
+                                rowOffsets={brRowOffsets}
+                                readOnly={readOnly}
+                            />
+                            <SelectionEdgeHandles
                                 colOffsets={brColOffsets}
                                 rowOffsets={brRowOffsets}
                                 readOnly={readOnly}
