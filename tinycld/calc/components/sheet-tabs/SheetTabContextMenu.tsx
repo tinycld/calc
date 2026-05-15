@@ -20,16 +20,16 @@ import { CELLS_MAP } from '../../lib/y-doc-bootstrap'
 // survive the round-trip to xlsx, so we store the literal strings —
 // not theme tokens. (CLAUDE.md's no-hex rule explicitly exempts
 // user-picked colors.)
-const SHEET_TAB_SWATCHES: ReadonlyArray<{ value: string; label: string }> = [
-    { value: '', label: 'No color' },
-    { value: '#EF5350', label: 'Red' },
-    { value: '#FB8C00', label: 'Orange' },
-    { value: '#FDD835', label: 'Yellow' },
-    { value: '#66BB6A', label: 'Green' },
-    { value: '#42A5F5', label: 'Blue' },
-    { value: '#7E57C2', label: 'Purple' },
-    { value: '#EC407A', label: 'Pink' },
-    { value: '#8D6E63', label: 'Brown' },
+const SHEET_TAB_SWATCHES: ReadonlyArray<{ hex: string; label: string }> = [
+    { hex: '', label: 'No color' },
+    { hex: '#EF5350', label: 'Red' },
+    { hex: '#FB8C00', label: 'Orange' },
+    { hex: '#FDD835', label: 'Yellow' },
+    { hex: '#66BB6A', label: 'Green' },
+    { hex: '#42A5F5', label: 'Blue' },
+    { hex: '#7E57C2', label: 'Purple' },
+    { hex: '#EC407A', label: 'Pink' },
+    { hex: '#8D6E63', label: 'Brown' },
 ]
 
 interface SheetTabContextMenuProps {
@@ -224,12 +224,12 @@ function SwatchGrid({ activeColor, onPick }: SwatchGridProps) {
     return (
         <View className="flex-row flex-wrap" style={{ width: 5 * 28, padding: 6, gap: 4 }}>
             {SHEET_TAB_SWATCHES.map(swatch => {
-                const isActive = (activeColor ?? '') === swatch.value
-                const isDefault = swatch.value === ''
+                const isActive = (activeColor ?? '') === swatch.hex
+                const isDefault = swatch.hex === ''
                 return (
                     <Pressable
                         key={swatch.label}
-                        onPress={() => onPick(swatch.value)}
+                        onPress={() => onPick(swatch.hex)}
                         accessibilityLabel={`Tab color ${swatch.label}`}
                         accessibilityRole="button"
                         style={{
@@ -237,7 +237,7 @@ function SwatchGrid({ activeColor, onPick }: SwatchGridProps) {
                             height: 20,
                             borderRadius: 3,
                             borderWidth: isActive ? 2 : 1,
-                            backgroundColor: isDefault ? 'transparent' : swatch.value,
+                            backgroundColor: isDefault ? 'transparent' : swatch.hex,
                             alignItems: 'center',
                             justifyContent: 'center',
                         }}
