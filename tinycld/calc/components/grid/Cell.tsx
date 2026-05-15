@@ -2,13 +2,13 @@ import { memo, useCallback, useRef } from 'react'
 import {
     type GestureResponderEvent,
     type NativeSyntheticEvent,
-    PanResponder,
     Platform,
     Pressable,
     Text,
     TextInput,
     type TextInputSelectionChangeEventData,
 } from 'react-native'
+import { useDragGesture } from '@tinycld/core/lib/gestures'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
 import { useCellMerge } from '../../hooks/use-cell-merge'
@@ -139,188 +139,81 @@ export const Cell = memo(function Cell({
 
     const remoteDraft = remoteEditor?.editing?.draft
 
-    // useRef + useCallback must come before the early return for
-    // the editing CellEditor branch — hooks rules require
-    // unconditional ordering.
-    const webDragRef = useRef<{
-        startX: number
-        startY: number
-        startRect: { left: number; top: number }
-        dragging: boolean
-    } | null>(null)
-    // Set in onMouseDown when we already handled the gesture
-    // (shift-extend, drag-extend); consumed by onPress to skip the
-    // single-cell selectCell that would otherwise collapse the
-    // range. preventDefault on mousedown does NOT suppress the
-    // browser's subsequent click event, so this gate is required.
+    // Set when we already handled the gesture at down-time (shift-
+    // extend, ctrl/cmd sub-range, ref-tap during formula edit) or at
+    // drag engagement; consumed by onPress to skip the single-cell
+    // selectCell that would otherwise collapse the range. preventDefault
+    // on mousedown does NOT suppress the browser's subsequent click
+    // event, so this gate is required.
     const skipNextPressRef = useRef(false)
 
-    // Web drag-select via document-level pointer listeners.
-    // Defined inline as a useCallback closure so it captures the
-    // current cell's (row, col, left, top) and the live offset
-    // arrays. See the longer comment near the JSX for the rationale
-    // (Pressable + Pointer events don't compose cleanly on RN-Web).
-    const webDragStart = useCallback(
-        (clientX: number, clientY: number, rect: { left: number; top: number }) => {
-            if (Platform.OS !== 'web' || readOnly) return
-            if (typeof document === 'undefined') return
-            if (isAnyEditing) return
-            webDragRef.current = {
-                startX: clientX,
-                startY: clientY,
-                startRect: rect,
-                dragging: false,
-            }
-            const onMove = (ev: PointerEvent) => {
-                const drag = webDragRef.current
-                if (drag == null) return
-                const dx = ev.clientX - drag.startX
-                const dy = ev.clientY - drag.startY
-                if (!drag.dragging) {
-                    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return
-                    drag.dragging = true
-                    // The synthetic click that fires after mouseup
-                    // would otherwise hit Pressable's onPress and
-                    // re-select the start cell, collapsing the range
-                    // we're about to build. Suppress that click.
-                    skipNextPressRef.current = true
-                    store.getState().selectCell({ row, col })
-                }
-                // Use absolute grid offsets here, not the quadrant-
-                // local `left`/`top` props — the cell's prop values
-                // are relative to its containing quadrant's origin
-                // (subtracting the frozen extent), while colOffsets/
-                // rowOffsets — and therefore locateCellAtGridCoord —
-                // are absolute prefix-sums. Mixing the two shifts the
-                // mapped target by exactly the frozen extent on each
-                // axis. See webDragStartCtrl below for the same fix.
-                const absLeft = colOffsets[col - 1] ?? 0
-                const absTop = rowOffsets[row - 1] ?? 0
-                const gridX = absLeft + (ev.clientX - drag.startRect.left)
-                const gridY = absTop + (ev.clientY - drag.startRect.top)
-                const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
-                if (target == null) return
-                store.getState().extendActiveRangeTo(target)
-            }
-            const cleanup = () => {
-                document.removeEventListener('pointermove', onMove)
-                document.removeEventListener('pointerup', cleanup)
-                document.removeEventListener('pointercancel', cleanup)
-                webDragRef.current = null
-            }
-            document.addEventListener('pointermove', onMove)
-            document.addEventListener('pointerup', cleanup)
-            document.addEventListener('pointercancel', cleanup)
-        },
-        [store, row, col, left, top, colOffsets, rowOffsets, readOnly, isAnyEditing]
-    )
+    type DragMode = 'select' | 'ctrl-select' | 'ref' | null
+    // Drag mode chosen at down-time (web modifier paths) or at drag-
+    // engagement (plain drag). The move handler dispatches on this
+    // ref. Reset on every gesture end.
+    const dragModeRef = useRef<DragMode>(null)
 
-    // Ctrl-drag variant of webDragStart. The mousedown handler has
-    // already called addSubRange to append a new sub-range; this
-    // function only handles subsequent pointermove → extend the
-    // active (just-added) sub-range from ITS anchor. No selectCell
-    // bootstrap.
-    const webDragStartCtrl = useCallback(
-        (clientX: number, clientY: number, rect: { left: number; top: number }) => {
-            if (Platform.OS !== 'web' || readOnly) return
-            if (typeof document === 'undefined') return
-            if (isAnyEditing) return
-            webDragRef.current = {
-                startX: clientX,
-                startY: clientY,
-                startRect: rect,
-                dragging: false,
+    const drag = useDragGesture({
+        disabled: readOnly,
+        onDragStart: ctx => {
+            // On web, the down-time onMouseDown handler may have already
+            // chosen a mode (shift / ctrl / formula-edit ref). In that
+            // case just engage; onDragMove dispatches off dragModeRef.
+            if (dragModeRef.current != null) return true
+            const state = store.getState()
+            if (state.editSession != null) {
+                // Native (no down-time modifier path): try ref-drag.
+                if (!state.cellRefDragStart(row, col)) return false
+                dragModeRef.current = 'ref'
+                skipNextPressRef.current = true
+                return true
             }
-            const onMove = (ev: PointerEvent) => {
-                const drag = webDragRef.current
-                if (drag == null) return
-                const dx = ev.clientX - drag.startX
-                const dy = ev.clientY - drag.startY
-                if (!drag.dragging) {
-                    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return
-                    drag.dragging = true
-                    // The new sub-range was already added on
-                    // mousedown — no selectCell to call here.
-                }
-                const absLeft = colOffsets[col - 1] ?? 0
-                const absTop = rowOffsets[row - 1] ?? 0
-                const gridX = absLeft + (ev.clientX - drag.startRect.left)
-                const gridY = absTop + (ev.clientY - drag.startRect.top)
-                const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
-                if (target == null) return
-                store.getState().extendActiveRangeTo(target)
+            const isCtrl = ctx.pointer.ctrlKey || ctx.pointer.metaKey
+            if (isCtrl) {
+                state.addSubRange({ row, col })
+                dragModeRef.current = 'ctrl-select'
+                skipNextPressRef.current = true
+                return true
             }
-            const cleanup = () => {
-                document.removeEventListener('pointermove', onMove)
-                document.removeEventListener('pointerup', cleanup)
-                document.removeEventListener('pointercancel', cleanup)
-                webDragRef.current = null
+            if (ctx.pointer.shiftKey) {
+                state.extendActiveRangeTo({ row, col })
+                dragModeRef.current = 'select'
+                skipNextPressRef.current = true
+                return true
             }
-            document.addEventListener('pointermove', onMove)
-            document.addEventListener('pointerup', cleanup)
-            document.addEventListener('pointercancel', cleanup)
-        },
-        [store, row, col, colOffsets, rowOffsets, readOnly, isAnyEditing]
-    )
-
-    // Ref-drag variant: fires while a formula edit is in progress. The
-    // mousedown call site has already preventDefault'd so the formula
-    // input keeps focus. cellRefDragStart inserts the anchor address
-    // (e.g. "A1") and may return false if the cursor isn't in a ref-
-    // acceptable position — in that case there's no insertion to
-    // extend, so we don't install document listeners. Otherwise every
-    // pointermove maps the cursor to a cell and calls cellRefDragMove;
-    // useRefDragExtender reacts to that and rewrites the inserted slice
-    // to the new range (A1:B3). Release ends the drag and refocuses
-    // the input.
-    const webRefDragStart = useCallback(
-        (clientX: number, clientY: number, rect: { left: number; top: number }) => {
-            if (Platform.OS !== 'web' || readOnly) return
-            if (typeof document === 'undefined') return
-            if (!store.getState().cellRefDragStart(row, col)) return
-            // cellRefDragStart already inserted the anchor address into
-            // the formula. The synthetic click that fires after mouseup
-            // would otherwise hit onPress → cellRefTap (no-op because
-            // the cursor is now past digits) → selectCell, which would
-            // commit the half-typed formula and lose the edit. Suppress
-            // it.
+            state.selectCell({ row, col })
+            dragModeRef.current = 'select'
             skipNextPressRef.current = true
-            webDragRef.current = {
-                startX: clientX,
-                startY: clientY,
-                startRect: rect,
-                dragging: false,
-            }
-            const onMove = (ev: PointerEvent) => {
-                const drag = webDragRef.current
-                if (drag == null) return
-                const dx = ev.clientX - drag.startX
-                const dy = ev.clientY - drag.startY
-                if (!drag.dragging) {
-                    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return
-                    drag.dragging = true
-                }
-                const absLeft = colOffsets[col - 1] ?? 0
-                const absTop = rowOffsets[row - 1] ?? 0
-                const gridX = absLeft + (ev.clientX - drag.startRect.left)
-                const gridY = absTop + (ev.clientY - drag.startRect.top)
-                const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
-                if (target == null) return
+            return true
+        },
+        onDragMove: ctx => {
+            const mode = dragModeRef.current
+            if (mode == null) return
+            const absLeft = colOffsets[col - 1] ?? 0
+            const absTop = rowOffsets[row - 1] ?? 0
+            // ctx.startRect is non-null on web (cell's bounding rect).
+            // On native it's null — fall back to 0 so we use raw pointer
+            // page coords. Either way we reconstruct grid coordinates
+            // from the pointer.
+            const startX = ctx.startRect?.left ?? 0
+            const startY = ctx.startRect?.top ?? 0
+            const gridX = absLeft + (ctx.pointer.x - startX)
+            const gridY = absTop + (ctx.pointer.y - startY)
+            const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
+            if (target == null) return
+            if (mode === 'ref') {
                 store.getState().cellRefDragMove(target.row, target.col)
+            } else {
+                store.getState().extendActiveRangeTo(target)
             }
-            const cleanup = () => {
-                document.removeEventListener('pointermove', onMove)
-                document.removeEventListener('pointerup', cleanup)
-                document.removeEventListener('pointercancel', cleanup)
-                webDragRef.current = null
+        },
+        onDragEnd: () => {
+            if (dragModeRef.current === 'ref') {
                 store.getState().cellRefDragEnd()
             }
-            document.addEventListener('pointermove', onMove)
-            document.addEventListener('pointerup', cleanup)
-            document.addEventListener('pointercancel', cleanup)
+            dragModeRef.current = null
         },
-        [store, row, col, colOffsets, rowOffsets, readOnly]
-    )
+    })
 
     if (isMergedCovered) return null
 
@@ -348,8 +241,16 @@ export const Cell = memo(function Cell({
         // mousedown already handled the gesture (shift-extend or
         // drag-extend) — don't double-act here and collapse the
         // range. The flag is consumed exactly once per click.
-        if (skipNextPressRef.current) {
+        if (skipNextPressRef.current || drag.wasDragged) {
             skipNextPressRef.current = false
+            // A down-time mode (set by webMouseDownProp without any
+            // subsequent drag engagement) needs cleanup since
+            // onDragEnd never fires. The 'ref' branch clears refDrag
+            // and refocuses the formula input.
+            if (dragModeRef.current === 'ref') {
+                store.getState().cellRefDragEnd()
+            }
+            dragModeRef.current = null
             return
         }
         const state = store.getState()
@@ -360,62 +261,6 @@ export const Cell = memo(function Cell({
             state.selectCell({ row, col })
         }
     }
-
-    // Touch/native drag: PanResponder branches on whether an edit
-    // session is in flight at gesture-start time:
-    //
-    //   - During a formula edit → ref-drag: cellRefDragStart claims
-    //     the gesture (or returns false if the cursor isn't in a
-    //     ref-acceptable spot). Subsequent moves stretch the inserted
-    //     range; release re-focuses the input.
-    //   - Otherwise → selection-drag: anchor on the start cell, then
-    //     extend the selection rectangle to whichever cell the pointer
-    //     is over. The 3px move threshold still lets simple taps fall
-    //     through to onPress.
-    //
-    // Web uses native PointerEvents instead (see webPointerProps
-    // below) — RN-Web's PanResponder is unreliable for mouse-only
-    // gestures, mirroring the same dual-mode pattern used by
-    // useColumnResize.
-    let activeDragMode: 'ref' | 'select' | null = null
-    const panHandlers = PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 3 || Math.abs(g.dy) > 3,
-        onPanResponderGrant: () => {
-            const state = store.getState()
-            if (state.editSession != null) {
-                activeDragMode = 'ref'
-                state.cellRefDragStart(row, col)
-            } else {
-                activeDragMode = 'select'
-                state.selectCell({ row, col })
-            }
-        },
-        onPanResponderMove: e => {
-            const { locationX, locationY } = e.nativeEvent
-            // Mirror the web fix: use absolute grid offsets, not the
-            // quadrant-local `left`/`top` props.
-            const absLeft = colOffsets[col - 1] ?? 0
-            const absTop = rowOffsets[row - 1] ?? 0
-            const gridX = absLeft + locationX
-            const gridY = absTop + locationY
-            const target = locateCellAtGridCoord(gridX, gridY, colOffsets, rowOffsets)
-            if (target == null) return
-            if (activeDragMode === 'ref') {
-                store.getState().cellRefDragMove(target.row, target.col)
-            } else if (activeDragMode === 'select') {
-                store.getState().extendActiveRangeTo(target)
-            }
-        },
-        onPanResponderRelease: () => {
-            if (activeDragMode === 'ref') store.getState().cellRefDragEnd()
-            activeDragMode = null
-        },
-        onPanResponderTerminate: () => {
-            if (activeDragMode === 'ref') store.getState().cellRefDragEnd()
-            activeDragMode = null
-        },
-    }).panHandlers
 
     // Native long-press fires before any subsequent onPress is dispatched,
     // so wiring the context menu here doesn't conflict with the
@@ -442,29 +287,25 @@ export const Cell = memo(function Cell({
               }
             : null
 
-    // Web onMouseDown serves three purposes:
+    // Web onMouseDown handles down-time-only behaviors that
+    // useDragGesture's threshold-gated onDragStart can't:
     //
-    //   1. While a formula edit is in progress, swallow the mousedown
-    //      so the focused TextInput doesn't blur — blur would commit
-    //      the half-typed formula (e.g. "=LEFT(") as a #ERROR! cell
-    //      before onPress runs and our ref-tap handler can insert the
-    //      address.
-    //   2. Shift+click extends the current selection to this cell.
-    //      RN's GestureResponderEvent doesn't expose modifier keys, so
-    //      we have to peek at the underlying DOM event before the
-    //      Pressable's onPress fires (which would call selectCell and
-    //      collapse the range).
-    //   3. Bootstrap the document-level pointer-drag listeners that
-    //      power click-and-drag selection. mousedown fires before any
-    //      potential focus shift or onPress, so installing listeners
-    //      here means we catch the very first pointermove. Routing
-    //      through onPressIn (Pressable's RN-Web equivalent) instead
-    //      breaks the click-away-commits-edit flow, so we wire here.
+    //   1. Shift-click without a drag should extend the selection
+    //      immediately (no movement required).
+    //   2. Ctrl/Cmd-click adds a sub-range immediately and pre-selects
+    //      'ctrl-select' so a subsequent drag extends THAT sub-range.
+    //   3. During a formula edit, preventDefault swallows the focus
+    //      shift so the formula input doesn't blur — blur would
+    //      commit the half-typed formula and lose the edit. We also
+    //      call cellRefDragStart at down-time so a pure click (no
+    //      drag) still inserts the ref via the down-time path.
     //
-    // Native taps don't blur the keyboard the same way, and physical
-    // shift on mobile is rare — both paths are web-only.
+    // Modifier keys don't reach RN's onPress, so all three need a
+    // DOM-level mousedown peek. RN-Web's Pressable forwards
+    // onMouseDown unchanged. Native taps don't blur the keyboard and
+    // don't carry modifiers, so this whole block is web-only.
     const webMouseDownProp =
-        Platform.OS === 'web'
+        Platform.OS === 'web' && !readOnly
             ? {
                   onMouseDown: (e: {
                       preventDefault: () => void
@@ -472,95 +313,38 @@ export const Cell = memo(function Cell({
                       ctrlKey?: boolean
                       metaKey?: boolean
                       button?: number
-                      clientX?: number
-                      clientY?: number
-                      currentTarget?: {
-                          getBoundingClientRect?: () => { left: number; top: number }
-                      }
                   }) => {
-                      // Right-click is handled by onContextMenu; don't
-                      // intercept here.
                       if (e.button != null && e.button !== 0) return
                       const isCtrl = e.ctrlKey || e.metaKey
-                      // Ctrl/Cmd-click (with or without Shift) appends
-                      // a new sub-range and bootstraps a drag from it
-                      // — Sheets parity. Ctrl+Shift falls through to
-                      // the Ctrl branch (most-recent additive
-                      // gesture wins, plan §5).
-                      if (isCtrl && !isAnyEditing && !readOnly) {
+                      if (isAnyEditing) {
+                          // Two jobs: swallow focus shift (so the
+                          // formula input doesn't blur and commit) and
+                          // try to start a ref-drag. cellRefDragStart
+                          // returns false if the cursor isn't in a
+                          // ref-acceptable spot; the click then falls
+                          // through to onPress → cellRefTap (same
+                          // outcome via a different path).
+                          e.preventDefault()
+                          if (store.getState().cellRefDragStart(row, col)) {
+                              dragModeRef.current = 'ref'
+                              skipNextPressRef.current = true
+                          }
+                          return
+                      }
+                      if (isCtrl) {
                           e.preventDefault()
                           skipNextPressRef.current = true
                           store.getState().addSubRange({ row, col })
-                          // After addSubRange the just-added sub-
-                          // range is active; if the user starts
-                          // dragging, extendActiveRangeTo will grow
-                          // THAT sub-range from its anchor.
-                          const clientX = typeof e.clientX === 'number' ? e.clientX : 0
-                          const clientY = typeof e.clientY === 'number' ? e.clientY : 0
-                          const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
-                              left: 0,
-                              top: 0,
-                          }
-                          webDragStartCtrl(clientX, clientY, {
-                              left: rect.left,
-                              top: rect.top,
-                          })
+                          dragModeRef.current = 'ctrl-select'
                           return
                       }
-                      if (e.shiftKey && !isAnyEditing && !readOnly) {
-                          // Shift-extend: stretch the active (last)
-                          // sub-range from its anchor to this cell.
-                          // preventDefault on mousedown blocks the
-                          // focus shift but NOT the synthetic click
-                          // that fires after mouseup, so we also
-                          // flag skipNextPressRef so onPress doesn't
-                          // run selectCell and collapse the range we
-                          // just built.
+                      if (e.shiftKey) {
                           e.preventDefault()
                           skipNextPressRef.current = true
                           store.getState().extendActiveRangeTo({ row, col })
+                          dragModeRef.current = 'select'
                           return
                       }
-                      if (isAnyEditing) {
-                          // Two jobs here:
-                          //   1. preventDefault swallows the focus
-                          //      shift so the formula input doesn't
-                          //      blur (which would commit the half-
-                          //      typed formula).
-                          //   2. Try to start a ref-drag. If the
-                          //      cursor is in a ref-acceptable spot
-                          //      (e.g. just typed "=SUM("), this
-                          //      inserts the anchor address and
-                          //      installs pointer listeners so a
-                          //      subsequent drag stretches it into a
-                          //      range. If the cursor isn't ref-
-                          //      acceptable, webRefDragStart no-ops
-                          //      and a pure click still falls through
-                          //      to onPress → cellRefTap.
-                          e.preventDefault()
-                          const clientX = typeof e.clientX === 'number' ? e.clientX : 0
-                          const clientY = typeof e.clientY === 'number' ? e.clientY : 0
-                          const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
-                              left: 0,
-                              top: 0,
-                          }
-                          webRefDragStart(clientX, clientY, {
-                              left: rect.left,
-                              top: rect.top,
-                          })
-                          return
-                      }
-                      // Plain drag-select. The first pointermove past
-                      // the threshold turns this into an actual range-
-                      // extend; pure clicks fall through to onPress
-                      // (single-cell select).
-                      const clientX = typeof e.clientX === 'number' ? e.clientX : 0
-                      const clientY = typeof e.clientY === 'number' ? e.clientY : 0
-                      const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
-                          left: 0,
-                          top: 0,
-                      }
-                      webDragStart(clientX, clientY, { left: rect.left, top: rect.top })
                   },
               }
             : null
@@ -659,7 +443,7 @@ export const Cell = memo(function Cell({
             {...((webContextMenuProp ?? {}) as any)}
             // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
             {...((webMouseDownProp ?? {}) as any)}
-            {...panHandlers}
+            {...drag.handlers}
         >
             <Text className="text-xs" numberOfLines={renderStyle.numberOfLines} style={textStyle}>
                 {showRemoteDraft ? remoteDraft : display}
