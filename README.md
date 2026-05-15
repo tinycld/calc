@@ -26,6 +26,35 @@ identity, the drive share rules govern who can open the room, and the xlsx
 blob attached to the drive_item is the source of truth that survives across
 sessions.
 
+## Platform support
+
+| Feature                              | Web | iPad |
+|--------------------------------------|-----|------|
+| Open / view spreadsheets             | ✅  | ✅   |
+| Edit cells (tap, soft keyboard)      | ✅  | ✅   |
+| Drag-select a range                  | ✅  | ✅   |
+| Extend selection                     | shift+click / shift+arrow | drag corner handles |
+| Fill handle (drag corner to autofill)| ✅  | ✅   |
+| Context menus                        | right-click | long-press |
+| Keyboard shortcuts                   | ✅  | external keyboard only |
+| Soft-keyboard accessory (Tab/Enter/Esc/▲/▼/fx) | n/a | ✅ |
+| CSV export                           | browser download | iOS share sheet |
+| Print                                | browser print | iOS print sheet |
+| Realtime collaboration               | ✅  | ✅   |
+| Find/replace                         | ✅  | ✅   |
+| Sort / filter                        | ✅  | ✅   |
+| Conditional formatting               | ✅  | ✅   |
+| Pivot tables                         | ✅  | ✅   |
+| Disjoint selection (Ctrl-click)      | ✅  | n/a (no modifier key) |
+| Live shift toggle mid-fill-drag      | ✅  | n/a (no modifier key) |
+| Marching-ants cut animation          | ✅  | static dashed border |
+
+iPhone (small screens) is not supported yet. Android has no testing surface
+today; iOS-specific code paths use `Platform.OS === 'ios'` rather than
+`Platform.OS !== 'web'` where the behavior is iOS-only (e.g. `InputAccessoryView`).
+
+For manual iPad release-gating, see `tinycld/calc/tests/manual/ipad-smoke.md`.
+
 ## Menus
 
 A Sheets-style menubar sits above the toolbar:
