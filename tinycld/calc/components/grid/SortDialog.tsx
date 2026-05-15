@@ -179,6 +179,7 @@ export function SortDialog({ doc, sheetId }: SortDialogProps) {
                     accessibilityLabel="Data has header row"
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: hasHeader }}
+                    hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                     className="flex-row items-center"
                     style={{ gap: 8 }}
                 >
@@ -241,6 +242,7 @@ function RadioOption({ label, accessibilityLabel, active, onPress }: RadioOption
             accessibilityLabel={accessibilityLabel}
             accessibilityRole="radio"
             accessibilityState={{ selected: active }}
+            hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
             className={`px-3 py-2 rounded border ${active ? 'bg-accent border-accent' : 'border-border'}`}
         >
             <Text
