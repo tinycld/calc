@@ -206,6 +206,7 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
                             onPress={onClose}
                             accessibilityLabel="Close"
                             accessibilityRole="button"
+                            hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                             style={{
                                 width: 22,
                                 height: 22,
@@ -274,6 +275,7 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
                                             onPress={() => onRemoveValue(idx)}
                                             accessibilityLabel={`Remove value ${idx + 1}`}
                                             accessibilityRole="button"
+                                            hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                                             style={{
                                                 width: 24,
                                                 height: 24,
@@ -291,6 +293,7 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
                                 onPress={onAddValue}
                                 accessibilityLabel="Add value"
                                 accessibilityRole="button"
+                                hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                                 className="flex-row items-center rounded border border-border self-start"
                                 style={{ gap: 4, paddingHorizontal: 8, paddingVertical: 4 }}
                             >
