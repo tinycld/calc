@@ -17,7 +17,7 @@ import {
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Plus, Trash2, X } from 'lucide-react-native'
 import { useMemo, useRef } from 'react'
-import { Pressable, Text, View } from 'react-native'
+import { Platform, Pressable, Text, View } from 'react-native'
 import type * as Y from 'yjs'
 import { useSheetConditionalFormats } from '../../hooks/use-sheet-conditional-formats'
 import {
@@ -171,6 +171,7 @@ function RuleList({ rules, readOnly, onAdd, onEdit, onDelete }: RuleListProps) {
                 onPress={onAdd}
                 disabled={readOnly}
                 accessibilityLabel="Add rule"
+                hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
             >
                 <Plus size={14} color={trashColor} />
                 <Text className="text-sm text-foreground">Add another rule</Text>
