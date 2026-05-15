@@ -26,6 +26,29 @@ export function KeyboardShortcutsDialog() {
     const grouped = useMemo(() => groupShortcuts(getCalcShortcutDocs()), [])
 
     if (!isOpen) return null
+    if (Platform.OS !== 'web') {
+        return (
+            <Modal
+                visible
+                transparent
+                animationType="fade"
+                onRequestClose={close}
+                accessibilityLabel="Keyboard shortcuts"
+            >
+                <Pressable
+                    className="flex-1 items-center justify-center bg-black/50"
+                    onPress={close}
+                >
+                    <View className="bg-background rounded-lg border border-border p-6 max-w-[80%]">
+                        <Text className="text-base text-foreground text-center">
+                            Keyboard shortcuts are a web feature. Use the toolbar and
+                            long-press menus on iPad.
+                        </Text>
+                    </View>
+                </Pressable>
+            </Modal>
+        )
+    }
     return (
         <Modal
             visible

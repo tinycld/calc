@@ -1,5 +1,5 @@
 import { Menu } from '@tinycld/core/ui/menu'
-import { Linking } from 'react-native'
+import { Linking, Platform } from 'react-native'
 import type { MenuBarProps } from './MenuBar'
 import { MenuBarMenu } from './MenuBarMenu'
 import { MenuShortcut } from './MenuShortcut'
@@ -19,10 +19,12 @@ export function HelpMenu(props: MenuBarProps) {
             <Menu.Item onPress={props.onOpenFunctionList}>
                 <Menu.ItemTitle>Function list</Menu.ItemTitle>
             </Menu.Item>
-            <Menu.Item onPress={props.onOpenKeyboardShortcuts}>
-                <Menu.ItemTitle>Keyboard shortcuts</Menu.ItemTitle>
-                <MenuShortcut keys="⌘/" />
-            </Menu.Item>
+            {Platform.OS === 'web' && (
+                <Menu.Item onPress={props.onOpenKeyboardShortcuts}>
+                    <Menu.ItemTitle>Keyboard shortcuts</Menu.ItemTitle>
+                    <MenuShortcut keys="⌘/" />
+                </Menu.Item>
+            )}
         </MenuBarMenu>
     )
 }
