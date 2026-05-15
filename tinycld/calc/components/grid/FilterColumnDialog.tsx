@@ -121,7 +121,6 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
     // immediately close it.
     useEffect(() => {
         if (Platform.OS !== 'web') return
-        if (typeof document === 'undefined') return
         let detach: (() => void) | null = null
         const t = setTimeout(() => {
             const handler = (event: PointerEvent) => {
