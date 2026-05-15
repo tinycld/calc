@@ -90,6 +90,7 @@ export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
                             mode === 'find' ? 'Switch to Replace' : 'Switch to Find'
                         }
                         onPress={toggleMode}
+                        hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                         className="rounded px-1"
                     >
                         <Text style={{ color: muted, fontSize: 11 }}>
@@ -100,6 +101,7 @@ export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
                         accessibilityRole="button"
                         accessibilityLabel="Close find"
                         onPress={actions.close}
+                        hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                         className="rounded items-center justify-center"
                         style={{ width: 20, height: 20 }}
                     >
@@ -152,6 +154,7 @@ export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
                         accessibilityRole="button"
                         accessibilityLabel="Previous match"
                         onPress={actions.prevMatch}
+                        hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                         className="rounded border border-border items-center justify-center"
                         style={{ width: 24, height: 22 }}
                     >
@@ -161,6 +164,7 @@ export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
                         accessibilityRole="button"
                         accessibilityLabel="Next match"
                         onPress={actions.nextMatch}
+                        hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                         className="rounded border border-border items-center justify-center"
                         style={{ width: 24, height: 22 }}
                     >
@@ -172,6 +176,7 @@ export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
                                 accessibilityRole="button"
                                 accessibilityLabel="Replace"
                                 onPress={actions.replaceCurrent}
+                                hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                                 className="rounded border border-border px-2 items-center justify-center"
                                 style={{ height: 22 }}
                             >
@@ -181,6 +186,7 @@ export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
                                 accessibilityRole="button"
                                 accessibilityLabel="Replace all"
                                 onPress={actions.replaceAll}
+                                hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
                                 className="rounded border border-border px-2 items-center justify-center"
                                 style={{ height: 22 }}
                             >
@@ -232,6 +238,7 @@ function OptionToggle({ label, value, onChange }: OptionToggleProps) {
             accessibilityLabel={label}
             accessibilityState={{ checked: value }}
             onPress={() => onChange(!value)}
+            hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
             className={`rounded border border-border px-2 ${value ? 'bg-accent' : ''}`}
             style={{ height: 20, justifyContent: 'center' }}
         >
