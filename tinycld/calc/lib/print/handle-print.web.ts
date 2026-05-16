@@ -92,11 +92,16 @@ export async function handlePrint(html: string): Promise<void> {
         }
         const onAfterPrint = () => cleanup()
         window.addEventListener('afterprint', onAfterPrint)
-        // Safety net: if `afterprint` never fires (some headless or
-        // automation contexts) we still clean up. `print()` is
-        // synchronous in Chromium, so by the time this timer would
-        // run the dialog has already been dismissed.
-        const fallbackTimer = window.setTimeout(cleanup, 500)
+        // Long-tail leak guard for environments where `afterprint`
+        // never fires (some headless or automation contexts). It
+        // must NOT race the real print flow: in Firefox and in
+        // Chrome's PDF-preview pane, `window.print()` returns
+        // immediately while the preview stays open, and tearing
+        // down `printRoot` mid-preview prints the hidden app UI as
+        // a blank page. Keeping this generous (5 min) means real
+        // users always hit the `afterprint` path; only abandoned
+        // headless contexts hit the timer.
+        const fallbackTimer = window.setTimeout(cleanup, 5 * 60 * 1000)
 
         try {
             window.print()
