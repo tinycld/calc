@@ -1,5 +1,6 @@
 import * as Y from 'yjs'
 import { CONDITIONAL_FORMATS_KEY } from './conditional-format/y-binding'
+import { PIVOT_SHEET_KEY } from './pivot/keys'
 import { writePivot } from './pivot/y-binding'
 import type {
     CellKind,
@@ -46,17 +47,10 @@ export const CELLS_MAP = 'cells'
 // is significant — see CellStyle in workbook-types.ts.
 export const STYLE_KEY = 'style'
 
-// PIVOTS_MAP is the top-level Y.Map name holding pivot definitions,
-// keyed by PivotDefinition.id. Each value is a Y.Map mirroring the
-// PivotDefinition shape (scalars as keys; rows/cols/values/filters as
-// Y.Arrays of Y.Maps; filterSelections as a nested Y.Map of Y.Arrays).
-export const PIVOTS_MAP = 'pivots'
-
-// PIVOT_SHEET_KEY is the per-sheet meta key that, when set, marks
-// the sheet as a pivot's dedicated output sheet. Value is the
-// PivotDefinition.id this sheet belongs to. Grid.tsx branches on
-// this to render engine output instead of the cells Y.Map.
-export const PIVOT_SHEET_KEY = 'pivotId'
+// PIVOTS_MAP / PIVOT_SHEET_KEY are defined in ./pivot/keys.ts to keep
+// y-binding.ts (which depends on them) and this module from forming a
+// require cycle. Re-exported here so existing call sites keep working.
+export { PIVOTS_MAP, PIVOT_SHEET_KEY } from './pivot/keys'
 
 export interface YSheetMeta {
     name: string

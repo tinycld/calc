@@ -12,7 +12,7 @@ import type {
     PivotField,
     PivotValueField,
 } from '../workbook-types'
-import { PIVOTS_MAP } from '../y-doc-bootstrap'
+import { PIVOTS_MAP } from './keys'
 
 export function readPivotIds(doc: Y.Doc): string[] {
     const map = doc.getMap<Y.Map<unknown>>(PIVOTS_MAP)
