@@ -23,6 +23,7 @@ export interface MenuBarProps extends ToolbarProps {
     onOpenConditionalFormatting: () => void
     allSheets: ReadonlyArray<{ id: string; name: string; hidden?: boolean }>
     onShowSheet: (sheetId: string) => void
+    onShowComments: () => void
 }
 
 export function MenuBar(props: MenuBarProps) {

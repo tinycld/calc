@@ -47,6 +47,7 @@ import { KeyboardAccessoryHost } from './KeyboardAccessoryHost'
 import { MenuBar } from './menubar/MenuBar'
 import { PivotGrid } from './pivot/PivotGrid'
 import { PrintDialog } from './PrintDialog'
+import { CalcCommentDrawer } from './comments/CalcCommentDrawer'
 import { Body } from './grid/Body'
 import { CellContextMenu } from './grid/CellContextMenu'
 import { ColumnHeader } from './grid/ColumnHeader'
@@ -91,6 +92,9 @@ interface GridProps {
     // Used by the pivot-insert flow to jump to the freshly-created
     // pivot output sheet.
     onActivateSheet: (sheetId: string) => void
+    // Opens the screen-level CommentDrawer. The screen mounts the
+    // drawer itself; Grid only fires the toggle from the View menu.
+    onShowComments: () => void
 }
 
 // Top-level Grid component. Builds the per-instance Zustand store
@@ -114,6 +118,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
         workbookName,
         fileActions,
         onActivateSheet,
+        onShowComments,
     },
     ref
 ) {
@@ -158,6 +163,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(
                         workbookName={workbookName}
                         fileActions={fileActions}
                         onActivateSheet={onActivateSheet}
+                        onShowComments={onShowComments}
                     />
                 </PrintDialogProvider>
             </FindStoreProvider>
@@ -177,6 +183,7 @@ interface GridInnerProps {
     workbookName: string
     fileActions: WorkbookFileActions
     onActivateSheet: (sheetId: string) => void
+    onShowComments: () => void
 }
 
 function GridInner({
@@ -191,6 +198,7 @@ function GridInner({
     workbookName,
     fileActions,
     onActivateSheet,
+    onShowComments,
 }: GridInnerProps) {
     const { doc, awareness } = useWorkbook()
     const sheets = useYSheets(doc)
@@ -445,6 +453,7 @@ function GridInner({
                 onOpenConditionalFormatting={onOpenConditionalFormatting}
                 allSheets={allSheets}
                 onShowSheet={id => sheetActions.showSheet(id)}
+                onShowComments={onShowComments}
             />
             <Toolbar {...toolbarPropsBundle} />
             <SortStatusBanner />
@@ -519,6 +528,12 @@ function GridInner({
             </View>
             <CellContextMenu doc={doc} sheetId={sheetId} />
             <CommentPopover driveItemId={driveItemId} sheetId={sheetId} />
+            <CalcCommentDrawer
+                driveItemId={driveItemId}
+                sheets={allSheets}
+                activeSheetId={sheetId}
+                onActivateSheet={onActivateSheet}
+            />
             <SortDialog doc={doc} sheetId={sheetId} />
             <PrintDialog
                 isOpen={printDialog.isOpen}

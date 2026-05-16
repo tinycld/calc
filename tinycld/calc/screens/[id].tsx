@@ -1,11 +1,13 @@
 import { eq } from '@tanstack/db'
+import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
+import { useCommentsDrawerStore } from '@tinycld/core/lib/stores/comments-drawer-store'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
+import { CopyToFolderDialog } from '@tinycld/drive/components/CopyToFolderDialog'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useRef } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import type * as Y from 'yjs'
-import { CopyToFolderDialog } from '../components/dialogs/CopyToFolderDialog'
 import { FunctionListDialog } from '../components/dialogs/FunctionListDialog'
 import { KeyboardShortcutsDialog } from '../components/dialogs/KeyboardShortcutsDialog'
 import { Grid } from '../components/Grid'
@@ -75,6 +77,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     const allSheets = useAllYSheets(doc)
     const comments = useCellComments(workbookId)
     const fileActions = useWorkbookFileActions(workbookId)
+    const orgHref = useOrgHref()
     usePendingCsvImport(doc, workbookId, sheets.length > 0)
 
     // Resolve the active sheet from the URL query, falling back to the
@@ -99,6 +102,18 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
         },
         []
     )
+
+    const openCommentsDrawer = useCommentsDrawerStore(s => s.open)
+    const resetCommentsDrawer = useCommentsDrawerStore(s => s.reset)
+    const onShowComments = useCallback(
+        () => openCommentsDrawer({ packageSlug: 'calc', driveItemId: workbookId }),
+        [openCommentsDrawer, workbookId]
+    )
+    // The drawer is a singleton store; clear it when the workbook id
+    // changes so threads from a prior doc can't flash for the new one.
+    useEffect(() => {
+        return () => resetCommentsDrawer()
+    }, [resetCommentsDrawer, workbookId])
 
     if (activeSheet == null) {
         return <CenteredMessage label="Spreadsheet is empty." />
@@ -126,6 +141,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                     workbookName={itemName}
                     fileActions={fileActions}
                     onActivateSheet={onSelect}
+                    onShowComments={onShowComments}
                 />
                 <SheetTabs
                     doc={doc}
@@ -135,7 +151,12 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                 />
                 <FunctionListDialog />
                 <KeyboardShortcutsDialog />
-                <CopyToFolderDialog workbookId={workbookId} />
+                <CopyToFolderDialog
+                    itemId={workbookId}
+                    onCopied={newItemId =>
+                        router.replace(orgHref('calc/[id]', { id: newItemId }))
+                    }
+                />
             </View>
         </CommentsProvider>
     )

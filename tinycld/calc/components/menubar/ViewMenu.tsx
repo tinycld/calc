@@ -55,6 +55,9 @@ export function ViewMenu(props: MenuBarProps) {
                     </Menu.Item>
                 </Menu.SubContent>
             </Menu.Sub>
+            <Menu.Item onPress={props.onShowComments}>
+                <Menu.ItemTitle>Show comments</Menu.ItemTitle>
+            </Menu.Item>
             <Menu.Sub>
                 <Menu.SubTrigger>
                     <Menu.ItemTitle>Hidden sheets</Menu.ItemTitle>
