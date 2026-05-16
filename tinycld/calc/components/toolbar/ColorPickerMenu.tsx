@@ -1,10 +1,9 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Menu } from '@tinycld/core/ui/menu'
+import { Menu, useOpenMenu } from '@tinycld/core/ui/menubar'
 import { Ban } from 'lucide-react-native'
 import type { ComponentType, ReactNode } from 'react'
 import { useCallback } from 'react'
 import { Platform, Pressable, Text, View } from 'react-native'
-import { useOpenMenu } from '../../lib/stores/open-menu-store'
 import { ToolbarButton } from './ToolbarButton'
 
 // Compact 10-swatch palette retained for the borders sub-picker, which
@@ -168,7 +167,7 @@ export function ColorPickerMenu({
 
     return (
         <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <View {...(typeof document !== 'undefined' ? { 'data-calc-menu': 'trigger' } : {})}>
+            <View {...(typeof document !== 'undefined' ? { 'data-tinycld-menu': 'trigger' } : {})}>
                 <Menu.Trigger>
                     <ToolbarButton label={label} disabled={disabled}>
                         <View className="items-center justify-center">
@@ -183,7 +182,7 @@ export function ColorPickerMenu({
                     <View
                         style={{ width: GRID_WIDTH, padding: GRID_PADDING, gap: 6 }}
                         {...(typeof document !== 'undefined'
-                            ? { 'data-calc-menu': 'content' }
+                            ? { 'data-tinycld-menu': 'content' }
                             : {})}
                     >
                         <Pressable

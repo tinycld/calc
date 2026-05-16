@@ -1,11 +1,10 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Menu } from '@tinycld/core/ui/menu'
+import { Menu, useOpenMenu } from '@tinycld/core/ui/menubar'
 import { AlignCenter, AlignLeft, AlignRight, ChevronDown } from 'lucide-react-native'
 import type { ComponentType } from 'react'
 import { useCallback } from 'react'
 import { Platform, Pressable, View } from 'react-native'
 import type { HorizontalAlign } from '../../hooks/grid/use-grid-format-controls'
-import { useOpenMenu } from '../../lib/stores/open-menu-store'
 import { ToolbarButton } from './ToolbarButton'
 
 const ALIGN_OPTIONS: ReadonlyArray<{
@@ -46,7 +45,7 @@ export function HorizontalAlignMenu({ align, disabled, onSetAlign }: HorizontalA
 
     return (
         <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <View {...(typeof document !== 'undefined' ? { 'data-calc-menu': 'trigger' } : {})}>
+            <View {...(typeof document !== 'undefined' ? { 'data-tinycld-menu': 'trigger' } : {})}>
                 <Menu.Trigger>
                     <ToolbarButton label="Horizontal align" disabled={disabled} width={36}>
                         <View className="flex-row items-center" style={{ gap: 2 }}>
@@ -62,7 +61,7 @@ export function HorizontalAlignMenu({ align, disabled, onSetAlign }: HorizontalA
                         className="flex-row items-center"
                         style={{ padding: 4, gap: 2 }}
                         {...(typeof document !== 'undefined'
-                            ? { 'data-calc-menu': 'content' }
+                            ? { 'data-tinycld-menu': 'content' }
                             : {})}
                     >
                         {ALIGN_OPTIONS.map(option => {

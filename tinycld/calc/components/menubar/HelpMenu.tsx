@@ -1,8 +1,6 @@
-import { Menu } from '@tinycld/core/ui/menu'
+import { Menu, MenuBarMenu, MenuShortcut } from '@tinycld/core/ui/menubar'
 import { Linking, Platform } from 'react-native'
 import type { MenuBarProps } from './MenuBar'
-import { MenuBarMenu } from './MenuBarMenu'
-import { MenuShortcut } from './MenuShortcut'
 
 const DOCS_URL = 'https://tinycld.org/docs'
 

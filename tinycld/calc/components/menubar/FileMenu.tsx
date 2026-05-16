@@ -1,9 +1,7 @@
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
-import { Menu, Separator } from '@tinycld/core/ui/menu'
+import { Menu, MenuBarMenu, MenuShortcut, Separator } from '@tinycld/core/ui/menubar'
 import { router } from 'expo-router'
 import type { MenuBarProps } from './MenuBar'
-import { MenuBarMenu } from './MenuBarMenu'
-import { MenuShortcut } from './MenuShortcut'
 
 export function FileMenu(props: MenuBarProps) {
     const orgHref = useOrgHref()

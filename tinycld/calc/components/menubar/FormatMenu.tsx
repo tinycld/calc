@@ -1,11 +1,9 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Menu, Separator } from '@tinycld/core/ui/menu'
+import { Menu, MenuBarMenu, MenuShortcut, Separator } from '@tinycld/core/ui/menubar'
 import { Check } from 'lucide-react-native'
 import { View } from 'react-native'
 import { numberFormatPresets } from '../toolbar/NumberFormatMenu'
 import type { MenuBarProps } from './MenuBar'
-import { MenuBarMenu } from './MenuBarMenu'
-import { MenuShortcut } from './MenuShortcut'
 
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 18, 24, 36]
 

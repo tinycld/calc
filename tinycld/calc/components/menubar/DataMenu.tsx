@@ -1,6 +1,5 @@
-import { Menu } from '@tinycld/core/ui/menu'
+import { Menu, MenuBarMenu } from '@tinycld/core/ui/menubar'
 import type { MenuBarProps } from './MenuBar'
-import { MenuBarMenu } from './MenuBarMenu'
 
 export function DataMenu(props: MenuBarProps) {
     return (

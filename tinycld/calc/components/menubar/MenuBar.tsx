@@ -1,6 +1,5 @@
-import { View } from 'react-native'
+import { MenuBar as CoreMenuBar } from '@tinycld/core/ui/menubar'
 import type { WorkbookFileActions } from '../../hooks/use-workbook-file-actions'
-import { useOpenMenuOutsideClick } from '../../hooks/use-open-menu-outside-click'
 import type { ToolbarProps } from '../Toolbar'
 import { DataMenu } from './DataMenu'
 import { EditMenu } from './EditMenu'
@@ -27,24 +26,14 @@ export interface MenuBarProps extends ToolbarProps {
 }
 
 export function MenuBar(props: MenuBarProps) {
-    // Single document-level mousedown handler that closes any open
-    // calc dropdown menu (menubar OR toolbar) when the click lands
-    // outside a marked menu subtree. Mounted here because MenuBar is
-    // always rendered alongside Toolbar in Grid.
-    useOpenMenuOutsideClick()
-
     return (
-        <View
-            className="flex-row items-center bg-background border-b border-border"
-            style={{ height: 28, paddingHorizontal: 4 }}
-            {...(typeof document !== 'undefined' ? { 'data-calc-menu': 'row' } : {})}
-        >
+        <CoreMenuBar>
             <FileMenu {...props} />
             <EditMenu {...props} />
             <ViewMenu {...props} />
             <FormatMenu {...props} />
             <DataMenu {...props} />
             <HelpMenu {...props} />
-        </View>
+        </CoreMenuBar>
     )
 }

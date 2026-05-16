@@ -1,12 +1,11 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Menu } from '@tinycld/core/ui/menu'
+import { Menu, useOpenMenu } from '@tinycld/core/ui/menubar'
 import { Grid3x3 } from 'lucide-react-native'
 
 import { useCallback } from 'react'
 import { Platform, Pressable, Text, View } from 'react-native'
 import { useBordersPickerStore } from '../../hooks/use-borders-picker-store'
 import type { BorderPresetId } from '../../lib/border-presets'
-import { useOpenMenu } from '../../lib/stores/open-menu-store'
 import type { CellBorderEdge, CellBorderLineStyle, CellBorders } from '../../lib/workbook-types'
 import {
     BorderAlllIcon,
@@ -86,7 +85,7 @@ export function BordersMenu({ borders, disabled, onSetBorders }: BordersMenuProp
 
     return (
         <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <View {...(typeof document !== 'undefined' ? { 'data-calc-menu': 'trigger' } : {})}>
+            <View {...(typeof document !== 'undefined' ? { 'data-tinycld-menu': 'trigger' } : {})}>
                 <Menu.Trigger>
                     <ToolbarButton label="Borders" icon={Grid3x3} disabled={disabled} />
                 </Menu.Trigger>
@@ -97,7 +96,7 @@ export function BordersMenu({ borders, disabled, onSetBorders }: BordersMenuProp
                         className="flex-row"
                         style={{ padding: 8, gap: 8 }}
                         {...(typeof document !== 'undefined'
-                            ? { 'data-calc-menu': 'content' }
+                            ? { 'data-tinycld-menu': 'content' }
                             : {})}
                     >
                         <View style={{ width: 5 * 28, gap: 2 }}>

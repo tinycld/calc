@@ -1,7 +1,5 @@
-import { Menu, Separator } from '@tinycld/core/ui/menu'
+import { Menu, MenuBarMenu, MenuShortcut, Separator } from '@tinycld/core/ui/menubar'
 import type { MenuBarProps } from './MenuBar'
-import { MenuBarMenu } from './MenuBarMenu'
-import { MenuShortcut } from './MenuShortcut'
 
 export function EditMenu(props: MenuBarProps) {
     return (

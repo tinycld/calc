@@ -1,6 +1,5 @@
-import { Menu, Separator } from '@tinycld/core/ui/menu'
+import { Menu, MenuBarMenu, Separator } from '@tinycld/core/ui/menubar'
 import type { MenuBarProps } from './MenuBar'
-import { MenuBarMenu } from './MenuBarMenu'
 
 export function ViewMenu(props: MenuBarProps) {
     const hiddenSheets = props.allSheets.filter(s => s.hidden)

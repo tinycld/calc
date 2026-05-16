@@ -1,10 +1,9 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Menu, Separator } from '@tinycld/core/ui/menu'
+import { Menu, Separator, useOpenMenu } from '@tinycld/core/ui/menubar'
 import { Check, ChevronDown } from 'lucide-react-native'
 import { Fragment, useCallback } from 'react'
 import { Text, View } from 'react-native'
 import { findPresetByNumFmt, NUMBER_FORMAT_PRESETS } from '../../lib/number-format/presets'
-import { useOpenMenu } from '../../lib/stores/open-menu-store'
 import { ToolbarButton } from './ToolbarButton'
 
 // Re-exported so the Format menubar can render the same preset list
@@ -42,7 +41,7 @@ export function NumberFormatMenu({
         <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
             <View
                 {...(typeof document !== 'undefined'
-                    ? { 'data-calc-menu': 'trigger' }
+                    ? { 'data-tinycld-menu': 'trigger' }
                     : {})}
             >
                 <Menu.Trigger>
@@ -58,7 +57,7 @@ export function NumberFormatMenu({
                 <Menu.Content placement="bottom" align="start">
                     <View
                         {...(typeof document !== 'undefined'
-                            ? { 'data-calc-menu': 'content' }
+                            ? { 'data-tinycld-menu': 'content' }
                             : {})}
                     >
                         {NUMBER_FORMAT_PRESETS.map((preset, index) => {
