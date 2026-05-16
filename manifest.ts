@@ -6,7 +6,7 @@ const manifest = {
     routes: { directory: 'screens' },
     nav: {
         label: 'Calc',
-        icon: 'file-spreadsheet',
+        icon: 'table',
         order: 20,
         shortcut: 's',
     },
