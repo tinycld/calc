@@ -11,6 +11,7 @@ const manifest = {
         shortcut: 's',
     },
     provider: { component: 'provider' },
+    help: { directory: 'help' },
     migrations: { directory: 'pb-migrations' },
     collections: { register: 'collections', types: 'types' },
     seed: { script: 'seed' },
