@@ -3,7 +3,6 @@ import type { FormulaSpecialKey } from './FormulaBar'
 interface KeyboardAccessoryHostProps {
     onSpecialKey: (key: FormulaSpecialKey) => boolean
     onCancel: () => void
-    onOpenFunctionList: () => void
 }
 
 // Web + Android fallback. InputAccessoryView is iOS-only and isn't

@@ -19,7 +19,6 @@ export interface MenuBarProps extends ToolbarProps {
     onPasteValues: () => void
     onPasteFormat: () => void
     onOpenFindReplace: () => void
-    onOpenFunctionList: () => void
     onOpenConditionalFormatting: () => void
     allSheets: ReadonlyArray<{ id: string; name: string; hidden?: boolean }>
     onShowSheet: (sheetId: string) => void
@@ -34,7 +33,7 @@ export function MenuBar(props: MenuBarProps) {
             <ViewMenu {...props} />
             <FormatMenu {...props} />
             <DataMenu {...props} />
-            <HelpMenu {...props} />
+            <HelpMenu />
         </CoreMenuBar>
     )
 }

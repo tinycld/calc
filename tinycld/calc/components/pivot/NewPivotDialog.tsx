@@ -23,12 +23,9 @@ export interface NewPivotDialogProps {
 // stays a pure form/UI shell.
 //
 // React Native's <Modal> is used (not the gluestack overlay primitive)
-// to match the existing FunctionListDialog pattern in calc — both are
-// simple, RN-only modals and we keep the surface consistent so the
-// dialog handling stays predictable. The
-// caller controls visibility; the dialog re-syncs its form defaults
-// whenever it becomes visible so re-opening always lands on the most
-// recent selection.
+// since this is a simple RN-only modal. The caller controls visibility;
+// the dialog re-syncs its form defaults whenever it becomes visible so
+// re-opening always lands on the most recent selection.
 export function NewPivotDialog({
     visible,
     defaultSourceRange,

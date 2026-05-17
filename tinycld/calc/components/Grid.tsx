@@ -22,7 +22,6 @@ import { useClearFormatting } from '../hooks/use-clear-formatting'
 import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
-import { useMenuDialogsStore } from '../hooks/use-menu-dialogs-store'
 import { usePivotForSheet } from '../hooks/use-pivot-for-sheet'
 import { useReactiveFilter } from '../hooks/use-reactive-filter'
 import { createPrintDialogStore, PrintDialogProvider } from '../hooks/use-print-dialog'
@@ -347,7 +346,6 @@ function GridInner({
     const sheetActions = useSheetActions(doc)
 
     const allSheets = useAllYSheets(doc)
-    const openFunctionList = useMenuDialogsStore(s => s.openFunctionList)
 
     // Opens the conditional-formatting drawer, seeded with the
     // current selection as the default range for a new rule. The
@@ -448,7 +446,6 @@ function GridInner({
                 onPasteValues={() => void clipboard.paste('values')}
                 onPasteFormat={() => void clipboard.paste('format')}
                 onOpenFindReplace={onOpenFind}
-                onOpenFunctionList={openFunctionList}
                 onOpenConditionalFormatting={onOpenConditionalFormatting}
                 allSheets={allSheets}
                 onShowSheet={id => sheetActions.showSheet(id)}
@@ -568,7 +565,6 @@ function GridInner({
             <KeyboardAccessoryHost
                 onSpecialKey={suggestions.onSpecialKey}
                 onCancel={formulaBar.onCancel}
-                onOpenFunctionList={openFunctionList}
             />
 
         </View>

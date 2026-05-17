@@ -1,10 +1,10 @@
+import { openHelp } from '@tinycld/core/lib/help/open-help'
 import { Pressable, Text, View } from 'react-native'
 import type { FormulaSpecialKey } from './FormulaBar'
 
 interface FormulaBarKeyboardAccessoryProps {
     onSpecialKey: (key: FormulaSpecialKey) => boolean
     onCancel: () => void
-    onOpenFunctionList: () => void
 }
 
 // iOS keyboard accessory bar shown while any calc TextInput
@@ -15,7 +15,6 @@ interface FormulaBarKeyboardAccessoryProps {
 export function FormulaBarKeyboardAccessory({
     onSpecialKey,
     onCancel,
-    onOpenFunctionList,
 }: FormulaBarKeyboardAccessoryProps) {
     return (
         <View className="flex-row items-center justify-around border-t border-border bg-surface-secondary px-2 py-2">
@@ -24,7 +23,7 @@ export function FormulaBarKeyboardAccessory({
             <AccessoryButton label="▼" onPress={() => onSpecialKey('ArrowDown')} />
             <AccessoryButton label="Tab" onPress={() => onSpecialKey('Tab')} />
             <AccessoryButton label="Enter" onPress={() => onSpecialKey('Enter')} />
-            <AccessoryButton label="fx" onPress={onOpenFunctionList} />
+            <AccessoryButton label="fx" onPress={() => openHelp('calc:functions')} />
         </View>
     )
 }

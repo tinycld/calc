@@ -32,7 +32,7 @@ The strip above the grid shows the active cell. It always displays the underlyin
 
 ## Finding a function
 
-Open **Help → Function list** to browse every available function with descriptions. Use the search box to filter by name. Calc supports the standard set you'd expect from a spreadsheet — math, statistics, lookup, text, date, logical, financial.
+Open **Help → Function list** to see the full [function reference](help://calc:functions) — every built-in function grouped by category, with a one-line description and syntax for each. Use **⌘F** within the page to jump to a specific name, or open the global help search with **⌘/** and type the function name. Calc supports the standard set you'd expect from a spreadsheet — math, statistics, lookup, text, date, logical, financial.
 
 ## What happens when rows or columns move
 
