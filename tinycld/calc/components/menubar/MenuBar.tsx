@@ -9,6 +9,7 @@ import { HelpMenu } from './HelpMenu'
 import { ViewMenu } from './ViewMenu'
 
 export interface MenuBarProps extends ToolbarProps {
+    workbookId: string
     workbookName: string
     fileActions: WorkbookFileActions
     onClearFormatting: () => void

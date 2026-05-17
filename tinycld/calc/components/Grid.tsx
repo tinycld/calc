@@ -438,6 +438,7 @@ function GridInner({
         <View className="flex-1 bg-background web:select-none">
             <MenuBar
                 {...toolbarPropsBundle}
+                workbookId={driveItemId}
                 workbookName={workbookName}
                 fileActions={fileActions}
                 onClearFormatting={onClearFormatting}
