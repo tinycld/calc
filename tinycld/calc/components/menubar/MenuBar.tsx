@@ -19,7 +19,6 @@ export interface MenuBarProps extends ToolbarProps {
     onPasteFormat: () => void
     onOpenFindReplace: () => void
     onOpenFunctionList: () => void
-    onOpenKeyboardShortcuts: () => void
     onOpenConditionalFormatting: () => void
     allSheets: ReadonlyArray<{ id: string; name: string; hidden?: boolean }>
     onShowSheet: (sheetId: string) => void

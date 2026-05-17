@@ -375,7 +375,7 @@ tinycld/calc/
             MenuBar.tsx, MenuBarTrigger.tsx, MenuShortcut.tsx,
             FileMenu, EditMenu, ViewMenu, FormatMenu, DataMenu, HelpMenu
         dialogs/
-            FunctionListDialog.tsx, KeyboardShortcutsDialog.tsx
+            FunctionListDialog.tsx
     hooks/
         use-realtime.ts            calc-flavored useRealtimeRoom
         use-workbook-context.tsx   provider with doc + awareness

@@ -348,7 +348,6 @@ function GridInner({
 
     const allSheets = useAllYSheets(doc)
     const openFunctionList = useMenuDialogsStore(s => s.openFunctionList)
-    const openKeyboardShortcuts = useMenuDialogsStore(s => s.openKeyboardShortcuts)
 
     // Opens the conditional-formatting drawer, seeded with the
     // current selection as the default range for a new rule. The
@@ -449,7 +448,6 @@ function GridInner({
                 onPasteFormat={() => void clipboard.paste('format')}
                 onOpenFindReplace={onOpenFind}
                 onOpenFunctionList={openFunctionList}
-                onOpenKeyboardShortcuts={openKeyboardShortcuts}
                 onOpenConditionalFormatting={onOpenConditionalFormatting}
                 allSheets={allSheets}
                 onShowSheet={id => sheetActions.showSheet(id)}
