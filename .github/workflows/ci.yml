@@ -9,6 +9,12 @@ on:
 env:
   APP_REPO: tinycld/tinycld
   APP_REF: main
+  # @tinycld/drive owns the comment_mentions migration that core's
+  # notify hook + TS store reference. Without drive linked, the schema
+  # regen below produces a pbSchema.ts missing comment_mentions and
+  # core's typecheck fails on its own store registration.
+  DRIVE_REPO: tinycld/drive
+  DRIVE_REF: main
 
 jobs:
   checks:
@@ -17,41 +23,47 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          path: sheets
+          path: calc
       - uses: actions/checkout@v5
         with:
           repository: ${{ env.APP_REPO }}
           ref: ${{ env.APP_REF }}
           path: tinycld
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
         with:
-          version: 11.1.1
+          repository: ${{ env.DRIVE_REPO }}
+          ref: ${{ env.DRIVE_REF }}
+          path: drive
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: tinycld/.node-version
+          cache: npm
+          cache-dependency-path: tinycld/package-lock.json
 
-      # The app shell bundles @tinycld/core at packages/@tinycld/core/. This
-      # package's tsconfig path "@tinycld/core/*":
-      # ["../tinycld/packages/@tinycld/core/*"] and its server go.mod replace
-      # directive both point directly there.
-      - name: Install app shell deps
+      - name: Install tinycld deps (biome lives here)
         working-directory: tinycld
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
-      - name: Link sheets into tinycld app shell
+      - name: Link drive into tinycld app shell
         working-directory: tinycld
-        run: pnpm run packages:link ../sheets
+        run: npm run packages:link ../drive
 
-      - name: Lint (biome runs from tinycld; scans linked sheets via app rules)
+      - name: Link calc into tinycld app shell
         working-directory: tinycld
-        run: pnpm run lint
+        run: npm run packages:link ../calc
+
+      - name: Lint (biome runs from tinycld; scans linked calc via app rules)
+        working-directory: tinycld
+        run: npm run lint
 
       # Typecheck runs from inside tinycld so module resolution sees the
-      # full app-shell tree (uniwind augments, expo types, etc) — running
-      # tsc standalone in the package directory misses those.
+      # full app-shell tree (uniwind augments, expo types, etc).
       - name: Typecheck (full app shell, package included via link)
         working-directory: tinycld
         env:
           NODE_OPTIONS: --preserve-symlinks
-        run: pnpm run typecheck
+        run: npm run typecheck
 
-      - name: Run unit tests
-        working-directory: sheets
-        run: pnpm exec vitest run
+      - name: Run unit tests (vitest picks up calc via packages glob)
+        working-directory: tinycld
+        run: npx vitest run packages/@tinycld/calc
