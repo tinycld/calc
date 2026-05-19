@@ -535,6 +535,7 @@ function GridInner({
                 isOpen={printDialog.isOpen}
                 onClose={printDialog.close}
                 doc={doc}
+                driveItemId={driveItemId}
                 currentSheetId={sheetId}
                 currentSelection={printDialog.currentSelection}
             />

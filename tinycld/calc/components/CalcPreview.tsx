@@ -1,31 +1,17 @@
-import { useQuery } from '@tanstack/react-query'
+import { useRenderedHtml } from '@tinycld/core/file-viewer/fetch-rendered-html'
+import { HtmlSurface } from '@tinycld/core/file-viewer/HtmlSurface'
 import type { PreviewProps } from '@tinycld/core/file-viewer/types'
-import { pb } from '@tinycld/core/lib/pocketbase'
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
-import { cellKey, columnLabel, type WorkbookModel } from '../lib/workbook-types'
+import { ActivityIndicator, Text, View } from 'react-native'
+import { PREVIEW_CSS } from './preview-css'
 
-const CELL_WIDTH = 96
-const CELL_HEIGHT = 28
-const ROW_HEADER_WIDTH = 48
-const PREVIEW_MAX_ROWS = 50
-const PREVIEW_MAX_COLS = 26
-
-// CalcPreview renders a non-collaborative, read-only view of an .xlsx
-// file. It pulls the parsed grid from /api/calc/preview/:id — the
-// server is the only component that ever touches xlsx bytes. Rendering
-// the response payload directly keeps the preview decoupled from the
-// live realtime session (no surprise edits leaking from in-progress
-// editing into viewers who haven't opened the editor).
+// CalcPreview is the read-only viewer for .xlsx files. The HTML is
+// rendered by the calc server's /api/calc/render/:id endpoint and
+// mounted in an isolated iframe (web) or WebView (native) via
+// HtmlSurface. No live YDoc, no JSON workbook model, no on-device
+// rendering — the server is the only component that ever touches
+// xlsx bytes and the only component that emits HTML.
 export function CalcPreview({ source }: PreviewProps) {
-    const {
-        data: workbook,
-        isLoading,
-        error,
-    } = useQuery<WorkbookModel>({
-        queryKey: ['calc', 'preview', source.recordId],
-        queryFn: () =>
-            pb.send<WorkbookModel>(`/api/calc/preview/${source.recordId}`, { method: 'GET' }),
-    })
+    const { data, isLoading, error } = useRenderedHtml(source)
 
     if (isLoading) {
         return (
@@ -45,7 +31,10 @@ export function CalcPreview({ source }: PreviewProps) {
         )
     }
 
-    if (!workbook || workbook.sheets.length === 0) {
+    // The server returns an empty `<section class="tinycld-calc">` wrapper
+    // when the underlying file is missing or has no data — treat any
+    // fragment without a grid as "nothing to show".
+    if (!data || !data.html || !data.html.includes('tinycld-calc-grid')) {
         return (
             <View className="flex-1 items-center justify-center">
                 <Text className="text-sm text-muted-foreground">Spreadsheet is empty.</Text>
@@ -53,80 +42,11 @@ export function CalcPreview({ source }: PreviewProps) {
         )
     }
 
-    const sheet = workbook.sheets[0]
-    const rows = Math.min(Math.max(sheet.rowCount, 1), PREVIEW_MAX_ROWS)
-    const cols = Math.min(Math.max(sheet.colCount, 1), PREVIEW_MAX_COLS)
-
     return (
-        <View className="flex-1 bg-background">
-            <ScrollView horizontal>
-                <ScrollView>
-                    <View>
-                        <ColumnHeaderRow cols={cols} />
-                        {Array.from({ length: rows }, (_, rowIdx) => {
-                            const row = rowIdx + 1
-                            return <PreviewRow key={row} sheet={sheet} row={row} cols={cols} />
-                        })}
-                    </View>
-                </ScrollView>
-            </ScrollView>
-        </View>
-    )
-}
-
-function ColumnHeaderRow({ cols }: { cols: number }) {
-    return (
-        <View className="flex-row">
-            <View
-                className="bg-surface-secondary border-r border-b border-border"
-                style={{ width: ROW_HEADER_WIDTH, height: CELL_HEIGHT }}
-            />
-            {Array.from({ length: cols }, (_, colIdx) => {
-                const col = colIdx + 1
-                return (
-                    <View
-                        key={col}
-                        className="bg-surface-secondary border-r border-b border-border items-center justify-center"
-                        style={{ width: CELL_WIDTH, height: CELL_HEIGHT }}
-                    >
-                        <Text className="text-xs text-muted-foreground">{columnLabel(col)}</Text>
-                    </View>
-                )
-            })}
-        </View>
-    )
-}
-
-interface PreviewRowProps {
-    sheet: WorkbookModel['sheets'][number]
-    row: number
-    cols: number
-}
-
-function PreviewRow({ sheet, row, cols }: PreviewRowProps) {
-    return (
-        <View className="flex-row">
-            <View
-                className="bg-surface-secondary border-r border-b border-border items-center justify-center"
-                style={{ width: ROW_HEADER_WIDTH, height: CELL_HEIGHT }}
-            >
-                <Text className="text-xs text-muted-foreground">{row}</Text>
-            </View>
-            {Array.from({ length: cols }, (_, colIdx) => {
-                const col = colIdx + 1
-                const cell = sheet.cells[cellKey(row, col)]
-                return (
-                    <View
-                        key={col}
-                        className="border-r border-b border-border bg-background justify-center px-1"
-                        style={{ width: CELL_WIDTH, height: CELL_HEIGHT }}
-                    >
-                        <Text className="text-xs text-foreground" numberOfLines={1}>
-                            {cell?.display ?? ''}
-                        </Text>
-                    </View>
-                )
-            })}
-        </View>
+        <HtmlSurface
+            html={data.html}
+            css={PREVIEW_CSS}
+            ariaLabel={`Preview of ${source.displayName}`}
+        />
     )
 }

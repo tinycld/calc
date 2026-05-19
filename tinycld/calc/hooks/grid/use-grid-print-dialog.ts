@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { PrintSelection } from '../../lib/print/snapshot'
+import type { PrintSelection } from '../../components/PrintDialog'
 import { isDisjoint, primaryRange } from '../../lib/selection-range'
 import { usePrintDialog } from '../use-print-dialog'
 import { useGridStore } from '../use-grid-store'
