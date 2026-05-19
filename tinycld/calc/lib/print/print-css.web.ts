@@ -1,3 +1,4 @@
+import { RENDER_CELL_MODIFIER_CSS } from '../render-class-styles'
 import type { PrintConfig, PrintMargins } from './types'
 
 // Numbers are inches because @page margins are universally supported
@@ -75,29 +76,15 @@ export function buildPrintCss(config: PrintConfig): string {
         '.tinycld-calc-sheet:first-of-type .tinycld-calc-sheet-title { break-before: avoid; padding-top: 0; }'
     )
 
-    // Cell modifier classes — mirror the on-screen preview rules so
-    // print and preview share visual semantics.
-    lines.push('.tinycld-calc-cell--bold { font-weight: bold; }')
-    lines.push('.tinycld-calc-cell--italic { font-style: italic; }')
-    lines.push('.tinycld-calc-cell--underline { text-decoration: underline; }')
-    lines.push('.tinycld-calc-cell--strike { text-decoration: line-through; }')
-    lines.push('.tinycld-calc-cell--align-left { text-align: left; }')
-    lines.push('.tinycld-calc-cell--align-center { text-align: center; }')
-    lines.push('.tinycld-calc-cell--align-right { text-align: right; }')
-    lines.push('.tinycld-calc-cell--valign-top { vertical-align: top; }')
-    lines.push('.tinycld-calc-cell--valign-middle { vertical-align: middle; }')
-    lines.push('.tinycld-calc-cell--valign-bottom { vertical-align: bottom; }')
-    lines.push('.tinycld-calc-cell--wrap { white-space: normal; }')
+    // Cell modifier classes (bold/italic/align/border/etc.) — pulled
+    // from the shared render-class-styles module so print and preview
+    // can't drift when the renderer adds new modifier classes.
+    lines.push(RENDER_CELL_MODIFIER_CSS.trim())
 
-    // Per-cell color / fill / font overrides. The server emits these
-    // as data-* attributes (style= is dropped by the sanitizer);
-    // modern browsers project them via typed attr(). Older browsers
-    // fall back to the workbook's default cell appearance — boolean
-    // class modifiers still apply.
-    lines.push('.tinycld-calc-cell[data-color] { color: attr(data-color type(<color>), inherit); }')
-    lines.push('.tinycld-calc-cell[data-bg] { background: attr(data-bg type(<color>), inherit); }')
-    lines.push('.tinycld-calc-cell[data-font-size] { font-size: attr(data-font-size type(<length>), inherit); }')
-    lines.push('.tinycld-calc-cell[data-font-family] { font-family: attr(data-font-family type(<custom-ident> | <string>), inherit); }')
+    // Per-cell color / fill / font / family overrides are projected
+    // by the server as inline `style="…"` on each cell — the
+    // sanitizer's safe-property allowlist passes them through. No
+    // additional CSS rules required here.
 
     return lines.join('\n')
 }

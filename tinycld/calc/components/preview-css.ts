@@ -1,3 +1,5 @@
+import { RENDER_CELL_MODIFIER_CSS } from '../lib/render-class-styles'
+
 // preview-css.ts is the styling layer for the calc preview surface.
 // The server emits stable `tinycld-calc*` class names; this file
 // turns those into a theme-aware visual treatment for the read-only
@@ -87,33 +89,8 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.tinycld-calc-cell--bold { font-weight: 600; }
-.tinycld-calc-cell--italic { font-style: italic; }
-.tinycld-calc-cell--underline { text-decoration: underline; }
-.tinycld-calc-cell--strike { text-decoration: line-through; }
-.tinycld-calc-cell--align-left { text-align: left; }
-.tinycld-calc-cell--align-center { text-align: center; }
-.tinycld-calc-cell--align-right { text-align: right; }
-.tinycld-calc-cell--valign-top { vertical-align: top; }
-.tinycld-calc-cell--valign-middle { vertical-align: middle; }
-.tinycld-calc-cell--valign-bottom { vertical-align: bottom; }
-.tinycld-calc-cell--wrap { white-space: normal; }
-.tinycld-calc-cell--border-top { border-top-width: 2px; }
-.tinycld-calc-cell--border-right { border-right-width: 2px; }
-.tinycld-calc-cell--border-bottom { border-bottom-width: 2px; }
-.tinycld-calc-cell--border-left { border-left-width: 2px; }
-/* Per-cell color / fill / font / size overrides. The server emits
-   data-* attrs (sanitizer validates the values); modern browsers
-   project them onto CSS via typed attr(). Browsers without typed
-   attr() support fall back to the boolean class modifiers and the
-   --filled fallback below — text remains legible. */
-.tinycld-calc-cell[data-color] { color: attr(data-color type(<color>), inherit); }
-.tinycld-calc-cell[data-bg] { background: attr(data-bg type(<color>), inherit); }
-.tinycld-calc-cell[data-font-size] { font-size: attr(data-font-size type(<length>), inherit); }
-.tinycld-calc-cell[data-font-family] { font-family: attr(data-font-family type(<custom-ident> | <string>), inherit); }
-/* Fallback shading for cells with a fill attribute on browsers that
-   don't yet support typed attr() — fades when the typed rule above
-   wins. Boolean .tinycld-calc-cell--filled used to live alongside
-   this; it's removed now that data-bg covers all fill cases. */
-.tinycld-calc-cell[data-bg]:not([style]) { background-image: linear-gradient(rgba(0, 122, 255, 0.04), rgba(0, 122, 255, 0.04)); }
+${RENDER_CELL_MODIFIER_CSS}
+/* Per-cell color / fill / font / size overrides come from inline
+   style="…" on each cell, projected by the server renderer and passed
+   through by the sanitizer's safe-property allowlist. */
 `

@@ -168,9 +168,17 @@ export function PrintDialog({
                 fragments.push(html)
             }
             const envelope = renderPrintEnvelope(fragments.join(''), buildPrintCss(config))
+            // Close the dialog before invoking handlePrint so the
+            // Modal's react-aria FocusScope tears down before we
+            // append #tinycld-print-root to <body>. Otherwise the
+            // active FocusScope picks up the print container and,
+            // when handlePrint's `afterprint` cleanup removes it,
+            // FocusScope's tree walk dereferences an orphaned
+            // sibling sentinel — "Cannot read properties of
+            // undefined (reading 'previousElementSibling')".
+            onClose()
             await handlePrint(envelope)
         },
-        onSuccess: () => onClose(),
         onError: (err) => {
             captureException('calc.print', err)
             handleMutationErrorsWithForm({ setError, getValues })(err)
@@ -215,9 +223,9 @@ export function PrintDialog({
                         onPress={onSubmit}
                         disabled={submitDisabled || printMutation.isPending}
                         accessibilityRole="button"
-                        className="px-3 py-2 rounded-md bg-accent disabled:opacity-50"
+                        className="px-3 py-2 rounded-md bg-primary disabled:opacity-50"
                     >
-                        <Text className="text-sm text-accent-foreground">Print</Text>
+                        <Text className="text-sm text-primary-foreground">Print</Text>
                     </Pressable>
                     <FormErrorSummary errors={errors} isEnabled={isSubmitted} />
                 </View>

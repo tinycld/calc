@@ -40,7 +40,7 @@ export function PrintLayoutFields({ control }: PrintLayoutFieldsProps) {
                             >
                                 <View
                                     className={`w-4 h-4 border ${
-                                        enabled ? 'bg-accent border-accent' : 'border-border'
+                                        enabled ? 'bg-primary border-primary' : 'border-border'
                                     }`}
                                 />
                                 <Text className="ml-2 text-sm font-medium text-foreground">

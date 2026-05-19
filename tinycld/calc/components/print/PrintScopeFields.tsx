@@ -105,7 +105,7 @@ function RadioRow({ label, checked, disabled, onPress }: RowProps) {
         >
             <View
                 className={`w-4 h-4 rounded-full border ${
-                    checked ? 'bg-accent border-accent' : 'border-border'
+                    checked ? 'bg-primary border-primary' : 'border-border'
                 }`}
             />
             <Text className="ml-2 text-sm text-foreground">{label}</Text>
@@ -123,7 +123,7 @@ function CheckboxRow({ label, checked, onPress }: RowProps) {
         >
             <View
                 className={`w-4 h-4 border ${
-                    checked ? 'bg-accent border-accent' : 'border-border'
+                    checked ? 'bg-primary border-primary' : 'border-border'
                 }`}
             />
             <Text className="ml-2 text-sm text-foreground">{label}</Text>

@@ -82,14 +82,14 @@ function SegmentField<T extends string>({
                                     onPress={() => field.onChange(opt.id)}
                                     className={`px-3 py-2 rounded-md border ${
                                         isSelected
-                                            ? 'bg-accent border-accent'
+                                            ? 'bg-primary border-primary'
                                             : 'bg-background border-border'
                                     }`}
                                 >
                                     <Text
                                         className={`text-sm ${
                                             isSelected
-                                                ? 'text-accent-foreground'
+                                                ? 'text-primary-foreground'
                                                 : 'text-foreground'
                                         }`}
                                     >
