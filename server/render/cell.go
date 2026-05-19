@@ -4,22 +4,21 @@ import (
 	"strings"
 )
 
-// writeCell emits one <td class="tinycld-calc-cell …" data-…="…">…</td>.
+// writeCell emits one <td class="tinycld-calc-cell …" style="…">…</td>.
 // Cell style is rendered as a mix of:
 //
 //   - Boolean classes (bold/italic/underline/strike/align/valign/wrap,
 //     border-{edge}). These map to fixed CSS rules in
 //     preview-css.ts / print-css.web.ts.
-//   - data-* attributes for the open-set values that don't fit a
-//     fixed class vocabulary: data-color (font color),
-//     data-bg (fill background), data-font-size, data-font-family.
-//     The CSS consumes these via attribute selectors with the modern
-//     typed-`attr()` syntax (`attr(data-color type(<color>))`); older
-//     browsers degrade to the default cell style — boolean classes
-//     still apply.
+//   - Inline `style=` for the open-set values that don't fit a fixed
+//     class vocabulary: color, background, font-size, font-family.
+//     Emitted directly because typed `attr()` is not yet broadly
+//     supported and the sanitizer permits a narrow safe-property
+//     allowlist (see sanitize.go::safeStyleProperties).
 //
-// Inline `style=` is dropped by the sanitizer; data-* attributes
-// pass through with per-attr value validation in sanitize.go.
+// Each style value is validated at emit time before being interpolated
+// into the attribute (isSafeColorAttr, isSafeFontFamily), so the
+// sanitizer's pass is defense-in-depth rather than load-bearing.
 //
 // Display text is HTML-escaped. We never trust the imported string:
 // excelize.GetCellValue returns whatever the cell stored, including
@@ -41,36 +40,31 @@ func writeCellWithMerge(b *strings.Builder, cell Cell, mergeAttrs string) {
 	b.WriteString(strings.Join(classes, " "))
 	b.WriteByte('"')
 	b.WriteString(mergeAttrs)
-	writeDataStyleAttrs(b, cell.Style)
+	writeInlineStyle(b, cell.Style)
 	b.WriteByte('>')
 	b.WriteString(escapeHTML(cell.Display))
 	b.WriteString(`</td>`)
 }
 
-// writeDataStyleAttrs writes the open-vocabulary cell style fields
-// (font color, fill color, font size, font family) as data-* attrs on
-// the cell. Each emitted value passes the sanitizer's value-validation
-// regex; values that don't match are dropped at emit time so the
-// sanitizer never sees them.
-func writeDataStyleAttrs(b *strings.Builder, style *CellStyle) {
+// writeInlineStyle assembles `style="color: …; background: …;
+// font-size: …pt; font-family: …"` from the cell's open-vocabulary
+// style fields. Each value is validated at emit time; invalid values
+// (e.g. font family containing `(`) are dropped silently. Emits
+// nothing when no declaration survives validation.
+func writeInlineStyle(b *strings.Builder, style *CellStyle) {
 	if style == nil {
 		return
 	}
+	var decls []string
 	if style.Font != nil {
 		if v := strDeref(style.Font.Color); isSafeColorAttr(v) {
-			b.WriteString(` data-color="`)
-			b.WriteString(escapeHTML(v))
-			b.WriteByte('"')
+			decls = append(decls, "color: "+v)
 		}
 		if style.Font.Size != nil && *style.Font.Size > 0 {
-			b.WriteString(` data-font-size="`)
-			b.WriteString(formatFontSize(*style.Font.Size))
-			b.WriteString(`pt"`)
+			decls = append(decls, "font-size: "+formatFontSize(*style.Font.Size)+"pt")
 		}
 		if v := strDeref(style.Font.Name); isSafeFontFamily(v) {
-			b.WriteString(` data-font-family="`)
-			b.WriteString(escapeHTML(v))
-			b.WriteByte('"')
+			decls = append(decls, "font-family: "+v)
 		}
 	}
 	if style.Fill != nil {
@@ -82,11 +76,15 @@ func writeDataStyleAttrs(b *strings.Builder, style *CellStyle) {
 			v = strDeref(style.Fill.BgColor)
 		}
 		if isSafeColorAttr(v) {
-			b.WriteString(` data-bg="`)
-			b.WriteString(escapeHTML(v))
-			b.WriteByte('"')
+			decls = append(decls, "background: "+v)
 		}
 	}
+	if len(decls) == 0 {
+		return
+	}
+	b.WriteString(` style="`)
+	b.WriteString(escapeHTML(strings.Join(decls, "; ")))
+	b.WriteByte('"')
 }
 
 // isSafeColorAttr accepts only well-formed hex (#abc / #aabbcc /

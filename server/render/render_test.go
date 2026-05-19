@@ -374,11 +374,13 @@ func TestRenderHTML_BadInputsReturnErrBadRequest(t *testing.T) {
 	}
 }
 
-// TestRenderHTML_FontColorAndFillEmitDataAttrs guards the per-cell
-// color preservation. The old client print path emitted inline CSS
-// for these; with sanitization-by-default the server must surface
-// them as data-* attrs so the CSS can project them via typed attr().
-func TestRenderHTML_FontColorAndFillEmitDataAttrs(t *testing.T) {
+// TestRenderHTML_FontColorAndFillEmitInlineStyle guards the per-cell
+// color preservation. The renderer projects color / fill / font-size
+// / font-family directly into an inline `style="…"` attribute (the
+// sanitizer's safe-property allowlist passes the declarations
+// through); attribute-selector / typed-attr() schemes were rejected
+// for cross-browser support reasons.
+func TestRenderHTML_FontColorAndFillEmitInlineStyle(t *testing.T) {
 	color := "#FF0000"
 	bg := "#00FF00"
 	family := "Arial"
@@ -404,10 +406,10 @@ func TestRenderHTML_FontColorAndFillEmitDataAttrs(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 	for _, want := range []string{
-		`data-color="#FF0000"`,
-		`data-bg="#00FF00"`,
-		`data-font-family="Arial"`,
-		`data-font-size="12.5pt"`,
+		`color: #FF0000`,
+		`background: #00FF00`,
+		`font-family: Arial`,
+		`font-size: 12.5pt`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in output, got %q", want, out)
@@ -415,10 +417,10 @@ func TestRenderHTML_FontColorAndFillEmitDataAttrs(t *testing.T) {
 	}
 }
 
-// TestRenderHTML_HostileColorRejected verifies the sanitizer-level
-// value validation: a "color" value containing CSS escape sequences
-// or url() must be dropped — both at cell-emit time and at the
-// sanitizer pass that follows.
+// TestRenderHTML_HostileColorRejected verifies emit-time value
+// validation: a "color" value containing CSS escape sequences or
+// url() must be dropped at cell-emit time (and the sanitizer pass
+// catches anything that slips through as defense-in-depth).
 func TestRenderHTML_HostileColorRejected(t *testing.T) {
 	hostile := "url(javascript:alert(1))"
 	wb := Workbook{
@@ -440,11 +442,55 @@ func TestRenderHTML_HostileColorRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if strings.Contains(out, "data-color") {
+	if strings.Contains(out, "color:") {
 		t.Fatalf("hostile color leaked into output: %q", out)
 	}
 	if strings.Contains(out, "javascript") {
 		t.Fatalf("javascript scheme leaked into output: %q", out)
+	}
+}
+
+// TestRenderHTML_ColWidthsEmitColgroup verifies that the renderer
+// emits a <colgroup> with <col style="width: Npx"> for each tracked
+// column width. Columns not in the ColWidths map render as a bare
+// <col>; the leading row-header column always renders as a bare
+// <col class="tinycld-calc-row-h-col">.
+func TestRenderHTML_ColWidthsEmitColgroup(t *testing.T) {
+	wb := Workbook{
+		Sheets: []Worksheet{
+			{
+				Name: "S",
+				Cells: map[string]Cell{
+					"1:1": {Display: "A"},
+					"1:2": {Display: "B"},
+					"1:3": {Display: "C"},
+				},
+				ColWidths: map[int]int{
+					1: 200,
+					3: 75,
+				},
+			},
+		},
+	}
+	out, err := RenderHTML(wb, RenderOpts{})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(out, `<colgroup>`) {
+		t.Fatalf("missing colgroup: %q", out)
+	}
+	if !strings.Contains(out, `<col class="tinycld-calc-row-h-col">`) {
+		t.Fatalf("missing leading row-header col: %q", out)
+	}
+	if !strings.Contains(out, `<col style="width: 200px">`) {
+		t.Fatalf("missing first column width: %q", out)
+	}
+	if !strings.Contains(out, `<col style="width: 75px">`) {
+		t.Fatalf("missing third column width: %q", out)
+	}
+	// Middle column has no width — should be a bare <col>.
+	if !strings.Contains(out, `<col><col style="width: 75px">`) {
+		t.Fatalf("middle column should render as bare <col>: %q", out)
 	}
 }
 

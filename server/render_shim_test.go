@@ -72,3 +72,53 @@ func TestWorkbookForRender_PreservesStyle(t *testing.T) {
 		t.Fatalf("bold lost during conversion: %+v", cell.Style)
 	}
 }
+
+// TestWorkbookForRender_PreservesColWidths exercises the column-width
+// passthrough. The bootstrap path reads xlsx col widths into
+// WorksheetModel.ColWidths; the shim must propagate them into
+// render.Worksheet.ColWidths so the renderer's <colgroup> emits the
+// correct widths.
+func TestWorkbookForRender_PreservesColWidths(t *testing.T) {
+	wb := WorkbookModel{
+		Sheets: []WorksheetModel{
+			{
+				Name:      "S",
+				ColWidths: map[int]int{1: 100, 4: 250},
+			},
+		},
+	}
+	rwb := workbookForRender(wb)
+	got := rwb.Sheets[0].ColWidths
+	if got == nil {
+		t.Fatalf("ColWidths dropped by shim")
+	}
+	if got[1] != 100 || got[4] != 250 {
+		t.Fatalf("ColWidths mismatched: got %+v", got)
+	}
+}
+
+// TestWorkbookForRender_PreservesMerges asserts that Merges round-
+// trip the shim with anchor + span fields intact. The renderer's
+// merged-cell test covers the colspan/rowspan emission; this test
+// ensures the shim doesn't lose the data before it reaches the
+// renderer.
+func TestWorkbookForRender_PreservesMerges(t *testing.T) {
+	wb := WorkbookModel{
+		Sheets: []WorksheetModel{
+			{
+				Name: "S",
+				Merges: []MergeRangeDTO{
+					{AnchorRow: 2, AnchorCol: 3, RowSpan: 4, ColSpan: 5},
+				},
+			},
+		},
+	}
+	rwb := workbookForRender(wb)
+	if len(rwb.Sheets[0].Merges) != 1 {
+		t.Fatalf("expected one merge, got %d", len(rwb.Sheets[0].Merges))
+	}
+	m := rwb.Sheets[0].Merges[0]
+	if m.AnchorRow != 2 || m.AnchorCol != 3 || m.RowSpan != 4 || m.ColSpan != 5 {
+		t.Fatalf("merge fields lost: %+v", m)
+	}
+}

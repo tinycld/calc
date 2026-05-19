@@ -43,6 +43,12 @@ func workbookForRender(in WorkbookModel) render.Workbook {
 				})
 			}
 		}
+		if len(s.ColWidths) > 0 {
+			ws.ColWidths = make(map[int]int, len(s.ColWidths))
+			for col, px := range s.ColWidths {
+				ws.ColWidths[col] = px
+			}
+		}
 		out.Sheets = append(out.Sheets, ws)
 	}
 	return out

@@ -57,18 +57,16 @@ var sanitizeAllowlist = coreRender.Allowlist{
 		"colgroup": {},
 		"col":      {},
 	},
+	// `class` and `style` are universally permitted by the sanitizer
+	// — they're filtered by filterClasses / sanitizeStyle on the way
+	// out. The per-tag entries below cover the remaining structural
+	// attributes (colspan / rowspan / img dimensions / col span).
 	Attrs: map[string]map[string]struct{}{
 		"img": {
 			"src": {}, "alt": {}, "width": {}, "height": {}, "loading": {}, "decoding": {},
 		},
-		"th": {
-			"colspan": {}, "rowspan": {}, "scope": {},
-			"data-color": {}, "data-bg": {}, "data-font-size": {}, "data-font-family": {},
-		},
-		"td": {
-			"colspan": {}, "rowspan": {},
-			"data-color": {}, "data-bg": {}, "data-font-size": {}, "data-font-family": {},
-		},
+		"th":       {"colspan": {}, "rowspan": {}, "scope": {}},
+		"td":       {"colspan": {}, "rowspan": {}},
 		"col":      {"span": {}},
 		"colgroup": {"span": {}},
 	},
@@ -97,6 +95,12 @@ type Worksheet struct {
 	// the top-left cell of each rectangle and suppresses the cells
 	// inside it.
 	Merges []MergeRange
+	// ColWidths is a sparse map of 1-based column number → CSS pixel
+	// width. Columns not present in the map render at the table's
+	// default width. Surfaced as <colgroup><col style="width:Npx">
+	// at the top of the grid so print and preview honor the source
+	// xlsx's column sizing.
+	ColWidths map[int]int
 }
 
 // MergeRange mirrors calc's MergeRangeDTO (one rectangle: anchor +
@@ -543,6 +547,7 @@ func buildMergeMaps(merges []MergeRange) mergeMaps {
 func writeGrid(b *strings.Builder, sheet Worksheet, clip clipRect) {
 	merges := buildMergeMaps(sheet.Merges)
 	b.WriteString(`<table class="tinycld-calc-grid">`)
+	writeColgroup(b, sheet.ColWidths, clip)
 
 	// thead: corner + column letters
 	b.WriteString(`<thead><tr>`)
@@ -584,6 +589,32 @@ func writeGrid(b *strings.Builder, sheet Worksheet, clip clipRect) {
 	}
 	b.WriteString(`</tbody>`)
 	b.WriteString(`</table>`)
+}
+
+// writeColgroup emits one <col> per column in the clip range, with an
+// inline width style when the source sheet recorded a non-default
+// column width. Always emits a <colgroup> wrapper (even when no
+// widths are tracked) so the leading corner column is accounted for
+// in browser column-resolution.
+//
+// The leftmost <col> covers the row-header column and never carries a
+// width (it sizes to its own header content). Remaining <col>s map
+// 1:1 to columns in the clip range, in order, so column N in the clip
+// gets a width from ColWidths[N] when present.
+func writeColgroup(b *strings.Builder, widths map[int]int, clip clipRect) {
+	b.WriteString(`<colgroup>`)
+	b.WriteString(`<col class="tinycld-calc-row-h-col">`)
+	for c := clip.startCol; c <= clip.endCol; c++ {
+		px, ok := widths[c]
+		if ok && px > 0 {
+			b.WriteString(`<col style="width: `)
+			b.WriteString(itoa(px))
+			b.WriteString(`px">`)
+		} else {
+			b.WriteString(`<col>`)
+		}
+	}
+	b.WriteString(`</colgroup>`)
 }
 
 func renderMergeAttrs(m MergeRange) string {
