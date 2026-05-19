@@ -1,5 +1,5 @@
 import type { TextStyle, ViewStyle } from 'react-native'
-import { normalizeColor } from './normalize-color'
+import { normalizeColor } from '@tinycld/core/ui/color-picker/normalize-color'
 import type {
     CellAlignment,
     CellBorderEdge,
