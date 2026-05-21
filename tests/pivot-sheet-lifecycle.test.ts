@@ -1,15 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import {
-    propagateSheetDelete,
-    propagateSheetRename,
-} from '../tinycld/calc/lib/pivot/lifecycle'
+import { propagateSheetDelete, propagateSheetRename } from '../tinycld/calc/lib/pivot/lifecycle'
 import { readPivot, writePivot } from '../tinycld/calc/lib/pivot/y-binding'
 import type { PivotDefinition } from '../tinycld/calc/lib/workbook-types'
-import {
-    PIVOT_SHEET_KEY,
-    SHEETS_MAP,
-} from '../tinycld/calc/lib/y-doc-bootstrap'
+import { PIVOT_SHEET_KEY, SHEETS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
 
 function makeDef(overrides: Partial<PivotDefinition> = {}): PivotDefinition {
     return {

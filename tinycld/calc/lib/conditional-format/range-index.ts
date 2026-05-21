@@ -1,4 +1,4 @@
-import { cellInRange, parseSheetRange, type ParsedCellRange } from './a1'
+import { cellInRange, type ParsedCellRange, parseSheetRange } from './a1'
 import type { CFRule } from './types'
 
 // RuleRangeIndex pre-parses each rule's A1 ranges once so the cell
@@ -32,11 +32,7 @@ export function buildRuleRangeIndex(rules: CFRule[]): IndexedRule[] {
 // filterRulesForCell returns the rules whose ranges contain the given
 // cell, preserving the input order (which encodes rule priority — the
 // first match wins, per Sheets).
-export function filterRulesForCell(
-    index: IndexedRule[],
-    row: number,
-    col: number
-): CFRule[] {
+export function filterRulesForCell(index: IndexedRule[], row: number, col: number): CFRule[] {
     const out: CFRule[] = []
     for (const entry of index) {
         for (const range of entry.ranges) {

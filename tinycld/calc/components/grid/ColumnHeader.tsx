@@ -1,6 +1,6 @@
-import { useRef } from 'react'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { FilterX } from 'lucide-react-native'
+import { useRef } from 'react'
 import {
     type GestureResponderEvent,
     Platform,
@@ -9,12 +9,12 @@ import {
     Text,
     View,
 } from 'react-native'
+import type { GridStoreApi } from '../../hooks/grid-store'
 import {
     type DragState,
     HANDLE_VISUAL_WIDTH,
     NATIVE_HANDLE_HIT_SLOP,
 } from '../../hooks/use-column-resize'
-import type { GridStoreApi } from '../../hooks/grid-store'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { primaryAnchor } from '../../lib/selection-range'
 import { columnLabel } from '../../lib/workbook-types'
@@ -163,9 +163,7 @@ export function ColumnHeader({
     }
 
     return (
-        <View
-            style={{ flex: 1, flexDirection: 'row', height: HEADER_HEIGHT, overflow: 'hidden' }}
-        >
+        <View style={{ flex: 1, flexDirection: 'row', height: HEADER_HEIGHT, overflow: 'hidden' }}>
             <View
                 style={{
                     width: frozenW,
@@ -264,17 +262,13 @@ function appendHeaderCells(
                               if (isCtrl && !e.shiftKey) {
                                   e.preventDefault()
                                   filter.skipNextPressRef.current = true
-                                  filter.store
-                                      .getState()
-                                      .addColumnSubRange(col, rowCount)
+                                  filter.store.getState().addColumnSubRange(col, rowCount)
                                   return
                               }
                               if (e.shiftKey && !isCtrl) {
                                   e.preventDefault()
                                   filter.skipNextPressRef.current = true
-                                  filter.store
-                                      .getState()
-                                      .extendActiveColumnTo(col, rowCount)
+                                  filter.store.getState().extendActiveColumnTo(col, rowCount)
                                   return
                               }
                               if (isCtrl && e.shiftKey) {
@@ -283,9 +277,7 @@ function appendHeaderCells(
                                   // wins; documented in plan §5).
                                   e.preventDefault()
                                   filter.skipNextPressRef.current = true
-                                  filter.store
-                                      .getState()
-                                      .addColumnSubRange(col, rowCount)
+                                  filter.store.getState().addColumnSubRange(col, rowCount)
                               }
                           },
                           onContextMenu: (e: {

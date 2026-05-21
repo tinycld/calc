@@ -6,12 +6,12 @@ import { usePivotPanelStore } from '../../lib/stores/pivot-panel-store'
 import { PIVOT_SHEET_KEY, SHEETS_MAP } from '../../lib/y-doc-bootstrap'
 import { PivotTableIcon } from '../icons'
 import { ToolbarButton } from '../toolbar/ToolbarButton'
+import { NewPivotDialog } from './NewPivotDialog'
 import {
     buildInitialPivotDefinition,
     makePivotId,
     type NewPivotFormValues,
 } from './new-pivot-dialog-helpers'
-import { NewPivotDialog } from './NewPivotDialog'
 
 export interface PivotInsertButtonProps {
     // Live Y.Doc. Null while the realtime room is still handshaking — the

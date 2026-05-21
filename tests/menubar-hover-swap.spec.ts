@@ -47,10 +47,9 @@ test.describe('Calc menubar hover swap', () => {
             expect(itemBox, `${label} first menuitem box`).not.toBeNull()
             if (!triggerBox || !itemBox) continue
 
-            expect(
-                itemBox.y,
-                `${label} popover should sit below its trigger row`
-            ).toBeGreaterThan(triggerBox.y + triggerBox.height - 1)
+            expect(itemBox.y, `${label} popover should sit below its trigger row`).toBeGreaterThan(
+                triggerBox.y + triggerBox.height - 1
+            )
 
             const triggerCenter = triggerBox.x + triggerBox.width / 2
             const itemRight = itemBox.x + itemBox.width

@@ -1,8 +1,9 @@
 // TODO: switch to `import { Print } from '@tinycld/core/lib/print'`
 // once the core re-export lands (tracked separately — for now, expo-print
 // is a direct peer dep of the app shell).
-import * as Print from 'expo-print'
+
 import { captureException } from '@tinycld/core/lib/errors'
+import * as Print from 'expo-print'
 
 // handlePrint (native) hands the HTML to expo-print, which routes to
 // AirPrint on iOS and the system print framework on Android. Both

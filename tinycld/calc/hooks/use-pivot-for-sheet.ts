@@ -14,11 +14,7 @@ import { useCallback, useRef, useSyncExternalStore } from 'react'
 import * as Y from 'yjs'
 import { readPivot } from '../lib/pivot/y-binding'
 import type { PivotDefinition } from '../lib/workbook-types'
-import {
-    PIVOT_SHEET_KEY,
-    PIVOTS_MAP,
-    SHEETS_MAP,
-} from '../lib/y-doc-bootstrap'
+import { PIVOT_SHEET_KEY, PIVOTS_MAP, SHEETS_MAP } from '../lib/y-doc-bootstrap'
 
 interface SnapshotState {
     cache: PivotDefinition | null
@@ -63,11 +59,7 @@ function computeSnapshot(
     }
     const next = findOwningPivot(doc, meta)
     const prev = state.cache
-    if (
-        prev != null &&
-        next != null &&
-        JSON.stringify(prev) === JSON.stringify(next)
-    ) {
+    if (prev != null && next != null && JSON.stringify(prev) === JSON.stringify(next)) {
         return prev
     }
     state.cache = next
@@ -89,10 +81,7 @@ function computeSnapshot(
 // pointer is still set and preferred when present so future migrations
 // (e.g. renamed sheets where the meta tag updates faster than peer
 // observers see the new name) continue to work.
-function findOwningPivot(
-    doc: Y.Doc,
-    meta: Y.Map<unknown>
-): PivotDefinition | null {
+function findOwningPivot(doc: Y.Doc, meta: Y.Map<unknown>): PivotDefinition | null {
     const explicitPivotId = meta.get(PIVOT_SHEET_KEY)
     if (typeof explicitPivotId === 'string') {
         const def = readPivot(doc, explicitPivotId)
@@ -114,18 +103,12 @@ function findOwningPivot(
     return found
 }
 
-export function usePivotForSheet(
-    doc: Y.Doc | null,
-    sheetId: string
-): PivotDefinition | null {
+export function usePivotForSheet(doc: Y.Doc | null, sheetId: string): PivotDefinition | null {
     const stateRef = useRef<SnapshotState | null>(null)
     if (stateRef.current == null) stateRef.current = createSnapshotState()
     const state = stateRef.current
 
-    const sub = useCallback(
-        (onChange: () => void) => subscribe(doc, onChange),
-        [doc]
-    )
+    const sub = useCallback((onChange: () => void) => subscribe(doc, onChange), [doc])
 
     const getSnapshot = useCallback(
         (): PivotDefinition | null => computeSnapshot(doc, sheetId, state),

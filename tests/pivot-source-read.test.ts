@@ -10,10 +10,7 @@ function num(value: number): CellValue {
     return { kind: 'number', raw: value, display: String(value) }
 }
 
-function makeCells(
-    sheetId: string,
-    rows: CellValue[][]
-): Map<string, CellValue> {
+function makeCells(sheetId: string, rows: CellValue[][]): Map<string, CellValue> {
     const m = new Map<string, CellValue>()
     rows.forEach((row, r) => {
         row.forEach((cell, c) => {

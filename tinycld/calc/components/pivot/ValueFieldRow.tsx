@@ -1,10 +1,7 @@
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { ChevronDown, ChevronUp, X } from 'lucide-react-native'
 import { Pressable, Text, TextInput, View } from 'react-native'
-import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import type {
-    PivotAggregation,
-    PivotValueField,
-} from '../../lib/workbook-types'
+import type { PivotAggregation, PivotValueField } from '../../lib/workbook-types'
 import { PIVOT_AGGREGATIONS } from './field-row-helpers'
 
 // Field chip for the Values slot. Wraps the same move/remove header as
@@ -49,9 +46,7 @@ export function ValueFieldRow({
     return (
         <View className="rounded-md border border-border bg-surface-secondary p-2">
             <View className="flex-row items-center justify-between">
-                <Text className="flex-1 text-sm text-foreground">
-                    {field.sourceColumn}
-                </Text>
+                <Text className="flex-1 text-sm text-foreground">{field.sourceColumn}</Text>
                 <View className="flex-row items-center gap-1">
                     <Pressable
                         accessibilityRole="button"
@@ -83,7 +78,7 @@ export function ValueFieldRow({
                 </View>
             </View>
             <View className="mt-2 flex-row flex-wrap gap-1">
-                {PIVOT_AGGREGATIONS.map((agg) => (
+                {PIVOT_AGGREGATIONS.map(agg => (
                     <AggregationChip
                         key={agg}
                         agg={agg}
@@ -94,9 +89,7 @@ export function ValueFieldRow({
                 ))}
             </View>
             <View className="mt-2">
-                <Text className="text-xs text-muted-foreground">
-                    Number format
-                </Text>
+                <Text className="text-xs text-muted-foreground">Number format</Text>
                 <TextInput
                     accessibilityLabel="Number format"
                     editable={!disabled}
@@ -117,18 +110,11 @@ interface AggregationChipProps {
     onPress: (agg: PivotAggregation) => void
 }
 
-function AggregationChip({
-    agg,
-    active,
-    disabled,
-    onPress,
-}: AggregationChipProps) {
+function AggregationChip({ agg, active, disabled, onPress }: AggregationChipProps) {
     const containerClass = active
         ? 'rounded-md px-2 py-1 bg-accent'
         : 'rounded-md px-2 py-1 bg-background border border-border'
-    const textClass = active
-        ? 'text-xs text-accent-foreground'
-        : 'text-xs text-foreground'
+    const textClass = active ? 'text-xs text-accent-foreground' : 'text-xs text-foreground'
     return (
         <Pressable
             accessibilityRole="button"

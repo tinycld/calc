@@ -13,7 +13,7 @@ function num(n: number): CellValue {
 function table(headers: string[], rows: CellValue[][]): SourceTable {
     return {
         headers,
-        rows: rows.map((r) => {
+        rows: rows.map(r => {
             const o: Record<string, CellValue> = {}
             headers.forEach((h, i) => {
                 o[h] = r[i]

@@ -27,7 +27,7 @@ interface CFPanelState {
     setEditingRule(id: string | null): void
 }
 
-export const useConditionalFormatPanelStore = create<CFPanelState>((set) => ({
+export const useConditionalFormatPanelStore = create<CFPanelState>(set => ({
     openForSheetId: null,
     editingRuleId: null,
     defaultRanges: [],
@@ -43,5 +43,5 @@ export const useConditionalFormatPanelStore = create<CFPanelState>((set) => ({
             editingRuleId: null,
             defaultRanges: [],
         }),
-    setEditingRule: (id) => set({ editingRuleId: id }),
+    setEditingRule: id => set({ editingRuleId: id }),
 }))

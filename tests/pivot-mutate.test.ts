@@ -59,18 +59,10 @@ describe('add* / remove / move', () => {
 
     it('moveField reorders inside a slot', () => {
         const { doc } = seed({
-            rows: [
-                { sourceColumn: 'A' },
-                { sourceColumn: 'B' },
-                { sourceColumn: 'C' },
-            ],
+            rows: [{ sourceColumn: 'A' }, { sourceColumn: 'B' }, { sourceColumn: 'C' }],
         })
         moveField(doc, 'p1', 'rows', 2, 0)
-        expect(readPivot(doc, 'p1')!.rows.map((r) => r.sourceColumn)).toEqual([
-            'C',
-            'A',
-            'B',
-        ])
+        expect(readPivot(doc, 'p1')!.rows.map(r => r.sourceColumn)).toEqual(['C', 'A', 'B'])
     })
 
     it('setValueAggregation updates the aggregation', () => {
@@ -94,10 +86,7 @@ describe('add* / remove / move', () => {
             filters: [{ sourceColumn: 'Country' }],
         })
         setFilterSelection(doc, 'p1', 'Country', ['US', 'CA'])
-        expect(readPivot(doc, 'p1')!.filterSelections.Country).toEqual([
-            'US',
-            'CA',
-        ])
+        expect(readPivot(doc, 'p1')!.filterSelections.Country).toEqual(['US', 'CA'])
     })
 
     it('setFilterSelection with empty array removes the filter', () => {

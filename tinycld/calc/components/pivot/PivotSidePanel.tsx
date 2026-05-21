@@ -1,6 +1,4 @@
-import { useMemo } from 'react'
-import { X } from 'lucide-react-native'
-import { Switch } from '@tinycld/core/ui/switch'
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {
     Drawer,
     DrawerBackdrop,
@@ -9,9 +7,11 @@ import {
     DrawerContent,
     DrawerHeader,
 } from '@tinycld/core/ui/drawer'
+import { Switch } from '@tinycld/core/ui/switch'
+import { X } from 'lucide-react-native'
+import { useMemo } from 'react'
 import { Text, View } from 'react-native'
-import * as Y from 'yjs'
-import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
+import type * as Y from 'yjs'
 import {
     addColumn,
     addFilter,
@@ -29,11 +29,7 @@ import { FieldList } from './FieldList'
 import { FieldRow } from './FieldRow'
 import { FieldSlot } from './FieldSlot'
 import { FilterFieldRow } from './FilterFieldRow'
-import {
-    canMoveDown,
-    canMoveUp,
-    readSourceMetadata,
-} from './pivot-side-panel-helpers'
+import { canMoveDown, canMoveUp, readSourceMetadata } from './pivot-side-panel-helpers'
 import { ValueFieldRow } from './ValueFieldRow'
 
 // Side panel composer for editing a pivot definition. Renders in a
@@ -69,187 +65,132 @@ export interface PivotSidePanelProps {
     readOnly?: boolean
 }
 
-export function PivotSidePanel({
-    doc,
-    def,
-    isOpen,
-    onClose,
-    readOnly,
-}: PivotSidePanelProps) {
+export function PivotSidePanel({ doc, def, isOpen, onClose, readOnly }: PivotSidePanelProps) {
     const iconColor = useThemeColor('foreground')
-    const { headers, distinctByColumn } = useMemo(
-        () => readSourceMetadata(doc, def),
-        [doc, def]
-    )
+    const { headers, distinctByColumn } = useMemo(() => readSourceMetadata(doc, def), [doc, def])
 
     return (
         <Drawer isOpen={isOpen} onClose={onClose} anchor="right" size="md">
             <DrawerBackdrop />
             <DrawerContent>
                 <DrawerHeader>
-                    <Text className="text-base font-medium text-foreground">
-                        Pivot editor
-                    </Text>
-                    <DrawerCloseButton
-                        onPress={onClose}
-                        accessibilityLabel="Close pivot panel"
-                    >
+                    <Text className="text-base font-medium text-foreground">Pivot editor</Text>
+                    <DrawerCloseButton onPress={onClose} accessibilityLabel="Close pivot panel">
                         <X size={18} color={iconColor} />
                     </DrawerCloseButton>
                 </DrawerHeader>
                 <DrawerBody>
-                <Text className="text-xs font-medium uppercase text-muted-foreground">
-                    Source
-                </Text>
-                <Text className="mt-1 text-sm text-foreground">
-                    {def.sourceRange}
-                </Text>
+                    <Text className="text-xs font-medium uppercase text-muted-foreground">
+                        Source
+                    </Text>
+                    <Text className="mt-1 text-sm text-foreground">{def.sourceRange}</Text>
 
-                <View className="mt-4">
-                    <FieldList
-                        headers={headers}
-                        onAddRow={(c) => addRow(doc, def.id, c)}
-                        onAddCol={(c) => addColumn(doc, def.id, c)}
-                        onAddValue={(c) => addValue(doc, def.id, c, 'sum')}
-                        onAddFilter={(c) => addFilter(doc, def.id, c)}
-                        disabled={readOnly}
-                    />
-                </View>
-
-                <FieldSlot label="Rows">
-                    {def.rows.map((f, i) => (
-                        <FieldRow
-                            key={`${f.sourceColumn}:${i}`}
-                            label={f.displayName ?? f.sourceColumn}
-                            canMoveUp={canMoveUp(i)}
-                            canMoveDown={canMoveDown(i, def.rows.length)}
-                            onMoveUp={() =>
-                                moveField(doc, def.id, 'rows', i, i - 1)
-                            }
-                            onMoveDown={() =>
-                                moveField(doc, def.id, 'rows', i, i + 1)
-                            }
-                            onRemove={() =>
-                                removeField(doc, def.id, 'rows', i)
-                            }
+                    <View className="mt-4">
+                        <FieldList
+                            headers={headers}
+                            onAddRow={c => addRow(doc, def.id, c)}
+                            onAddCol={c => addColumn(doc, def.id, c)}
+                            onAddValue={c => addValue(doc, def.id, c, 'sum')}
+                            onAddFilter={c => addFilter(doc, def.id, c)}
                             disabled={readOnly}
                         />
-                    ))}
-                </FieldSlot>
+                    </View>
 
-                <FieldSlot label="Columns">
-                    {def.cols.map((f, i) => (
-                        <FieldRow
-                            key={`${f.sourceColumn}:${i}`}
-                            label={f.displayName ?? f.sourceColumn}
-                            canMoveUp={canMoveUp(i)}
-                            canMoveDown={canMoveDown(i, def.cols.length)}
-                            onMoveUp={() =>
-                                moveField(doc, def.id, 'cols', i, i - 1)
-                            }
-                            onMoveDown={() =>
-                                moveField(doc, def.id, 'cols', i, i + 1)
-                            }
-                            onRemove={() =>
-                                removeField(doc, def.id, 'cols', i)
-                            }
+                    <FieldSlot label="Rows">
+                        {def.rows.map((f, i) => (
+                            <FieldRow
+                                key={`${f.sourceColumn}:${i}`}
+                                label={f.displayName ?? f.sourceColumn}
+                                canMoveUp={canMoveUp(i)}
+                                canMoveDown={canMoveDown(i, def.rows.length)}
+                                onMoveUp={() => moveField(doc, def.id, 'rows', i, i - 1)}
+                                onMoveDown={() => moveField(doc, def.id, 'rows', i, i + 1)}
+                                onRemove={() => removeField(doc, def.id, 'rows', i)}
+                                disabled={readOnly}
+                            />
+                        ))}
+                    </FieldSlot>
+
+                    <FieldSlot label="Columns">
+                        {def.cols.map((f, i) => (
+                            <FieldRow
+                                key={`${f.sourceColumn}:${i}`}
+                                label={f.displayName ?? f.sourceColumn}
+                                canMoveUp={canMoveUp(i)}
+                                canMoveDown={canMoveDown(i, def.cols.length)}
+                                onMoveUp={() => moveField(doc, def.id, 'cols', i, i - 1)}
+                                onMoveDown={() => moveField(doc, def.id, 'cols', i, i + 1)}
+                                onRemove={() => removeField(doc, def.id, 'cols', i)}
+                                disabled={readOnly}
+                            />
+                        ))}
+                    </FieldSlot>
+
+                    <FieldSlot label="Values">
+                        {def.values.map((f, i) => (
+                            <ValueFieldRow
+                                key={`${f.sourceColumn}:${i}`}
+                                field={f}
+                                canMoveUp={canMoveUp(i)}
+                                canMoveDown={canMoveDown(i, def.values.length)}
+                                onMoveUp={() => moveField(doc, def.id, 'values', i, i - 1)}
+                                onMoveDown={() => moveField(doc, def.id, 'values', i, i + 1)}
+                                onRemove={() => removeField(doc, def.id, 'values', i)}
+                                onChangeAggregation={agg =>
+                                    setValueAggregation(doc, def.id, i, agg)
+                                }
+                                onChangeNumFmt={fmt => setValueNumFmt(doc, def.id, i, fmt)}
+                                disabled={readOnly}
+                            />
+                        ))}
+                    </FieldSlot>
+
+                    <FieldSlot label="Filters">
+                        {def.filters.map((f, i) => (
+                            <FilterFieldRow
+                                key={`${f.sourceColumn}:${i}`}
+                                column={f.sourceColumn}
+                                selected={def.filterSelections[f.sourceColumn] ?? []}
+                                distinctValues={distinctByColumn[f.sourceColumn] ?? []}
+                                onChangeSelection={next =>
+                                    setFilterSelection(doc, def.id, f.sourceColumn, next)
+                                }
+                                onRemove={() => removeField(doc, def.id, 'filters', i)}
+                                disabled={readOnly}
+                            />
+                        ))}
+                    </FieldSlot>
+
+                    <FieldSlot label="Options">
+                        <OptionToggle
+                            label="Row grand totals"
+                            value={def.rowGrandTotals}
                             disabled={readOnly}
+                            onChange={v => setBoolean(doc, def.id, 'rowGrandTotals', v)}
+                            accessibilityLabel="Toggle row grand totals"
                         />
-                    ))}
-                </FieldSlot>
-
-                <FieldSlot label="Values">
-                    {def.values.map((f, i) => (
-                        <ValueFieldRow
-                            key={`${f.sourceColumn}:${i}`}
-                            field={f}
-                            canMoveUp={canMoveUp(i)}
-                            canMoveDown={canMoveDown(i, def.values.length)}
-                            onMoveUp={() =>
-                                moveField(doc, def.id, 'values', i, i - 1)
-                            }
-                            onMoveDown={() =>
-                                moveField(doc, def.id, 'values', i, i + 1)
-                            }
-                            onRemove={() =>
-                                removeField(doc, def.id, 'values', i)
-                            }
-                            onChangeAggregation={(agg) =>
-                                setValueAggregation(doc, def.id, i, agg)
-                            }
-                            onChangeNumFmt={(fmt) =>
-                                setValueNumFmt(doc, def.id, i, fmt)
-                            }
+                        <OptionToggle
+                            label="Column grand totals"
+                            value={def.colGrandTotals}
                             disabled={readOnly}
+                            onChange={v => setBoolean(doc, def.id, 'colGrandTotals', v)}
+                            accessibilityLabel="Toggle column grand totals"
                         />
-                    ))}
-                </FieldSlot>
-
-                <FieldSlot label="Filters">
-                    {def.filters.map((f, i) => (
-                        <FilterFieldRow
-                            key={`${f.sourceColumn}:${i}`}
-                            column={f.sourceColumn}
-                            selected={
-                                def.filterSelections[f.sourceColumn] ?? []
-                            }
-                            distinctValues={
-                                distinctByColumn[f.sourceColumn] ?? []
-                            }
-                            onChangeSelection={(next) =>
-                                setFilterSelection(
-                                    doc,
-                                    def.id,
-                                    f.sourceColumn,
-                                    next
-                                )
-                            }
-                            onRemove={() =>
-                                removeField(doc, def.id, 'filters', i)
-                            }
+                        <OptionToggle
+                            label="Row subtotals"
+                            value={def.rowSubtotals}
                             disabled={readOnly}
+                            onChange={v => setBoolean(doc, def.id, 'rowSubtotals', v)}
+                            accessibilityLabel="Toggle row subtotals"
                         />
-                    ))}
-                </FieldSlot>
-
-                <FieldSlot label="Options">
-                    <OptionToggle
-                        label="Row grand totals"
-                        value={def.rowGrandTotals}
-                        disabled={readOnly}
-                        onChange={(v) =>
-                            setBoolean(doc, def.id, 'rowGrandTotals', v)
-                        }
-                        accessibilityLabel="Toggle row grand totals"
-                    />
-                    <OptionToggle
-                        label="Column grand totals"
-                        value={def.colGrandTotals}
-                        disabled={readOnly}
-                        onChange={(v) =>
-                            setBoolean(doc, def.id, 'colGrandTotals', v)
-                        }
-                        accessibilityLabel="Toggle column grand totals"
-                    />
-                    <OptionToggle
-                        label="Row subtotals"
-                        value={def.rowSubtotals}
-                        disabled={readOnly}
-                        onChange={(v) =>
-                            setBoolean(doc, def.id, 'rowSubtotals', v)
-                        }
-                        accessibilityLabel="Toggle row subtotals"
-                    />
-                    <OptionToggle
-                        label="Column subtotals"
-                        value={def.colSubtotals}
-                        disabled={readOnly}
-                        onChange={(v) =>
-                            setBoolean(doc, def.id, 'colSubtotals', v)
-                        }
-                        accessibilityLabel="Toggle column subtotals"
-                    />
-                </FieldSlot>
+                        <OptionToggle
+                            label="Column subtotals"
+                            value={def.colSubtotals}
+                            disabled={readOnly}
+                            onChange={v => setBoolean(doc, def.id, 'colSubtotals', v)}
+                            accessibilityLabel="Toggle column subtotals"
+                        />
+                    </FieldSlot>
                 </DrawerBody>
             </DrawerContent>
         </Drawer>
@@ -264,13 +205,7 @@ interface OptionToggleProps {
     accessibilityLabel: string
 }
 
-function OptionToggle({
-    label,
-    value,
-    disabled,
-    onChange,
-    accessibilityLabel,
-}: OptionToggleProps) {
+function OptionToggle({ label, value, disabled, onChange, accessibilityLabel }: OptionToggleProps) {
     return (
         <View className="flex-row items-center justify-between">
             <Text className="text-sm text-foreground">{label}</Text>

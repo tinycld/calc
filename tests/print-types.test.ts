@@ -58,9 +58,7 @@ describe('printConfigSchema', () => {
         })
         expect(result.success).toBe(false)
         if (!result.success) {
-            expect(result.error.issues.some(i => /from.*to/i.test(i.message))).toBe(
-                true
-            )
+            expect(result.error.issues.some(i => /from.*to/i.test(i.message))).toBe(true)
         }
     })
 

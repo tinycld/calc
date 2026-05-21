@@ -1,5 +1,5 @@
-import { useRef } from 'react'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
+import { useRef } from 'react'
 import {
     type GestureResponderEvent,
     Platform,

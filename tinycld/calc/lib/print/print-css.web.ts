@@ -30,8 +30,7 @@ export function buildPrintCss(config: PrintConfig): string {
         "body { font-family: -apple-system, system-ui, 'Segoe UI', sans-serif; color: #000; }"
     )
 
-    const tableWidth =
-        scaling === 'fit-width' || scaling === 'fit-page' ? '100%' : 'auto'
+    const tableWidth = scaling === 'fit-width' || scaling === 'fit-page' ? '100%' : 'auto'
     lines.push(
         `.tinycld-calc-grid { border-collapse: collapse; width: ${tableWidth}; table-layout: fixed; }`
     )

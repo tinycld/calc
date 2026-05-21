@@ -112,11 +112,11 @@ describe('filterRulesForCell', () => {
 
     it('returns rules that contain the cell, in priority order', () => {
         const matches = filterRulesForCell(index, 1, 1)
-        expect(matches.map((r) => r.id)).toEqual(['a', 'c'])
+        expect(matches.map(r => r.id)).toEqual(['a', 'c'])
     })
     it('multi-range rule matches via any of its ranges', () => {
         const matches = filterRulesForCell(index, 3, 4)
-        expect(matches.map((r) => r.id)).toEqual(['b'])
+        expect(matches.map(r => r.id)).toEqual(['b'])
     })
     it('returns empty when no rules match', () => {
         expect(filterRulesForCell(index, 20, 20)).toEqual([])
@@ -135,6 +135,6 @@ describe('buildRuleRangeIndex', () => {
             { id: 'second', ranges: ['A:A'], condition: { type: 'isEmpty' }, style: {} },
             { id: 'first', ranges: ['B:B'], condition: { type: 'isEmpty' }, style: {} },
         ])
-        expect(index.map((e) => e.rule.id)).toEqual(['second', 'first'])
+        expect(index.map(e => e.rule.id)).toEqual(['second', 'first'])
     })
 })

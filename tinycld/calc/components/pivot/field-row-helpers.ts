@@ -38,10 +38,7 @@ export const FILTER_VALUES_PREVIEW_LIMIT = 12
 // next-state array without mutating the input. Order of the returned
 // array matches insertion order via Set semantics — callers that need
 // stable sorting should sort the result themselves.
-export function toggleFilterSelection(
-    selected: readonly string[],
-    value: string
-): string[] {
+export function toggleFilterSelection(selected: readonly string[], value: string): string[] {
     const next = new Set(selected)
     if (next.has(value)) {
         next.delete(value)
@@ -67,9 +64,7 @@ export function visibleFilterValues(
 // Whether the "Show all" toggle should be rendered. Hidden when the
 // distinct-value count fits in one screenful — there's no value in a
 // no-op button.
-export function shouldShowAllToggle(
-    distinctValues: readonly string[]
-): boolean {
+export function shouldShowAllToggle(distinctValues: readonly string[]): boolean {
     return distinctValues.length > FILTER_VALUES_PREVIEW_LIMIT
 }
 
@@ -93,10 +88,7 @@ export function filterValueLabel(value: string): string {
 // Label for the show-all toggle, switching between expand/collapse
 // states. The expanded label includes the total count so the user
 // knows the cost of expanding before they commit.
-export function showAllToggleLabel(
-    showAll: boolean,
-    total: number
-): string {
+export function showAllToggleLabel(showAll: boolean, total: number): string {
     if (showAll) return 'Show fewer'
     return `Show all (${total})`
 }

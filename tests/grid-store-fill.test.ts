@@ -4,11 +4,7 @@ import {
     createGridStore,
     type GridStoreDeps,
 } from '../tinycld/calc/hooks/grid-store'
-import {
-    overallScope,
-    primaryAnchor,
-    primaryRange,
-} from '../tinycld/calc/lib/selection-range'
+import { overallScope, primaryAnchor, primaryRange } from '../tinycld/calc/lib/selection-range'
 
 // Fill-handle drag actions. Source range is captured at fillDragStart
 // and never mutated; destRange grows under the pointer. Direction

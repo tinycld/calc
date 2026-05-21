@@ -226,8 +226,7 @@ function criterionFromYMap(m: Y.Map<unknown>): FilterCriterion | null {
         // Back-compat: older docs persisted a single `value` string.
         const valuesArr = readStringArray(cond.get('values'))
         const legacyValue = cond.get('value')
-        const values: string[] =
-            valuesArr ?? (typeof legacyValue === 'string' ? [legacyValue] : [])
+        const values: string[] = valuesArr ?? (typeof legacyValue === 'string' ? [legacyValue] : [])
         switch (op) {
             case 'gt':
             case 'lt':
@@ -400,7 +399,9 @@ export function clearFilter(doc: Y.Doc, sheetId: string): void {
             for (let r = range.startRow; r <= range.endRow; r++) {
                 const cur = heights.get(String(r))
                 if (cur !== 0) continue
-                const prior = isYMap ? (savedHeightsMap as Y.Map<unknown>).get(String(r)) : undefined
+                const prior = isYMap
+                    ? (savedHeightsMap as Y.Map<unknown>).get(String(r))
+                    : undefined
                 if (typeof prior === 'number') {
                     ;(heights as Y.Map<number>).set(String(r), prior)
                 } else {
@@ -490,13 +491,15 @@ export function upsertColumnCriterion(
             startCol: 0,
             endCol: Math.max(0, colCount - 1),
         }
-        applyFilter(doc, sheetId, { range, criteria: { [col]: criterion }, mode: 'header' }, frozenRows)
+        applyFilter(
+            doc,
+            sheetId,
+            { range, criteria: { [col]: criterion }, mode: 'header' },
+            frozenRows
+        )
         return
     }
     if (existing.mode === 'range') {
-        // UI hides this entry point in range mode; refuse defensively
-        // rather than silently clobbering the range-mode filter.
-        console.warn('upsertColumnCriterion: refusing to mutate range-mode filterView')
         return
     }
     const merged: Record<number, FilterCriterion> = { ...existing.criteria, [col]: criterion }

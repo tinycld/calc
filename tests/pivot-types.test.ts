@@ -14,9 +14,7 @@ describe('pivot types', () => {
             targetSheetName: 'Pivot of Sheet1',
             rows: [{ sourceColumn: 'Region' }],
             cols: [{ sourceColumn: 'Year' }],
-            values: [
-                { sourceColumn: 'Sales', aggregation: 'sum' },
-            ],
+            values: [{ sourceColumn: 'Sales', aggregation: 'sum' }],
             filters: [],
             filterSelections: {},
             rowGrandTotals: true,
@@ -40,9 +38,17 @@ describe('pivot types', () => {
 
     it('all 11 aggregations are typed', () => {
         const aggs: PivotAggregation[] = [
-            'sum', 'average', 'count', 'countNums',
-            'max', 'min', 'product',
-            'stdDev', 'stdDevp', 'var', 'varp',
+            'sum',
+            'average',
+            'count',
+            'countNums',
+            'max',
+            'min',
+            'product',
+            'stdDev',
+            'stdDevp',
+            'var',
+            'varp',
         ]
         expect(aggs).toHaveLength(11)
     })

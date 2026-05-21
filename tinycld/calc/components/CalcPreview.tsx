@@ -34,7 +34,7 @@ export function CalcPreview({ source }: PreviewProps) {
     // The server returns an empty `<section class="tinycld-calc">` wrapper
     // when the underlying file is missing or has no data — treat any
     // fragment without a grid as "nothing to show".
-    if (!data || !data.html || !data.html.includes('tinycld-calc-grid')) {
+    if (!data?.html?.includes('tinycld-calc-grid')) {
         return (
             <View className="flex-1 items-center justify-center">
                 <Text className="text-sm text-muted-foreground">Spreadsheet is empty.</Text>

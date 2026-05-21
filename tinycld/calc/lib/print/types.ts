@@ -10,17 +10,9 @@ const rangeSchema = z.union([z.literal('used'), z.literal('selection')])
 
 const orientationSchema = z.union([z.literal('portrait'), z.literal('landscape')])
 
-const scalingSchema = z.union([
-    z.literal('actual'),
-    z.literal('fit-width'),
-    z.literal('fit-page'),
-])
+const scalingSchema = z.union([z.literal('actual'), z.literal('fit-width'), z.literal('fit-page')])
 
-const marginsSchema = z.union([
-    z.literal('normal'),
-    z.literal('narrow'),
-    z.literal('wide'),
-])
+const marginsSchema = z.union([z.literal('normal'), z.literal('narrow'), z.literal('wide')])
 
 const repeatRowsSchema = z
     .object({

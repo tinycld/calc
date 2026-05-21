@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-    ok,
-    pivotError,
     type GroupedTree,
     type Ok,
+    ok,
     type PivotError,
     type PivotErrorCode,
+    pivotError,
     type RenderedPivot,
     type Result,
     type SourceTable,
@@ -29,9 +29,7 @@ describe('pivot engine-internal types', () => {
         const tree: GroupedTree = {
             rowKeys: [['NA']],
             colKeys: [['2024']],
-            cells: new Map([
-                ['["NA"]', new Map([['["2024"]', [100]]])],
-            ]),
+            cells: new Map([['["NA"]', new Map([['["2024"]', [100]]])]]),
             rowTotals: new Map([['["NA"]', [100]]]),
             colTotals: new Map([['["2024"]', [100]]]),
             grandTotals: [100],

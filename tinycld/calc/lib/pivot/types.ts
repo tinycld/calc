@@ -9,7 +9,7 @@ import type { CellValue } from '../workbook-types'
 // keyed by header string. Cells outside the rectangle are not read.
 export interface SourceTable {
     headers: string[]
-    rows: Array<Record<string, CellValue>>
+    rows: Record<string, CellValue>[]
 }
 
 // GroupedTree is the aggregator's output: per-(rowKey, colKey) cell
@@ -58,10 +58,7 @@ export interface PivotError {
     message: string
 }
 
-export function pivotError(
-    code: PivotErrorCode,
-    message: string
-): PivotError {
+export function pivotError(code: PivotErrorCode, message: string): PivotError {
     return { ok: false, code, message }
 }
 

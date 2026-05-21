@@ -16,8 +16,8 @@ export function aggregate(table: SourceTable, def: PivotDefinition): GroupedTree
 
     const nValues = def.values.length
     for (const row of filtered) {
-        const rk = keyFromTuple(def.rows.map((f) => stringifyRaw(row[f.sourceColumn])))
-        const ck = keyFromTuple(def.cols.map((f) => stringifyRaw(row[f.sourceColumn])))
+        const rk = keyFromTuple(def.rows.map(f => stringifyRaw(row[f.sourceColumn])))
+        const ck = keyFromTuple(def.cols.map(f => stringifyRaw(row[f.sourceColumn])))
         rowKeySet.add(rk)
         colKeySet.add(ck)
         let byCol = cells.get(rk)
@@ -39,10 +39,10 @@ export function aggregate(table: SourceTable, def: PivotDefinition): GroupedTree
     }
 
     const rowKeys = Array.from(rowKeySet)
-        .map((s) => JSON.parse(s) as string[])
+        .map(s => JSON.parse(s) as string[])
         .sort(tupleCompare)
     const colKeys = Array.from(colKeySet)
-        .map((s) => JSON.parse(s) as string[])
+        .map(s => JSON.parse(s) as string[])
         .sort(tupleCompare)
 
     // Fold per-cell buckets into per-value aggregation results.
@@ -153,9 +153,9 @@ function foldOne(bucket: number[], i: number, agg: PivotAggregation): number {
 }
 
 function applyFilters(
-    rows: Array<Record<string, CellValue>>,
+    rows: Record<string, CellValue>[],
     def: PivotDefinition
-): Array<Record<string, CellValue>> {
+): Record<string, CellValue>[] {
     if (def.filters.length === 0) return rows
     const active = new Map<string, Set<string>>()
     for (const f of def.filters) {
@@ -165,7 +165,7 @@ function applyFilters(
         }
     }
     if (active.size === 0) return rows
-    return rows.filter((row) => {
+    return rows.filter(row => {
         for (const [col, allowed] of active) {
             if (!allowed.has(stringifyRaw(row[col]))) return false
         }
@@ -174,7 +174,7 @@ function applyFilters(
 }
 
 function subtotalByAxis(
-    rows: Array<Record<string, CellValue>>,
+    rows: Record<string, CellValue>[],
     def: PivotDefinition,
     axis: 'rows' | 'cols'
 ): Map<string, number[]> {
@@ -182,7 +182,7 @@ function subtotalByAxis(
     const out = new Map<string, number[]>()
     const buckets = new Map<string, number[]>()
     for (const row of rows) {
-        const key = keyFromTuple(fields.map((f) => stringifyRaw(row[f.sourceColumn])))
+        const key = keyFromTuple(fields.map(f => stringifyRaw(row[f.sourceColumn])))
         let b = buckets.get(key)
         if (b == null) {
             b = newBucket(def.values.length)
@@ -198,10 +198,7 @@ function subtotalByAxis(
     return out
 }
 
-function subtotalGrand(
-    rows: Array<Record<string, CellValue>>,
-    def: PivotDefinition
-): number[] {
+function subtotalGrand(rows: Record<string, CellValue>[], def: PivotDefinition): number[] {
     const b = newBucket(def.values.length)
     for (const row of rows) {
         for (let i = 0; i < def.values.length; i++) {

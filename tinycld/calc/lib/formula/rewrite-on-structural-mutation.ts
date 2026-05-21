@@ -73,7 +73,7 @@ export function rewriteFormulaForMutation(
     }
 
     const tokens: CapturedToken[] = []
-    const decorated = walkFormulaTokens(formula, (ctx) => {
+    const decorated = walkFormulaTokens(formula, ctx => {
         const idx = tokens.length
         const originalRefBytes = `${ctx.colAbs ? '$' : ''}${ctx.colLetters}${ctx.rowAbs ? '$' : ''}${ctx.rowNum}`
         tokens.push({ ctx, originalRefBytes })
@@ -88,7 +88,10 @@ export function rewriteFormulaForMutation(
     // Identify range pairs: a sentinel followed by `:` followed by
     // another sentinel. Single-cell tokens are everything else.
     const rangePartner = new Map<number, number>()
-    const sentinelRe = new RegExp(`${SENTINEL_OPEN}(\\d+)${SENTINEL_CLOSE}:${SENTINEL_OPEN}(\\d+)${SENTINEL_CLOSE}`, 'g')
+    const sentinelRe = new RegExp(
+        `${SENTINEL_OPEN}(\\d+)${SENTINEL_CLOSE}:${SENTINEL_OPEN}(\\d+)${SENTINEL_CLOSE}`,
+        'g'
+    )
     for (const m of decorated.matchAll(sentinelRe)) {
         const a = Number(m[1])
         const b = Number(m[2])
@@ -105,7 +108,11 @@ export function rewriteFormulaForMutation(
         if (partner != null && partner > i) {
             const left = tokens[i]
             const right = tokens[partner]
-            const leftRefs = tokenReferencesMutatedSheet(left.ctx, formulaSheetLower, mutationSheetLower)
+            const leftRefs = tokenReferencesMutatedSheet(
+                left.ctx,
+                formulaSheetLower,
+                mutationSheetLower
+            )
             // Right endpoint of a `Sheet1!A1:A10`-style range inherits the
             // left's sheet by Excel convention — the prefix is implicit on
             // the right. When the right has its own prefix we use that
@@ -131,7 +138,11 @@ export function rewriteFormulaForMutation(
             // Mixed-sheet pair — fall through to per-endpoint handling.
         }
         const tok = tokens[i]
-        const refsMutated = tokenReferencesMutatedSheet(tok.ctx, formulaSheetLower, mutationSheetLower)
+        const refsMutated = tokenReferencesMutatedSheet(
+            tok.ctx,
+            formulaSheetLower,
+            mutationSheetLower
+        )
         if (!refsMutated) {
             replacements.set(i, `${tok.ctx.sheetPrefix}${tok.originalRefBytes}`)
             continue

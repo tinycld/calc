@@ -9,9 +9,7 @@ export interface FieldSlotProps {
 export function FieldSlot({ label, children }: FieldSlotProps) {
     return (
         <View className="mt-3">
-            <Text className="text-xs font-medium uppercase text-muted-foreground">
-                {label}
-            </Text>
+            <Text className="text-xs font-medium uppercase text-muted-foreground">{label}</Text>
             <View className="mt-1 gap-2">{children}</View>
         </View>
     )

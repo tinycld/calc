@@ -323,14 +323,8 @@ function SplitBody({
     // calling shiftedColOffsets / shiftedRowOffsets inline — that
     // allocated a new Float64Array per overlay per render (≈14
     // arrays per scroll tick).
-    const brColOffsets = useMemo(
-        () => shiftedColOffsets(colOffsets, fCols),
-        [colOffsets, fCols]
-    )
-    const brRowOffsets = useMemo(
-        () => shiftedRowOffsets(rowOffsets, fRows),
-        [rowOffsets, fRows]
-    )
+    const brColOffsets = useMemo(() => shiftedColOffsets(colOffsets, fCols), [colOffsets, fCols])
+    const brRowOffsets = useMemo(() => shiftedRowOffsets(rowOffsets, fRows), [rowOffsets, fRows])
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }} onLayout={onLayout}>
@@ -441,10 +435,7 @@ function SplitBody({
                                 rowOffsets={brRowOffsets}
                                 readOnly={readOnly}
                             />
-                            <RefDragOverlay
-                                colOffsets={brColOffsets}
-                                rowOffsets={brRowOffsets}
-                            />
+                            <RefDragOverlay colOffsets={brColOffsets} rowOffsets={brRowOffsets} />
                             <ResizePreviewLine
                                 dragState={colDragState}
                                 colOffsets={brColOffsets}

@@ -29,12 +29,10 @@ describe('clipboard merge round-trip', () => {
             startCol: 2,
             endCol: 4,
         })
-        expect(payload.merges).toEqual([
-            { rowOffset: 0, colOffset: 0, rowSpan: 2, colSpan: 2 },
-        ])
+        expect(payload.merges).toEqual([{ rowOffset: 0, colOffset: 0, rowSpan: 2, colSpan: 2 }])
     })
 
-    it('serializeRange omits merges that aren\'t fully inside the range', () => {
+    it("serializeRange omits merges that aren't fully inside the range", () => {
         const doc = freshDoc()
         mergeCells(doc, 'sheet1', { startRow: 2, endRow: 5, startCol: 2, endCol: 5 })
         // Range only covers part of the merge

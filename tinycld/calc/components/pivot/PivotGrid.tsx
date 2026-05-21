@@ -1,5 +1,5 @@
 import { ScrollView, Text, View } from 'react-native'
-import * as Y from 'yjs'
+import type * as Y from 'yjs'
 import { useRenderedPivot } from '../../hooks/use-rendered-pivot'
 import { usePivotPanelStore } from '../../lib/stores/pivot-panel-store'
 import type { PivotDefinition } from '../../lib/workbook-types'
@@ -34,16 +34,10 @@ export interface PivotGridProps {
     readOnly?: boolean
 }
 
-export function PivotGrid({
-    doc,
-    def,
-    sheetId,
-    onOpenSidePanel,
-    readOnly,
-}: PivotGridProps) {
+export function PivotGrid({ doc, def, sheetId, onOpenSidePanel, readOnly }: PivotGridProps) {
     const result = useRenderedPivot(doc, def)
-    const openForSheetId = usePivotPanelStore((s) => s.openForSheetId)
-    const close = usePivotPanelStore((s) => s.close)
+    const openForSheetId = usePivotPanelStore(s => s.openForSheetId)
+    const close = usePivotPanelStore(s => s.close)
     const view = selectPivotGridViewState(def, result)
     const panelOpen = selectPivotPanelOpen(openForSheetId, sheetId)
     return (
@@ -100,7 +94,7 @@ interface PivotRowProps {
 function PivotRow({ cells }: PivotRowProps) {
     return (
         <View className="flex-row">
-            {cells.map((cell) => (
+            {cells.map(cell => (
                 <PivotCell key={`${cell.row}:${cell.col}`} cell={cell} />
             ))}
         </View>

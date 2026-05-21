@@ -18,11 +18,7 @@ export function PrintLayoutFields({ control }: PrintLayoutFieldsProps) {
                 name="layout.showHeaders"
                 label="Show row/column headers (A,B,C / 1,2,3)"
             />
-            <Toggle
-                control={control}
-                name="layout.showGridlines"
-                label="Show gridlines"
-            />
+            <Toggle control={control} name="layout.showGridlines" label="Show gridlines" />
             <Controller
                 control={control}
                 name="layout.repeatRows"
@@ -31,9 +27,7 @@ export function PrintLayoutFields({ control }: PrintLayoutFieldsProps) {
                     return (
                         <View>
                             <Pressable
-                                onPress={() =>
-                                    field.onChange(enabled ? null : { from: 1, to: 1 })
-                                }
+                                onPress={() => field.onChange(enabled ? null : { from: 1, to: 1 })}
                                 accessibilityRole="checkbox"
                                 accessibilityState={{ checked: enabled }}
                                 className="flex-row items-center"

@@ -8,11 +8,7 @@ import type { RemotePresence } from '../../hooks/use-presence'
 import type { RowDragState } from '../../hooks/use-row-resize'
 import { useWorkbook } from '../../hooks/use-workbook-context'
 import { expandRangeOverMergeList, type MergeRange } from '../../lib/merge'
-import {
-    isDisjoint,
-    primaryAnchor,
-    primaryRange,
-} from '../../lib/selection-range'
+import { isDisjoint, primaryAnchor, primaryRange } from '../../lib/selection-range'
 import { locateCellAtGridCoord } from './style-helpers'
 
 interface RemoteOverlaysProps {
@@ -178,11 +174,7 @@ export function LocalSelectionOverlay({
     return <>{overlays}</>
 }
 
-function findMergeAnchoredAt(
-    row: number,
-    col: number,
-    merges: MergeRange[]
-): MergeRange | null {
+function findMergeAnchoredAt(row: number, col: number, merges: MergeRange[]): MergeRange | null {
     for (const m of merges) {
         if (m.anchorRow === row && m.anchorCol === col) return m
     }

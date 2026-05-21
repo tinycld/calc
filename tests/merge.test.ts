@@ -133,19 +133,13 @@ describe('expandRangeOverMergeList', () => {
         // merged footprint, matching the blue edit-mode border.
         const merges = [{ anchorRow: 2, anchorCol: 2, rowSpan: 3, colSpan: 3 }]
         expect(
-            expandRangeOverMergeList(
-                { startRow: 2, endRow: 2, startCol: 2, endCol: 2 },
-                merges
-            )
+            expandRangeOverMergeList({ startRow: 2, endRow: 2, startCol: 2, endCol: 2 }, merges)
         ).toEqual({ startRow: 2, endRow: 4, startCol: 2, endCol: 4 })
     })
 
     it('normalizes an inverted range even when no merges are present', () => {
         expect(
-            expandRangeOverMergeList(
-                { startRow: 5, endRow: 2, startCol: 4, endCol: 1 },
-                []
-            )
+            expandRangeOverMergeList({ startRow: 5, endRow: 2, startCol: 4, endCol: 1 }, [])
         ).toEqual({ startRow: 2, endRow: 5, startCol: 1, endCol: 4 })
     })
 
@@ -164,10 +158,7 @@ describe('expandRangeOverMergeList', () => {
             { anchorRow: 2, anchorCol: 4, rowSpan: 3, colSpan: 1 },
         ]
         expect(
-            expandRangeOverMergeList(
-                { startRow: 2, endRow: 2, startCol: 2, endCol: 2 },
-                merges
-            )
+            expandRangeOverMergeList({ startRow: 2, endRow: 2, startCol: 2, endCol: 2 }, merges)
         ).toEqual({ startRow: 2, endRow: 4, startCol: 2, endCol: 4 })
     })
 })

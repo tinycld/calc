@@ -1,14 +1,7 @@
 import * as Y from 'yjs'
-import { CONDITIONAL_FORMATS_KEY } from './conditional-format/y-binding'
 import { PIVOT_SHEET_KEY } from './pivot/keys'
 import { writePivot } from './pivot/y-binding'
-import type {
-    CellKind,
-    CellRaw,
-    CellStyle,
-    ConditionalFormatRuleModel,
-    WorkbookModel,
-} from './workbook-types'
+import type { CellKind, CellRaw, CellStyle, WorkbookModel } from './workbook-types'
 import { yCellKey } from './y-cell-key'
 
 // MERGES_KEY is the per-sheet meta key holding the merged-range Y.Map.
@@ -50,7 +43,7 @@ export const STYLE_KEY = 'style'
 // PIVOTS_MAP / PIVOT_SHEET_KEY are defined in ./pivot/keys.ts to keep
 // y-binding.ts (which depends on them) and this module from forming a
 // require cycle. Re-exported here so existing call sites keep working.
-export { PIVOTS_MAP, PIVOT_SHEET_KEY } from './pivot/keys'
+export { PIVOT_SHEET_KEY, PIVOTS_MAP } from './pivot/keys'
 
 export interface YSheetMeta {
     name: string

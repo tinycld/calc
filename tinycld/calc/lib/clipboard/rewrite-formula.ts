@@ -1,9 +1,5 @@
 import { columnLabel } from '../workbook-types'
-import {
-    type FormulaTokenContext,
-    letterToCol,
-    walkFormulaTokens,
-} from './formula-token-walker'
+import { type FormulaTokenContext, letterToCol, walkFormulaTokens } from './formula-token-walker'
 
 // rewriteFormula shifts the relative A1 refs inside a formula by
 // (deltaRow, deltaCol), preserving per-axis absoluteness (the `$`
@@ -52,7 +48,7 @@ export function rewriteFormula(
     if (!formula.startsWith('=')) return formula
     if (deltaRow === 0 && deltaCol === 0) return formula
 
-    return walkFormulaTokens(formula, (ctx) => transformClipboardToken(ctx, deltaRow, deltaCol))
+    return walkFormulaTokens(formula, ctx => transformClipboardToken(ctx, deltaRow, deltaCol))
 }
 
 function transformClipboardToken(

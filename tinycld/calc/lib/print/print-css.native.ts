@@ -1,5 +1,5 @@
-import type { PrintConfig } from './types'
 import { buildPrintCss as buildPrintCssWeb } from './print-css.web'
+import type { PrintConfig } from './types'
 
 // buildPrintCss (native) is the print stylesheet handed to expo-print
 // on iOS/Android. expo-print runs the HTML inside a system WebView

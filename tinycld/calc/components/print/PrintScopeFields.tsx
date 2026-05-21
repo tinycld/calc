@@ -12,11 +12,7 @@ interface PrintScopeFieldsProps {
 // selection" radio auto-disables when the parent reports no usable
 // selection (no selection at all, or selection on a different sheet
 // than the one being printed).
-export function PrintScopeFields({
-    control,
-    sheets,
-    selectionAvailable,
-}: PrintScopeFieldsProps) {
+export function PrintScopeFields({ control, sheets, selectionAvailable }: PrintScopeFieldsProps) {
     return (
         <View style={{ gap: 12 }}>
             <View>
@@ -154,9 +150,7 @@ function PickedSheetList({ pickedIds, sheets, onChange }: PickedSheetListProps) 
                         checked={checked}
                         onPress={() =>
                             onChange(
-                                checked
-                                    ? pickedIds.filter(id => id !== s.id)
-                                    : [...pickedIds, s.id]
+                                checked ? pickedIds.filter(id => id !== s.id) : [...pickedIds, s.id]
                             )
                         }
                     />

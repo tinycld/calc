@@ -6,7 +6,7 @@
 import type { CellValue } from '../workbook-types'
 import { yCellKey } from '../y-cell-key'
 import { parseA1Range } from './range-parse'
-import { pivotError, type Result, ok, type SourceTable } from './types'
+import { ok, pivotError, type Result, type SourceTable } from './types'
 
 const EMPTY_CELL: CellValue = { kind: 'string', raw: null, display: '' }
 
@@ -17,10 +17,7 @@ export function readSourceTable(
 ): Result<SourceTable> {
     const parsed = parseA1Range(a1)
     if (!parsed.ok) {
-        return pivotError(
-            'malformed-range',
-            `Source range "${a1}" is not a valid A1 range.`
-        )
+        return pivotError('malformed-range', `Source range "${a1}" is not a valid A1 range.`)
     }
     const sheetId = sheetIdByName[parsed.sheetName]
     if (sheetId == null) {
@@ -43,7 +40,7 @@ export function readSourceTable(
         )
     }
 
-    const rows: Array<Record<string, CellValue>> = []
+    const rows: Record<string, CellValue>[] = []
     for (let r = parsed.startRow + 1; r <= parsed.endRow; r++) {
         const row: Record<string, CellValue> = {}
         for (let i = 0; i < headers.length; i++) {

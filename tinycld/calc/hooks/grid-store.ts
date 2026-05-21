@@ -42,15 +42,14 @@ import {
 import {
     clampSubRangesForDelete,
     isDisjoint as isDisjointSelection,
+    rangeContainsCell,
     primaryAnchor as readPrimaryAnchor,
     primaryRange as readPrimaryRange,
-    rangeContainsCell,
     type Selection,
-    shiftIndexForInsert,
+    type SubRange,
     shiftSubRangesForInsert,
     singleCellSelection,
     singleRectSelection,
-    type SubRange,
     subRangeAtCell,
 } from '../lib/selection-range'
 
@@ -551,7 +550,9 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     sr => sr.anchor.row === target.row && sr.anchor.col === target.col
                 )
                 if (anchorIdx >= 0 && ranges.length > 1) {
-                    const next: SubRange[] = ranges.slice(0, anchorIdx).concat(ranges.slice(anchorIdx + 1))
+                    const next: SubRange[] = ranges
+                        .slice(0, anchorIdx)
+                        .concat(ranges.slice(anchorIdx + 1))
                     set({
                         selection: { ranges: next },
                         editSession: null,
@@ -1018,13 +1019,10 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 // a single-cell selection on the clicked cell.
                 const state = get()
                 const insideAny =
-                    state.selection != null &&
-                    subRangeAtCell(state.selection, row, col) != null
+                    state.selection != null && subRangeAtCell(state.selection, row, col) != null
                 commitInflight({ row, col })
                 set({
-                    selection: insideAny
-                        ? state.selection
-                        : singleCellSelection({ row, col }),
+                    selection: insideAny ? state.selection : singleCellSelection({ row, col }),
                     editSession: null,
                     contextTarget: { cell: { row, col }, cursor: { x, y } },
                 })
@@ -1152,11 +1150,12 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 // Collapse to the clamped anchor of the primary sub-
                 // range — matches old single-rectangle behavior.
                 const primaryAnchor = readPrimaryAnchor(state.selection)
-                const nextRow = primaryAnchor == null
-                    ? 1
-                    : primaryAnchor.row < fromRow
-                        ? primaryAnchor.row
-                        : primaryAnchor.row >= fromRow + count
+                const nextRow =
+                    primaryAnchor == null
+                        ? 1
+                        : primaryAnchor.row < fromRow
+                          ? primaryAnchor.row
+                          : primaryAnchor.row >= fromRow + count
                             ? primaryAnchor.row - count
                             : Math.min(fromRow, newRowCount)
                 const nextCol = primaryAnchor?.col ?? 1
@@ -1182,11 +1181,12 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 deps.applyStructuralMutation({ kind: 'deleteColumns', fromCol, count })
                 const newColCount = Math.max(1, currentColCount - count)
                 const primaryAnchor = readPrimaryAnchor(state.selection)
-                const nextCol = primaryAnchor == null
-                    ? 1
-                    : primaryAnchor.col < fromCol
-                        ? primaryAnchor.col
-                        : primaryAnchor.col >= fromCol + count
+                const nextCol =
+                    primaryAnchor == null
+                        ? 1
+                        : primaryAnchor.col < fromCol
+                          ? primaryAnchor.col
+                          : primaryAnchor.col >= fromCol + count
                             ? primaryAnchor.col - count
                             : Math.min(fromCol, newColCount)
                 const nextRow = primaryAnchor?.row ?? 1

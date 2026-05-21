@@ -111,12 +111,7 @@ export function resolveBorderPatch(
 }
 
 function isEmptyPatch(patch: CellBorders): boolean {
-    return (
-        patch.top == null &&
-        patch.bottom == null &&
-        patch.left == null &&
-        patch.right == null
-    )
+    return patch.top == null && patch.bottom == null && patch.left == null && patch.right == null
 }
 
 // applyBorderPreset writes the resolved per-cell patches inside one

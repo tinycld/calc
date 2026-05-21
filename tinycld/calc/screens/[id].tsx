@@ -83,23 +83,19 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     // renamed, deleted), or now hidden. If every sheet is hidden,
     // surface the first one regardless — the workbook is degenerate
     // but still navigable.
-    const activeSheet =
-        sheets.find(s => s.id === sheetParam) ?? sheets[0] ?? allSheets[0] ?? null
+    const activeSheet = sheets.find(s => s.id === sheetParam) ?? sheets[0] ?? allSheets[0] ?? null
 
-    const onSelect = useCallback(
-        (nextSheetId: string) => {
-            // setParams updates the `sheet` query param without
-            // unmounting the screen. router.replace re-mounts the
-            // route on web for query-only changes, which tears down
-            // the Y.Doc + realtime WebSocket and races local writes
-            // (newly-created pivots in particular) against the new
-            // doc's SyncReply. setParams keeps the same component
-            // instance + the same room, so unsaved local state
-            // survives the activation.
-            router.setParams({ sheet: nextSheetId })
-        },
-        []
-    )
+    const onSelect = useCallback((nextSheetId: string) => {
+        // setParams updates the `sheet` query param without
+        // unmounting the screen. router.replace re-mounts the
+        // route on web for query-only changes, which tears down
+        // the Y.Doc + realtime WebSocket and races local writes
+        // (newly-created pivots in particular) against the new
+        // doc's SyncReply. setParams keeps the same component
+        // instance + the same room, so unsaved local state
+        // survives the activation.
+        router.setParams({ sheet: nextSheetId })
+    }, [])
 
     const openCommentsDrawer = useCommentsDrawerStore(s => s.open)
     const resetCommentsDrawer = useCommentsDrawerStore(s => s.reset)
@@ -111,7 +107,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
     // changes so threads from a prior doc can't flash for the new one.
     useEffect(() => {
         return () => resetCommentsDrawer()
-    }, [resetCommentsDrawer, workbookId])
+    }, [resetCommentsDrawer])
 
     if (activeSheet == null) {
         return <CenteredMessage label="Spreadsheet is empty." />
@@ -149,9 +145,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                 />
                 <CopyToFolderDialog
                     itemId={workbookId}
-                    onCopied={newItemId =>
-                        router.replace(orgHref('calc/[id]', { id: newItemId }))
-                    }
+                    onCopied={newItemId => router.replace(orgHref('calc/[id]', { id: newItemId }))}
                 />
             </View>
         </CommentsProvider>

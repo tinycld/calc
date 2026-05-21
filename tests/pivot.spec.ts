@@ -499,4 +499,3 @@ async function createPivot(
     await page.getByRole('button', { name: 'Create pivot table' }).click()
     await expect(page.getByLabel(`Sheet ${targetSheetName}`)).toBeVisible({ timeout: 15_000 })
 }
-

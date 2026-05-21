@@ -6,7 +6,7 @@ interface PivotPanelState {
     close(): void
 }
 
-export const usePivotPanelStore = create<PivotPanelState>((set) => ({
+export const usePivotPanelStore = create<PivotPanelState>(set => ({
     openForSheetId: null,
     open: (sheetId: string) => set({ openForSheetId: sheetId }),
     close: () => set({ openForSheetId: null }),

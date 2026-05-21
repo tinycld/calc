@@ -15,11 +15,7 @@ import { useWorkbook } from './use-workbook-context'
 // Pure yjs writer — no React, no store access. Lives alongside the
 // hook below so the format-menu / shortcut wiring and the vitest spec
 // can both import it directly.
-export function clearFormattingInRange(
-    doc: Y.Doc,
-    sheetId: string,
-    range: CellRange
-): void {
+export function clearFormattingInRange(doc: Y.Doc, sheetId: string, range: CellRange): void {
     const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
     doc.transact(() => {
         forEachCellInRange(range, (row, col) => {

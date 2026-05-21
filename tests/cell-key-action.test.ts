@@ -27,12 +27,18 @@ describe('classifyCellKey', () => {
     })
 
     describe('startEdit (printable single chars)', () => {
-        it.each([['a'], ['A'], ['1'], ['='], ['"'], [' '], ['€'], ['é']])(
-            'opens the editor seeded with %j',
-            key => {
-                expect(classifyCellKey({ key })).toEqual({ kind: 'startEdit', seed: key })
-            }
-        )
+        it.each([
+            ['a'],
+            ['A'],
+            ['1'],
+            ['='],
+            ['"'],
+            [' '],
+            ['€'],
+            ['é'],
+        ])('opens the editor seeded with %j', key => {
+            expect(classifyCellKey({ key })).toEqual({ kind: 'startEdit', seed: key })
+        })
 
         it("' opens the editor (apostrophe-prefix string forcing is handled inside the editor)", () => {
             expect(classifyCellKey({ key: "'" })).toEqual({ kind: 'startEdit', seed: "'" })

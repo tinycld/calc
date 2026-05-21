@@ -6,7 +6,7 @@ import { Text, View } from 'react-native'
 import type { CFRule } from '../../lib/conditional-format/types'
 
 export function RuleListRow({ rule }: { rule: CFRule }) {
-    const rangeText = rule.ranges.filter((r) => r !== '').join(', ') || '—'
+    const rangeText = rule.ranges.filter(r => r !== '').join(', ') || '—'
     const conditionText = describeCondition(rule)
     const previewBg = rule.style.fill?.fgColor ?? rule.style.fill?.bgColor
     const previewFg = rule.style.font?.color
@@ -36,16 +36,10 @@ export function RuleListRow({ rule }: { rule: CFRule }) {
                 </Text>
             </View>
             <View className="flex-1">
-                <Text
-                    className="text-sm font-medium text-foreground"
-                    numberOfLines={1}
-                >
+                <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
                     {rangeText}
                 </Text>
-                <Text
-                    className="text-xs text-muted-foreground"
-                    numberOfLines={1}
-                >
+                <Text className="text-xs text-muted-foreground" numberOfLines={1}>
                     {conditionText}
                 </Text>
             </View>

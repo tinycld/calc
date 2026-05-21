@@ -18,8 +18,8 @@ import { primaryRange } from '../../lib/selection-range'
 import { computeHandlePositions } from './selection-edge-handles-math'
 import { locateCellAtGridCoord } from './style-helpers'
 
-export { computeHandlePositions } from './selection-edge-handles-math'
 export type { HandlePositions } from './selection-edge-handles-math'
+export { computeHandlePositions } from './selection-edge-handles-math'
 
 interface SelectionEdgeHandlesProps {
     colOffsets: Float64Array

@@ -7,24 +7,19 @@
 // edits as undoable steps (SHEETS_MAP is already in the undo scope).
 
 import type * as Y from 'yjs'
+import type { CFRule } from './types'
 import {
     deleteRule as bindingDeleteRule,
     reorderRule as bindingReorderRule,
     updateRule as bindingUpdateRule,
     writeRule as bindingWriteRule,
 } from './y-binding'
-import type { CFRule } from './types'
 
 export function addRule(doc: Y.Doc, sheetId: string, rule: CFRule): boolean {
     return bindingWriteRule(doc, sheetId, rule)
 }
 
-export function updateRule(
-    doc: Y.Doc,
-    sheetId: string,
-    ruleId: string,
-    next: CFRule
-): boolean {
+export function updateRule(doc: Y.Doc, sheetId: string, ruleId: string, next: CFRule): boolean {
     return bindingUpdateRule(doc, sheetId, ruleId, next)
 }
 

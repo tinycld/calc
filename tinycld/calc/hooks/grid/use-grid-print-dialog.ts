@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import type { PrintSelection } from '../../components/PrintDialog'
 import { isDisjoint, primaryRange } from '../../lib/selection-range'
-import { usePrintDialog } from '../use-print-dialog'
 import { useGridStore } from '../use-grid-store'
+import { usePrintDialog } from '../use-print-dialog'
 
 export interface GridPrintDialog {
     isOpen: boolean
@@ -30,10 +30,7 @@ export function useGridPrintDialog(sheetId: string): GridPrintDialog {
         // Single-cell ranges fall through with no current-selection
         // option (matches the legacy behavior: only multi-cell
         // ranges produce a meaningful print rectangle).
-        if (
-            range.startRow === range.endRow &&
-            range.startCol === range.endCol
-        ) {
+        if (range.startRow === range.endRow && range.startCol === range.endCol) {
             return null
         }
         return {

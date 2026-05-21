@@ -23,15 +23,15 @@
 // the rendered grid with the expected display values.
 
 import { describe, expect, it } from 'vitest'
-import { computePivot, type PivotError, type RenderedPivot } from '../tinycld/calc/lib/pivot'
 import {
     buildPivotGridCellMatrix,
     isPivotDefinitionEmpty,
     selectPivotGridViewState,
     selectPivotPanelOpen,
 } from '../tinycld/calc/components/pivot/pivot-grid-view-state'
-import type { CellValue, PivotDefinition } from '../tinycld/calc/lib/workbook-types'
 import type { RenderedPivotResult } from '../tinycld/calc/hooks/use-rendered-pivot'
+import { computePivot, type PivotError, type RenderedPivot } from '../tinycld/calc/lib/pivot'
+import type { CellValue, PivotDefinition } from '../tinycld/calc/lib/workbook-types'
 
 function makeDef(overrides: Partial<PivotDefinition> = {}): PivotDefinition {
     return {
@@ -276,7 +276,7 @@ describe('PivotGrid view-state pipeline (with real engine)', () => {
         expect(view.kind).toBe('grid')
         if (view.kind !== 'grid') return
         const matrix = buildPivotGridCellMatrix(view.rendered)
-        const allText = matrix.flat().map((m) => m.display)
+        const allText = matrix.flat().map(m => m.display)
         expect(allText).toContain('East')
         expect(allText).toContain('Grand Total')
     })

@@ -5,10 +5,7 @@ import {
     evaluateRulesForCell,
     matchesCondition,
 } from '../tinycld/calc/lib/conditional-format/evaluate'
-import type {
-    CFCondition,
-    CFRule,
-} from '../tinycld/calc/lib/conditional-format/types'
+import type { CFRule } from '../tinycld/calc/lib/conditional-format/types'
 
 function cell(
     overrides: Partial<EvaluableCell> & { kind: EvaluableCell['kind']; raw: EvaluableCell['raw'] }
@@ -36,16 +33,16 @@ describe('matchesCondition — empty', () => {
     })
     it('isEmpty rejects a number cell', () => {
         expect(
-            matchesCondition({ type: 'isEmpty' }, cell({ kind: 'number', raw: 0, display: '0' }), ctx())
+            matchesCondition(
+                { type: 'isEmpty' },
+                cell({ kind: 'number', raw: 0, display: '0' }),
+                ctx()
+            )
         ).toBe(false)
     })
     it('isNotEmpty matches any non-empty string', () => {
         expect(
-            matchesCondition(
-                { type: 'isNotEmpty' },
-                cell({ kind: 'string', raw: 'x' }),
-                ctx()
-            )
+            matchesCondition({ type: 'isNotEmpty' }, cell({ kind: 'string', raw: 'x' }), ctx())
         ).toBe(true)
     })
     it('isNotEmpty rejects null', () => {
@@ -61,12 +58,10 @@ describe('matchesCondition — text', () => {
         expect(matchesCondition({ type: 'textContains', value1: 'HELLO' }, c, ctx())).toBe(true)
     })
     it('textDoesNotContain inverts', () => {
-        expect(
-            matchesCondition({ type: 'textDoesNotContain', value1: 'foo' }, c, ctx())
-        ).toBe(true)
-        expect(
-            matchesCondition({ type: 'textDoesNotContain', value1: 'hello' }, c, ctx())
-        ).toBe(false)
+        expect(matchesCondition({ type: 'textDoesNotContain', value1: 'foo' }, c, ctx())).toBe(true)
+        expect(matchesCondition({ type: 'textDoesNotContain', value1: 'hello' }, c, ctx())).toBe(
+            false
+        )
     })
     it('textStartsWith / textEndsWith', () => {
         expect(matchesCondition({ type: 'textStartsWith', value1: 'hello' }, c, ctx())).toBe(true)
@@ -97,7 +92,9 @@ describe('matchesCondition — number', () => {
     it('numberGreater / numberGreaterOrEqual', () => {
         expect(matchesCondition({ type: 'numberGreater', value1: '40' }, c, ctx())).toBe(true)
         expect(matchesCondition({ type: 'numberGreater', value1: '50' }, c, ctx())).toBe(false)
-        expect(matchesCondition({ type: 'numberGreaterOrEqual', value1: '50' }, c, ctx())).toBe(true)
+        expect(matchesCondition({ type: 'numberGreaterOrEqual', value1: '50' }, c, ctx())).toBe(
+            true
+        )
     })
     it('numberLess / numberLessOrEqual', () => {
         expect(matchesCondition({ type: 'numberLess', value1: '60' }, c, ctx())).toBe(true)
@@ -122,13 +119,13 @@ describe('matchesCondition — number', () => {
         ).toBe(true)
     })
     it('numberBetween rejects when any operand is missing', () => {
-        expect(
-            matchesCondition({ type: 'numberBetween', value1: '40' }, c, ctx())
-        ).toBe(false)
+        expect(matchesCondition({ type: 'numberBetween', value1: '40' }, c, ctx())).toBe(false)
     })
     it('string cell with numeric content coerces', () => {
         const numericString = cell({ kind: 'string', raw: '50' })
-        expect(matchesCondition({ type: 'numberGreater', value1: '40' }, numericString, ctx())).toBe(true)
+        expect(
+            matchesCondition({ type: 'numberGreater', value1: '40' }, numericString, ctx())
+        ).toBe(true)
     })
     it('non-numeric string is rejected', () => {
         const text = cell({ kind: 'string', raw: 'abc' })
@@ -168,9 +165,9 @@ describe('matchesCondition — customFormula', () => {
             ...ctx(),
             evalFormulaAt: () => true,
         }
-        expect(
-            matchesCondition({ type: 'customFormula', formula: 'A1>3' }, c, callContext)
-        ).toBe(true)
+        expect(matchesCondition({ type: 'customFormula', formula: 'A1>3' }, c, callContext)).toBe(
+            true
+        )
     })
     it('falsy formula result does not match', () => {
         const c = cell({ kind: 'number', raw: 5 })
@@ -178,9 +175,9 @@ describe('matchesCondition — customFormula', () => {
             ...ctx(),
             evalFormulaAt: () => false,
         }
-        expect(
-            matchesCondition({ type: 'customFormula', formula: 'A1>10' }, c, callContext)
-        ).toBe(false)
+        expect(matchesCondition({ type: 'customFormula', formula: 'A1>10' }, c, callContext)).toBe(
+            false
+        )
     })
     it('missing formula does not match', () => {
         const c = cell({ kind: 'number', raw: 5 })

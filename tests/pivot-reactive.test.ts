@@ -282,13 +282,7 @@ describe('usePivotForSheet data-flow contract', () => {
 // change. We exercise the data-flow contract via the same internals
 // pattern as the other hooks — no React mount needed.
 
-function writeCell(
-    doc: Y.Doc,
-    sheetId: string,
-    row: number,
-    col: number,
-    cell: CellValue
-): void {
+function writeCell(doc: Y.Doc, sheetId: string, row: number, col: number, cell: CellValue): void {
     const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
     const m = new Y.Map<unknown>()
     m.set('kind', cell.kind)

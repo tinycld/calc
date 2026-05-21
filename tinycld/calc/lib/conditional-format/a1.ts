@@ -82,10 +82,7 @@ export function parseSheetRanges(input: string): ParsedCellRange[] | null {
 
 export function cellInRange(range: ParsedCellRange, row: number, col: number): boolean {
     return (
-        row >= range.startRow &&
-        row <= range.endRow &&
-        col >= range.startCol &&
-        col <= range.endCol
+        row >= range.startRow && row <= range.endRow && col >= range.startCol && col <= range.endCol
     )
 }
 

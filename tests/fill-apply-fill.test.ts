@@ -263,7 +263,10 @@ describe('applyFill — single-undo discipline', () => {
         // doesn't capture seeding.
         const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
         doc.transact(() => {
-            for (const [row, value] of [[1, 1], [2, 2]] as const) {
+            for (const [row, value] of [
+                [1, 1],
+                [2, 2],
+            ] as const) {
                 const cell = new Y.Map<unknown>()
                 cell.set('kind', 'number')
                 cell.set('raw', value)

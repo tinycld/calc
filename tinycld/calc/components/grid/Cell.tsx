@@ -1,3 +1,4 @@
+import { useDragGesture } from '@tinycld/core/lib/gestures'
 import { memo, useCallback, useRef } from 'react'
 import {
     type GestureResponderEvent,
@@ -9,23 +10,18 @@ import {
     type TextInputSelectionChangeEventData,
     type View,
 } from 'react-native'
-import { useDragGesture } from '@tinycld/core/lib/gestures'
-import { FORMULA_BAR_ACCESSORY_ID } from '../formula-accessory-id'
-import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
-import type { RemotePresence } from '../../hooks/use-presence'
 import { useCellMerge } from '../../hooks/use-cell-merge'
 import { useConditionalStyleForCell } from '../../hooks/use-conditional-style'
+import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
+import type { RemotePresence } from '../../hooks/use-presence'
 import { useWorkbook } from '../../hooks/use-workbook-context'
 import { useYCell } from '../../hooks/use-y-cell'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
 import { cellStyleToRenderProps, mergeCellStyles } from '../../lib/cell-style-render'
-import {
-    computeShiftArrowTarget,
-    containsAny,
-    primaryAnchor,
-} from '../../lib/selection-range'
+import { computeShiftArrowTarget, containsAny, primaryAnchor } from '../../lib/selection-range'
 import { columnLabel, formatCell } from '../../lib/workbook-types'
 import type { FormulaSpecialKey } from '../FormulaBar'
+import { FORMULA_BAR_ACCESSORY_ID } from '../formula-accessory-id'
 import { CommentIndicator } from './CommentIndicator'
 import { locateCellAtGridCoord } from './style-helpers'
 
@@ -80,8 +76,7 @@ export const Cell = memo(function Cell({
     // renders when a merge is created — Cell is memoized and the
     // selection-derived flags don't always flip for the anchor.
     const merge = useCellMerge(doc, sheetId, row, col)
-    const isMergedCovered =
-        merge != null && (merge.anchorRow !== row || merge.anchorCol !== col)
+    const isMergedCovered = merge != null && (merge.anchorRow !== row || merge.anchorCol !== col)
     let renderWidth = width
     let renderHeight = height
     if (merge != null && !isMergedCovered) {
@@ -427,9 +422,7 @@ export const Cell = memo(function Cell({
     }
 
     const showRemoteDraft = remoteDraft != null
-    const renderStyle = cellStyleToRenderProps(
-        mergeCellStyles(cellValue?.style, conditionalStyle)
-    )
+    const renderStyle = cellStyleToRenderProps(mergeCellStyles(cellValue?.style, conditionalStyle))
     // Remote-draft display layers a peer's color + italic on top of
     // the cell's own style. Spread the style-derived textStyle first
     // so the remote-draft color and italic override (matching the
@@ -562,9 +555,7 @@ function CellEditor({
             onBlur={onSubmit}
             onFocus={onFocus}
             onKeyPress={onKeyPress}
-            inputAccessoryViewID={
-                Platform.OS === 'ios' ? FORMULA_BAR_ACCESSORY_ID : undefined
-            }
+            inputAccessoryViewID={Platform.OS === 'ios' ? FORMULA_BAR_ACCESSORY_ID : undefined}
             style={{
                 position: 'absolute',
                 left,

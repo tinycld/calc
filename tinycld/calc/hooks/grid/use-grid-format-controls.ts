@@ -209,9 +209,7 @@ export function useGridFormatControls({
             // Nested transacts on the same doc + same origin are
             // flattened by yjs, so wrapping our outer loop here keeps
             // the disjoint write as a single undo step.
-            applyToRanges(ranges, range =>
-                applyBorderPreset(doc, sheetId, range, presetId, edge)
-            )
+            applyToRanges(ranges, range => applyBorderPreset(doc, sheetId, range, presetId, edge))
         },
         [doc, sheetId, resolveRanges, applyToRanges, readOnly]
     )

@@ -1,6 +1,6 @@
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { ChevronDown, ChevronUp, X } from 'lucide-react-native'
 import { Pressable, Text, View } from 'react-native'
-import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 
 // Bare field chip rendered inside a panel slot (Rows / Cols / Filters).
 // Has a label and three action buttons: move-up, move-down, remove. The

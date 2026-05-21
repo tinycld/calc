@@ -9,8 +9,8 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Bold, Italic, Strikethrough, Underline } from 'lucide-react-native'
 import { Pressable, Text, View } from 'react-native'
-import { COLOR_PALETTE } from '../toolbar/ColorPickerMenu'
 import type { CellStyle } from '../../lib/workbook-types'
+import { COLOR_PALETTE } from '../toolbar/ColorPickerMenu'
 
 interface StylePickerProps {
     style: CellStyle
@@ -88,19 +88,11 @@ export function StylePicker({ style, onChange, disabled }: StylePickerProps) {
             </View>
             <View className="mt-3">
                 <Text className="mb-1 text-xs text-muted-foreground">Text color</Text>
-                <ColorSwatchGrid
-                    selected={fontColor}
-                    onSelect={setFontColor}
-                    disabled={disabled}
-                />
+                <ColorSwatchGrid selected={fontColor} onSelect={setFontColor} disabled={disabled} />
             </View>
             <View className="mt-3">
                 <Text className="mb-1 text-xs text-muted-foreground">Fill color</Text>
-                <ColorSwatchGrid
-                    selected={fillColor}
-                    onSelect={setFillColor}
-                    disabled={disabled}
-                />
+                <ColorSwatchGrid selected={fillColor} onSelect={setFillColor} disabled={disabled} />
             </View>
         </View>
     )
@@ -155,7 +147,7 @@ function ColorSwatchGrid({ selected, onSelect, disabled }: ColorSwatchGridProps)
                     opacity: disabled ? 0.5 : 1,
                 }}
             />
-            {COLOR_PALETTE.map((c) => (
+            {COLOR_PALETTE.map(c => (
                 <Pressable
                     key={c.hex}
                     onPress={() => onSelect(c.hex)}

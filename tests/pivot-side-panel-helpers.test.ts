@@ -19,18 +19,14 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import {
-    PIVOT_SOURCE_DISTINCT_CAP,
     canMoveDown,
     canMoveUp,
+    PIVOT_SOURCE_DISTINCT_CAP,
     readSourceMetadata,
 } from '../tinycld/calc/components/pivot/pivot-side-panel-helpers'
 import type { PivotDefinition } from '../tinycld/calc/lib/workbook-types'
 import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
-import {
-    CELLS_MAP,
-    PIVOT_SHEET_KEY,
-    SHEETS_MAP,
-} from '../tinycld/calc/lib/y-doc-bootstrap'
+import { CELLS_MAP, PIVOT_SHEET_KEY, SHEETS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
 
 interface SeedCell {
     row: number
@@ -40,11 +36,7 @@ interface SeedCell {
     kind?: string
 }
 
-function setCell(
-    cells: Y.Map<Y.Map<unknown>>,
-    sheetId: string,
-    spec: SeedCell
-): void {
+function setCell(cells: Y.Map<Y.Map<unknown>>, sheetId: string, spec: SeedCell): void {
     const m = new Y.Map<unknown>()
     m.set('kind', spec.kind ?? 'string')
     m.set('raw', spec.raw)
@@ -132,10 +124,7 @@ describe('readSourceMetadata / headers', () => {
             setCell(cells, 's1', { row: 1, col: 1, raw: 'Region', display: 'Region' })
             setCell(cells, 's1', { row: 2, col: 2, raw: 'E', display: 'E' })
         })
-        const { headers } = readSourceMetadata(
-            doc,
-            baseDef({ sourceRange: 'Sheet1!A1:B2' })
-        )
+        const { headers } = readSourceMetadata(doc, baseDef({ sourceRange: 'Sheet1!A1:B2' }))
         expect(headers).toEqual(['Region', ''])
     })
 
@@ -152,10 +141,7 @@ describe('readSourceMetadata / headers', () => {
                 kind: 'number',
             })
         })
-        const { headers } = readSourceMetadata(
-            doc,
-            baseDef({ sourceRange: 'Sheet1!A1:A2' })
-        )
+        const { headers } = readSourceMetadata(doc, baseDef({ sourceRange: 'Sheet1!A1:A2' }))
         expect(headers).toEqual(['2024'])
     })
 })

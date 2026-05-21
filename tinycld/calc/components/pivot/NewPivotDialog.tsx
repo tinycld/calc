@@ -1,10 +1,7 @@
 import { FormErrorSummary, TextInput, useForm, zodResolver } from '@tinycld/core/ui/form'
 import { useEffect } from 'react'
 import { Modal, Pressable, Text, View } from 'react-native'
-import {
-    type NewPivotFormValues,
-    newPivotSchema,
-} from './new-pivot-dialog-helpers'
+import { type NewPivotFormValues, newPivotSchema } from './new-pivot-dialog-helpers'
 
 export interface NewPivotDialogProps {
     visible: boolean

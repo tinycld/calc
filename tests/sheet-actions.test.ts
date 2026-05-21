@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { buildSheetActions } from '../tinycld/calc/hooks/use-sheet-actions'
-import { setYColWidth } from '../tinycld/calc/lib/dimensions'
 import { setYCell } from '../tinycld/calc/hooks/use-y-cell'
+import { setYColWidth } from '../tinycld/calc/lib/dimensions'
 import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
 import {
     CELLS_MAP,

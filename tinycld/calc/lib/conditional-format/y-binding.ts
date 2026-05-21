@@ -77,7 +77,7 @@ export function readRulesForSheet(doc: Y.Doc, sheetId: string): CFRule[] {
     const arr = rulesArray(doc, sheetId)
     if (arr == null) return []
     const out: CFRule[] = []
-    arr.forEach((entry) => {
+    arr.forEach(entry => {
         if (!(entry instanceof Y.Map)) return
         const rule = readRuleFromMap(entry)
         if (rule != null) out.push(rule)
@@ -125,12 +125,7 @@ export function deleteRule(doc: Y.Doc, sheetId: string, ruleId: string): boolean
 // at the same index. The Y.Array model has no in-place mutate, but
 // rule entries are small and the undo manager captures the pair as a
 // single transaction step.
-export function updateRule(
-    doc: Y.Doc,
-    sheetId: string,
-    ruleId: string,
-    next: CFRule
-): boolean {
+export function updateRule(doc: Y.Doc, sheetId: string, ruleId: string, next: CFRule): boolean {
     let ok = false
     doc.transact(() => {
         const arr = rulesArray(doc, sheetId)
@@ -227,7 +222,7 @@ function readCondition(raw: unknown): CFCondition | null {
 function readStringArray(raw: unknown): string[] {
     if (!(raw instanceof Y.Array)) return []
     const out: string[] = []
-    raw.forEach((v) => {
+    raw.forEach(v => {
         if (typeof v === 'string') out.push(v)
     })
     return out

@@ -46,17 +46,13 @@ test.describe('Calc Help menu', () => {
 
         // The menu should have dismissed before we assert on the drawer
         // — otherwise a "matched the menu label" false-pass slips through.
-        await expect(
-            page.getByRole('menuitem', { name: 'Keyboard shortcuts' })
-        ).toBeHidden()
+        await expect(page.getByRole('menuitem', { name: 'Keyboard shortcuts' })).toBeHidden()
 
         // The drawer carries a "Read all tinycld help →" footer link
         // that exists only inside the help drawer surface. Asserting on
         // it tells us the drawer actually opened, regardless of how the
         // gluestack Modal exposes its own role/name.
-        await expect(
-            page.getByRole('link', { name: /Read all tinycld help/i })
-        ).toBeVisible()
+        await expect(page.getByRole('link', { name: /Read all tinycld help/i })).toBeVisible()
     })
 
     test('Function list opens a dialog listing formula functions', async ({ page }) => {

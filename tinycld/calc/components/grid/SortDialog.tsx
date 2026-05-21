@@ -22,7 +22,7 @@ interface SortDialogProps {
 // CellContextMenu pattern; native uses a Pressable scrim.
 export function SortDialog({ doc, sheetId }: SortDialogProps) {
     const isOpen = useGridStore(s => s.sortDialogOpen)
-    const selection = useGridStore(s => s.sortDialogOpen ? s.selection : null)
+    const selection = useGridStore(s => (s.sortDialogOpen ? s.selection : null))
     const store = useGridStoreApi()
     const onClose = useCallback(() => store.getState().closeSortDialog(), [store])
 
@@ -144,7 +144,9 @@ export function SortDialog({ doc, sheetId }: SortDialogProps) {
                                 className={`px-3 py-2 ${isActive ? 'bg-accent' : ''}`}
                             >
                                 <Text
-                                    className={isActive ? 'text-accent-foreground' : 'text-foreground'}
+                                    className={
+                                        isActive ? 'text-accent-foreground' : 'text-foreground'
+                                    }
                                     style={{ fontSize: 14 }}
                                 >
                                     Column {columnLabel(c)}
@@ -179,7 +181,9 @@ export function SortDialog({ doc, sheetId }: SortDialogProps) {
                     accessibilityLabel="Data has header row"
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: hasHeader }}
-                    hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
+                    hitSlop={
+                        Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }
+                    }
                     className="flex-row items-center"
                     style={{ gap: 8 }}
                 >
@@ -193,9 +197,7 @@ export function SortDialog({ doc, sheetId }: SortDialogProps) {
                             justifyContent: 'center',
                         }}
                     >
-                        {hasHeader ? (
-                            <Text style={{ color: fg, fontSize: 12 }}>✓</Text>
-                        ) : null}
+                        {hasHeader ? <Text style={{ color: fg, fontSize: 12 }}>✓</Text> : null}
                     </View>
                     <Text className="text-foreground" style={{ fontSize: 14 }}>
                         Data has header row

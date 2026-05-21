@@ -100,10 +100,7 @@ export function createFindStore(): FindStoreApi {
                 let nextIndex = -1
                 if (prev != null) {
                     const found = matches.findIndex(
-                        m =>
-                            m.sheetId === prev.sheetId &&
-                            m.row === prev.row &&
-                            m.col === prev.col
+                        m => m.sheetId === prev.sheetId && m.row === prev.row && m.col === prev.col
                     )
                     if (found >= 0) nextIndex = found
                 }

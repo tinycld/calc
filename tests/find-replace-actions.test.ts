@@ -9,8 +9,8 @@ import {
 } from '../tinycld/calc/hooks/find/use-find-actions'
 import { createFindStore } from '../tinycld/calc/hooks/find/use-find-store'
 import { setYCell } from '../tinycld/calc/hooks/use-y-cell'
-import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
 import type { WorkbookModel } from '../tinycld/calc/lib/workbook-types'
+import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
 import {
     bootstrapYDocFromWorkbook,
     CELLS_MAP,
@@ -54,7 +54,10 @@ describe('find store wrap-around', () => {
         store.getState().setCurrentMatchIndex(next)
         expect(store.getState().currentMatchIndex).toBe(0)
         // Wrap backward → last
-        const prev = store.getState().currentMatchIndex <= 0 ? len - 1 : store.getState().currentMatchIndex - 1
+        const prev =
+            store.getState().currentMatchIndex <= 0
+                ? len - 1
+                : store.getState().currentMatchIndex - 1
         store.getState().setCurrentMatchIndex(prev)
         expect(store.getState().currentMatchIndex).toBe(2)
     })
@@ -62,10 +65,7 @@ describe('find store wrap-around', () => {
     it('close clears matches and isOpen', () => {
         const store = createFindStore()
         store.getState().open('find')
-        store.getState().setMatches(
-            [{ sheetId: 'sheet1', row: 1, col: 1 }],
-            null
-        )
+        store.getState().setMatches([{ sheetId: 'sheet1', row: 1, col: 1 }], null)
         expect(store.getState().isOpen).toBe(true)
         expect(store.getState().matches).toHaveLength(1)
         store.getState().close()
@@ -87,13 +87,7 @@ describe('applyReplaceToCell', () => {
             useRegex: false,
         })
         if (matcher == null) throw new Error('matcher should compile')
-        applyReplaceToCell(
-            doc,
-            { sheetId: 'sheet1', row: 1, col: 1 },
-            matcher,
-            'orange',
-            false
-        )
+        applyReplaceToCell(doc, { sheetId: 'sheet1', row: 1, col: 1 }, matcher, 'orange', false)
         expect(readDisplay(doc, 'sheet1', 1, 1)).toBe('orange')
         expect(readDisplay(doc, 'sheet1', 2, 1)).toBe('apple')
     })
@@ -108,13 +102,7 @@ describe('applyReplaceToCell', () => {
             useRegex: false,
         })
         if (matcher == null) throw new Error('matcher should compile')
-        applyReplaceToCell(
-            doc,
-            { sheetId: 'sheet1', row: 1, col: 1 },
-            matcher,
-            'orange',
-            false
-        )
+        applyReplaceToCell(doc, { sheetId: 'sheet1', row: 1, col: 1 }, matcher, 'orange', false)
         expect(readDisplay(doc, 'sheet1', 1, 1)).toBe('orange pie')
     })
 })

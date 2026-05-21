@@ -79,7 +79,7 @@ export function SheetTabContextMenu({
         [closeContextMenu]
     )
 
-    const sheet = target ? allSheets.find(s => s.id === target.sheetId) ?? null : null
+    const sheet = target ? (allSheets.find(s => s.id === target.sheetId) ?? null) : null
     const sheetIndex = sheet ? allSheets.findIndex(s => s.id === sheet.id) : -1
     const visibleCount = allSheets.filter(s => !s.hidden).length
 
@@ -148,7 +148,9 @@ export function SheetTabContextMenu({
     )
 
     const isOpen = target != null && pendingDelete == null
-    const triggerPos = target ? { x: target.cursor.x, y: target.cursor.y, width: 0, height: 0 } : null
+    const triggerPos = target
+        ? { x: target.cursor.x, y: target.cursor.y, width: 0, height: 0 }
+        : null
 
     return (
         <>
@@ -193,10 +195,7 @@ export function SheetTabContextMenu({
                                 <Menu.ItemTitle>Change color</Menu.ItemTitle>
                             </Menu.SubTrigger>
                             <Menu.SubContent>
-                                <SwatchGrid
-                                    activeColor={sheet?.color}
-                                    onPick={onPickColor}
-                                />
+                                <SwatchGrid activeColor={sheet?.color} onPick={onPickColor} />
                             </Menu.SubContent>
                         </Menu.Sub>
                     </Menu.Content>
@@ -242,7 +241,9 @@ function SwatchGrid({ activeColor, onPick }: SwatchGridProps) {
                         }}
                         className={isActive ? 'border-accent' : 'border-border'}
                     >
-                        {isDefault ? <View className="bg-foreground" style={{ width: 14, height: 1 }} /> : null}
+                        {isDefault ? (
+                            <View className="bg-foreground" style={{ width: 14, height: 1 }} />
+                        ) : null}
                     </Pressable>
                 )
             })}
@@ -264,8 +265,8 @@ function DeleteConfirm({ pending, onCancel, onConfirm }: DeleteConfirmProps) {
             <AlertDialogContent>
                 <AlertDialogBody>
                     <Text className="text-sm text-foreground">
-                        Delete sheet "{pending?.name ?? ''}"? This cannot be undone except by
-                        Cmd-Z within the editing session.
+                        Delete sheet "{pending?.name ?? ''}"? This cannot be undone except by Cmd-Z
+                        within the editing session.
                     </Text>
                 </AlertDialogBody>
                 <AlertDialogFooter>

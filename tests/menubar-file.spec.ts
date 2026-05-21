@@ -12,7 +12,7 @@ test.describe('Calc File menu', () => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
 
-        page.once('dialog', async (dialog) => {
+        page.once('dialog', async dialog => {
             expect(dialog.type()).toBe('prompt')
             await dialog.accept('Renamed Scorecard')
         })

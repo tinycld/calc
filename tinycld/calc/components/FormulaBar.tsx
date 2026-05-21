@@ -116,9 +116,7 @@ export const FormulaBar = forwardRef<TextInput, FormulaBarProps>(function Formul
                 onKeyPress={onKeyPress}
                 onLayout={onLayout}
                 accessibilityLabel="Formula bar"
-                inputAccessoryViewID={
-                    Platform.OS === 'ios' ? FORMULA_BAR_ACCESSORY_ID : undefined
-                }
+                inputAccessoryViewID={Platform.OS === 'ios' ? FORMULA_BAR_ACCESSORY_ID : undefined}
                 style={{ flex: 1, height: 22, fontSize: 12, paddingHorizontal: 4 }}
                 className="text-foreground"
             />

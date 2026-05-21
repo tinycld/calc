@@ -462,9 +462,7 @@ describe('upsertColumnCriterion', () => {
 
         const after = readFilterView(doc, 'sheet1')
         expect(after?.mode).toBe('range')
-        expect(Object.keys(after?.criteria ?? {})).toEqual(
-            Object.keys(before?.criteria ?? {})
-        )
+        expect(Object.keys(after?.criteria ?? {})).toEqual(Object.keys(before?.criteria ?? {}))
     })
 })
 

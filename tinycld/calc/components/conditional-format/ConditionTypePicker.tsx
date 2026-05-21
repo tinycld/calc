@@ -15,7 +15,7 @@ interface Group {
     options: ReadonlyArray<{ value: CFConditionType; label: string }>
 }
 
-const GROUPS: ReadonlyArray<Group> = [
+const GROUPS: readonly Group[] = [
     {
         title: 'Empty',
         options: [

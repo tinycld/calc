@@ -26,15 +26,9 @@ import { computePivot, type PivotError, type RenderedPivot } from '../lib/pivot'
 import { parseA1Range } from '../lib/pivot/range-parse'
 import type { CellValue, PivotDefinition } from '../lib/workbook-types'
 import { parseYCellKey, yCellKey } from '../lib/y-cell-key'
-import {
-    CELLS_MAP,
-    readYCell,
-    SHEETS_MAP,
-} from '../lib/y-doc-bootstrap'
+import { CELLS_MAP, readYCell, SHEETS_MAP } from '../lib/y-doc-bootstrap'
 
-export type RenderedPivotResult =
-    | { ok: true; value: RenderedPivot }
-    | PivotError
+export type RenderedPivotResult = { ok: true; value: RenderedPivot } | PivotError
 
 interface SnapshotState {
     cache: RenderedPivotResult
@@ -204,10 +198,7 @@ export function useRenderedPivot(
     if (stateRef.current == null) stateRef.current = createSnapshotState()
     const state = stateRef.current
 
-    const sub = useCallback(
-        (onChange: () => void) => subscribe(doc, def, onChange),
-        [doc, def]
-    )
+    const sub = useCallback((onChange: () => void) => subscribe(doc, def, onChange), [doc, def])
 
     const getSnapshot = useCallback(
         (): RenderedPivotResult => computeSnapshot(doc, def, state),

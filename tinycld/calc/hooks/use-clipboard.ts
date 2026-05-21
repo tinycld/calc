@@ -14,12 +14,7 @@ import {
 import { applyPayloadToDoc } from '../lib/clipboard/deserialize'
 import { serializeRange } from '../lib/clipboard/serialize'
 import type { ClipboardPayload, PasteMode } from '../lib/clipboard/types'
-import {
-    forEachCellInRange,
-    isDisjoint,
-    primaryAnchor,
-    primaryRange,
-} from '../lib/selection-range'
+import { forEachCellInRange, isDisjoint, primaryAnchor, primaryRange } from '../lib/selection-range'
 import type { CellRange, GridStoreApi } from './grid-store'
 import { deleteYCell } from './use-y-cell'
 

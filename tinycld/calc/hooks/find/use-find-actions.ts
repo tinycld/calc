@@ -267,11 +267,7 @@ export function applyReplaceToCell(
     setYCell(doc, match.sheetId, match.row, match.col, next)
 }
 
-function applyReplacement(
-    haystack: string,
-    matcher: CompiledMatcher,
-    replacement: string
-): string {
+function applyReplacement(haystack: string, matcher: CompiledMatcher, replacement: string): string {
     if (matcher.useRegex && matcher.regex != null) {
         if (matcher.wholeCell) {
             const m = haystack.match(matcher.regex)

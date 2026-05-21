@@ -68,12 +68,10 @@ export function CsvImportDialog({
             <ModalBackdrop />
             <ModalContent className="w-[560px] max-h-[640px] p-0 rounded-xl bg-background">
                 <View className="px-5 py-4 border-b border-border">
-                    <Text className="text-base font-semibold text-foreground">
-                        Import CSV
-                    </Text>
+                    <Text className="text-base font-semibold text-foreground">Import CSV</Text>
                     <Text className="text-xs text-muted-foreground mt-1">
-                        {totalRows} {totalRows === 1 ? 'row' : 'rows'} ×{' '}
-                        {totalCols} {totalCols === 1 ? 'column' : 'columns'}
+                        {totalRows} {totalRows === 1 ? 'row' : 'rows'} × {totalCols}{' '}
+                        {totalCols === 1 ? 'column' : 'columns'}
                     </Text>
                 </View>
 
@@ -102,9 +100,7 @@ export function CsvImportDialog({
                         disabled={parsed.length === 0}
                         className="px-3 py-2 rounded-md bg-accent disabled:opacity-50"
                     >
-                        <Text className="text-sm font-medium text-accent-foreground">
-                            Import
-                        </Text>
+                        <Text className="text-sm font-medium text-accent-foreground">Import</Text>
                     </Pressable>
                 </View>
             </ModalContent>
@@ -131,7 +127,11 @@ function DelimiterChooser({ value, onChange }: DelimiterChooserProps) {
                             accessibilityLabel={`Delimiter ${choice.label}`}
                             accessibilityState={{ selected: isActive }}
                             onPress={() => onChange(choice.id)}
-                            hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
+                            hitSlop={
+                                Platform.OS === 'web'
+                                    ? undefined
+                                    : { top: 6, bottom: 6, left: 4, right: 4 }
+                            }
                             className={
                                 isActive
                                     ? 'px-3 py-1.5 rounded-md bg-accent'
@@ -241,10 +241,7 @@ function PreviewTable({ rows, totalCols }: PreviewTableProps) {
                                     key={`${c}`}
                                     className="px-2 py-1 border-r border-b border-border min-w-[80px]"
                                 >
-                                    <Text
-                                        className="text-xs text-foreground"
-                                        numberOfLines={1}
-                                    >
+                                    <Text className="text-xs text-foreground" numberOfLines={1}>
                                         {row[c] ?? ''}
                                     </Text>
                                 </View>

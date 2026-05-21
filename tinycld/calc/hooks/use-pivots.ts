@@ -59,10 +59,7 @@ export function usePivots(doc: Y.Doc | null): PivotDefinition[] {
     if (stateRef.current == null) stateRef.current = createSnapshotState()
     const state = stateRef.current
 
-    const sub = useCallback(
-        (onChange: () => void) => subscribe(doc, onChange),
-        [doc]
-    )
+    const sub = useCallback((onChange: () => void) => subscribe(doc, onChange), [doc])
 
     const getSnapshot = useCallback(
         (): PivotDefinition[] => computeSnapshot(doc, state),

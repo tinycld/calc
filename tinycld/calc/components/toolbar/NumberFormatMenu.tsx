@@ -39,11 +39,7 @@ export function NumberFormatMenu({
 
     return (
         <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <View
-                {...(typeof document !== 'undefined'
-                    ? { 'data-tinycld-menu': 'trigger' }
-                    : {})}
-            >
+            <View {...(typeof document !== 'undefined' ? { 'data-tinycld-menu': 'trigger' } : {})}>
                 <Menu.Trigger>
                     <ToolbarButton label="Number format" disabled={disabled} width={48}>
                         <View className="flex-row items-center" style={{ gap: 2 }}>

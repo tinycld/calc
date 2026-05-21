@@ -1,15 +1,8 @@
 import { fetchRenderedHtml } from '@tinycld/core/file-viewer/fetch-rendered-html'
-import {
-    captureException,
-    handleMutationErrorsWithForm,
-} from '@tinycld/core/lib/errors'
+import { captureException, handleMutationErrorsWithForm } from '@tinycld/core/lib/errors'
 import { useMutation } from '@tinycld/core/lib/mutations'
 import { renderPrintEnvelope } from '@tinycld/core/lib/print/render-print-envelope'
-import {
-    FormErrorSummary,
-    useForm,
-    zodResolver,
-} from '@tinycld/core/ui/form'
+import { FormErrorSummary, useForm, zodResolver } from '@tinycld/core/ui/form'
 import { Modal, ModalBackdrop, ModalContent } from '@tinycld/core/ui/modal'
 import { useMemo } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
@@ -17,11 +10,7 @@ import type * as Y from 'yjs'
 import { useYSheets } from '../hooks/use-y-sheets'
 import { handlePrint } from '../lib/print/handle-print'
 import { buildPrintCss } from '../lib/print/print-css'
-import {
-    DEFAULT_PRINT_CONFIG,
-    type PrintConfig,
-    printConfigSchema,
-} from '../lib/print/types'
+import { DEFAULT_PRINT_CONFIG, type PrintConfig, printConfigSchema } from '../lib/print/types'
 import { columnLabel } from '../lib/workbook-types'
 import { PrintLayoutFields } from './print/PrintLayoutFields'
 import { PrintPageFields } from './print/PrintPageFields'
@@ -108,10 +97,7 @@ export function PrintDialog({
     currentSelection,
 }: PrintDialogProps) {
     const sheets = useYSheets(doc)
-    const sheetList = useMemo(
-        () => sheets.map(s => ({ id: s.id, name: s.name })),
-        [sheets]
-    )
+    const sheetList = useMemo(() => sheets.map(s => ({ id: s.id, name: s.name })), [sheets])
     const selectionAvailable =
         currentSelection != null && currentSelection.sheetId === currentSheetId
 
@@ -130,8 +116,7 @@ export function PrintDialog({
 
     const scopeValue = watch('scope.sheets')
 
-    const submitDisabled =
-        typeof scopeValue === 'object' && scopeValue.ids.length === 0
+    const submitDisabled = typeof scopeValue === 'object' && scopeValue.ids.length === 0
 
     // useMutation gives us the failure-surface the previous
     // handleSubmit-only path was missing: onError lands in
@@ -142,20 +127,14 @@ export function PrintDialog({
     // the post-validation async work).
     const printMutation = useMutation<void, Error, PrintConfig>({
         mutationFn: async (config: PrintConfig) => {
-            const targets = resolveTargets(
-                config,
-                sheetList,
-                currentSheetId,
-                currentSelection
-            )
+            const targets = resolveTargets(config, sheetList, currentSheetId, currentSelection)
             const fragments: string[] = []
             const source = {
                 collectionId: 'drive_items',
                 recordId: driveItemId,
                 fileName: '',
                 displayName: '',
-                mimeType:
-                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 size: 0,
             }
             for (const target of targets) {
@@ -179,22 +158,20 @@ export function PrintDialog({
             onClose()
             await handlePrint(envelope)
         },
-        onError: (err) => {
+        onError: err => {
             captureException('calc.print', err)
             handleMutationErrorsWithForm({ setError, getValues })(err)
         },
     })
 
-    const onSubmit = handleSubmit((config) => printMutation.mutate(config))
+    const onSubmit = handleSubmit(config => printMutation.mutate(config))
 
     return (
         <Modal isOpen={isOpen} onClose={onClose}>
             <ModalBackdrop />
             <ModalContent className="w-[520px] max-h-[640px] p-0 rounded-xl bg-background">
                 <View className="px-5 pt-4 pb-3 border-b border-border">
-                    <Text className="text-base font-semibold text-foreground">
-                        Print
-                    </Text>
+                    <Text className="text-base font-semibold text-foreground">Print</Text>
                 </View>
                 <ScrollView className="px-5 py-4" style={{ maxHeight: 480 }}>
                     <FormErrorSummary errors={errors} isEnabled={isSubmitted} />

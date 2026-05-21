@@ -18,11 +18,7 @@ import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { PlainInput } from '@tinycld/core/ui/PlainInput'
 import { forwardRef, useImperativeHandle, useState } from 'react'
 import { Pressable, Text, View } from 'react-native'
-import type {
-    CFCondition,
-    CFConditionType,
-    CFRule,
-} from '../../lib/conditional-format/types'
+import type { CFCondition, CFConditionType, CFRule } from '../../lib/conditional-format/types'
 import type { CellFont, CellStyle } from '../../lib/workbook-types'
 import { ConditionTypePicker } from './ConditionTypePicker'
 import { StylePicker } from './StylePicker'
@@ -69,8 +65,8 @@ export const RuleEditor = forwardRef<RuleEditorHandle, RuleEditorProps>(function
                     id: rule.id,
                     ranges: ranges
                         .split(',')
-                        .map((r) => r.trim())
-                        .filter((r) => r !== ''),
+                        .map(r => r.trim())
+                        .filter(r => r !== ''),
                     condition,
                     style,
                 }
@@ -133,7 +129,7 @@ export const RuleEditor = forwardRef<RuleEditorHandle, RuleEditorProps>(function
                             value={formula}
                             onChangeText={setFormula}
                             editable={!readOnly}
-                            placeholder='$A1>10'
+                            placeholder="$A1>10"
                             className="flex-1 rounded border border-border bg-background px-2 py-1 text-sm text-foreground"
                         />
                     </View>
@@ -212,7 +208,12 @@ function ButtonPrimary({
 }
 
 function operandCount(type: CFConditionType): 0 | 1 | 2 {
-    if (type === 'isEmpty' || type === 'isNotEmpty' || type === 'customFormula' || type === 'xlsxOpaque')
+    if (
+        type === 'isEmpty' ||
+        type === 'isNotEmpty' ||
+        type === 'customFormula' ||
+        type === 'xlsxOpaque'
+    )
         return 0
     if (type === 'numberBetween' || type === 'numberNotBetween') return 2
     return 1

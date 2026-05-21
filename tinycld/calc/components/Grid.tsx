@@ -23,30 +23,25 @@ import { useClipboard } from '../hooks/use-clipboard'
 import { useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
 import { usePivotForSheet } from '../hooks/use-pivot-for-sheet'
-import { useReactiveFilter } from '../hooks/use-reactive-filter'
-import { createPrintDialogStore, PrintDialogProvider } from '../hooks/use-print-dialog'
 import { usePresence } from '../hooks/use-presence'
+import { createPrintDialogStore, PrintDialogProvider } from '../hooks/use-print-dialog'
+import { useReactiveFilter } from '../hooks/use-reactive-filter'
 import { useSheetActions } from '../hooks/use-sheet-actions'
 import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
 import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
-import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { rangeToSheetRelativeA1 } from '../lib/conditional-format/a1'
+import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { buildA1Range } from '../lib/pivot/range-parse'
 import { allRanges, unionBoundingBox } from '../lib/selection-range'
 import { useConditionalFormatPanelStore } from '../lib/stores/conditional-format-panel-store'
 import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
-import { defaultTargetSheetName } from './pivot/new-pivot-dialog-helpers'
+import { CalcCommentDrawer } from './comments/CalcCommentDrawer'
 import { ConditionalFormatPanel } from './conditional-format/ConditionalFormatPanel'
 import { FindReplaceDialogGate } from './FindReplaceDialog'
 import { FormulaBar } from './FormulaBar'
 import { FormulaSuggestionList } from './FormulaSuggestionList'
-import { KeyboardAccessoryHost } from './KeyboardAccessoryHost'
-import { MenuBar } from './menubar/MenuBar'
-import { PivotGrid } from './pivot/PivotGrid'
-import { PrintDialog } from './PrintDialog'
-import { CalcCommentDrawer } from './comments/CalcCommentDrawer'
 import { Body } from './grid/Body'
 import { CellContextMenu } from './grid/CellContextMenu'
 import { ColumnHeader } from './grid/ColumnHeader'
@@ -59,6 +54,11 @@ import { HeaderContextMenu } from './grid/HeaderContextMenu'
 import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
 import { SortDialog } from './grid/SortDialog'
+import { KeyboardAccessoryHost } from './KeyboardAccessoryHost'
+import { MenuBar } from './menubar/MenuBar'
+import { PrintDialog } from './PrintDialog'
+import { defaultTargetSheetName } from './pivot/new-pivot-dialog-helpers'
+import { PivotGrid } from './pivot/PivotGrid'
 import { SelectionStatusBanner } from './SelectionStatusBanner'
 import { SortStatusBanner } from './SortStatusBanner'
 import { Toolbar, type ToolbarProps } from './Toolbar'
@@ -353,8 +353,9 @@ function GridInner({
     // independent panel state.
     const onOpenConditionalFormatting = useCallback(() => {
         const selection = instance.store.getState().selection
-        const defaultRanges = allRanges(selection)
-            .map(r => rangeToSheetRelativeA1(r.startRow, r.startCol, r.endRow, r.endCol))
+        const defaultRanges = allRanges(selection).map(r =>
+            rangeToSheetRelativeA1(r.startRow, r.startCol, r.endRow, r.endCol)
+        )
         useConditionalFormatPanelStore.getState().open(sheetId, { defaultRanges })
     }, [instance.store, sheetId])
 
@@ -558,16 +559,11 @@ function GridInner({
                 onHover={suggestions.onHover}
             />
             <FindReplaceDialogGate actions={findActions} />
-            <ConditionalFormatPanel
-                doc={doc}
-                sheetId={sheetId}
-                readOnly={readOnly}
-            />
+            <ConditionalFormatPanel doc={doc} sheetId={sheetId} readOnly={readOnly} />
             <KeyboardAccessoryHost
                 onSpecialKey={suggestions.onSpecialKey}
                 onCancel={formulaBar.onCancel}
             />
-
         </View>
     )
 }

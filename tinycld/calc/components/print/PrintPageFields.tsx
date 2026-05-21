@@ -43,12 +43,7 @@ export function PrintPageFields({ control }: PrintPageFieldsProps) {
                 name="page.scaling"
                 options={SCALINGS}
             />
-            <SegmentField
-                label="Margins"
-                control={control}
-                name="page.margins"
-                options={MARGINS}
-            />
+            <SegmentField label="Margins" control={control} name="page.margins" options={MARGINS} />
         </View>
     )
 }
@@ -60,12 +55,7 @@ interface SegmentFieldProps<T extends string> {
     options: Array<{ id: T; label: string }>
 }
 
-function SegmentField<T extends string>({
-    label,
-    control,
-    name,
-    options,
-}: SegmentFieldProps<T>) {
+function SegmentField<T extends string>({ label, control, name, options }: SegmentFieldProps<T>) {
     return (
         <View>
             <Text className="text-sm font-medium text-foreground mb-2">{label}</Text>

@@ -1,5 +1,5 @@
-import type { TextStyle, ViewStyle } from 'react-native'
 import { normalizeColor } from '@tinycld/core/ui/color-picker/normalize-color'
+import type { TextStyle, ViewStyle } from 'react-native'
 import type {
     CellAlignment,
     CellBorderEdge,
@@ -183,16 +183,11 @@ function pickBorderStyle(
     borders: NonNullable<CellStyle['borders']>
 ): 'solid' | 'dotted' | 'dashed' | undefined {
     let best: 'solid' | 'dotted' | 'dashed' | undefined
-    const rank = (s: 'solid' | 'dotted' | 'dashed') =>
-        s === 'dashed' ? 3 : s === 'dotted' ? 2 : 1
+    const rank = (s: 'solid' | 'dotted' | 'dashed') => (s === 'dashed' ? 3 : s === 'dotted' ? 2 : 1)
     for (const edge of [borders.top, borders.right, borders.bottom, borders.left]) {
         if (edge == null || edge === false) continue
         const candidate: 'solid' | 'dotted' | 'dashed' =
-            edge.style === 'dashed'
-                ? 'dashed'
-                : edge.style === 'dotted'
-                  ? 'dotted'
-                  : 'solid'
+            edge.style === 'dashed' ? 'dashed' : edge.style === 'dotted' ? 'dotted' : 'solid'
         if (best == null || rank(candidate) > rank(best)) best = candidate
     }
     return best
@@ -232,14 +227,20 @@ export function mergeCellStyles(
     return out
 }
 
-function mergeFont(base: CellFont | undefined, overlay: CellFont | undefined): CellFont | undefined {
+function mergeFont(
+    base: CellFont | undefined,
+    overlay: CellFont | undefined
+): CellFont | undefined {
     if (base == null && overlay == null) return undefined
     if (overlay == null) return base
     if (base == null) return overlay
     return { ...base, ...overlay }
 }
 
-function mergeFill(base: CellFill | undefined, overlay: CellFill | undefined): CellFill | undefined {
+function mergeFill(
+    base: CellFill | undefined,
+    overlay: CellFill | undefined
+): CellFill | undefined {
     if (base == null && overlay == null) return undefined
     if (overlay == null) return base
     if (base == null) return overlay
@@ -270,4 +271,3 @@ function mergeBorders(
         left: overlay.left !== undefined ? overlay.left : base.left,
     }
 }
-

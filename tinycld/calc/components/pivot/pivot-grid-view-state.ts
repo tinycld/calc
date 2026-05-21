@@ -9,8 +9,8 @@
 // grid-cell renderer — the helper owns the decision, the .tsx owns
 // the JSX.
 
-import type { PivotDefinition } from '../../lib/workbook-types'
 import type { RenderedPivotResult } from '../../hooks/use-rendered-pivot'
+import type { PivotDefinition } from '../../lib/workbook-types'
 
 export type PivotGridViewState =
     | { kind: 'empty' }
@@ -25,11 +25,7 @@ export type PivotGridViewState =
 // CTA in that state instead of an engine error. Filter-only defs still
 // count as empty — without a value field, there's nothing to compute.
 export function isPivotDefinitionEmpty(def: PivotDefinition): boolean {
-    return (
-        def.rows.length === 0 &&
-        def.cols.length === 0 &&
-        def.values.length === 0
-    )
+    return def.rows.length === 0 && def.cols.length === 0 && def.values.length === 0
 }
 
 export function selectPivotGridViewState(
@@ -60,8 +56,7 @@ export function buildPivotGridCellMatrix(
         const row: PivotGridCellMeta[] = []
         for (let c = 1; c <= rendered.cols; c++) {
             const cell = rendered.cells.get(`${r}:${c}`)
-            const isHeader =
-                r <= rendered.headerRowCount || c <= rendered.headerColCount
+            const isHeader = r <= rendered.headerRowCount || c <= rendered.headerColCount
             row.push({
                 row: r,
                 col: c,
@@ -81,9 +76,6 @@ export function buildPivotGridCellMatrix(
 // a future feature — the per-sheet keying keeps each grid's panel
 // state independent. Extracted so PivotGrid stays a thin renderer and
 // the conditional logic is testable without RN.
-export function selectPivotPanelOpen(
-    openForSheetId: string | null,
-    sheetId: string
-): boolean {
+export function selectPivotPanelOpen(openForSheetId: string | null, sheetId: string): boolean {
     return openForSheetId != null && openForSheetId === sheetId
 }

@@ -150,6 +150,7 @@ function SheetTab({
 
     if (Platform.OS === 'web') {
         return (
+            // biome-ignore lint/a11y/noStaticElementInteractions: wrapper div adds pointer-only affordances (right-click context menu, double-click rename) over the interactive child Pressable, which carries the tab role and keyboard semantics.
             <div
                 onContextMenu={(e: React.MouseEvent) => {
                     e.preventDefault()
@@ -204,7 +205,14 @@ interface TabBodyProps {
     onRenameCancel: () => void
 }
 
-function TabBody({ sheet, isActive, isRenaming, onPress, onRenameCommit, onRenameCancel }: TabBodyProps) {
+function TabBody({
+    sheet,
+    isActive,
+    isRenaming,
+    onPress,
+    onRenameCommit,
+    onRenameCancel,
+}: TabBodyProps) {
     const className = isActive
         ? 'flex-row items-center justify-center px-3 bg-background border-l border-r border-t border-border rounded-t-md'
         : 'flex-row items-center justify-center px-3 bg-surface-secondary border-r border-border'

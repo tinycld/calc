@@ -48,7 +48,20 @@ const MONTHS_LONG = [
     'December',
 ]
 
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MONTHS_SHORT = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+]
 
 // Mon=0 to match the plan's documented index (consistent with the
 // projection wrap test "weekday startIdx:0, stepIndex:7 → Mon").
@@ -65,7 +78,7 @@ export function detectSeries(source: ClipboardCell[]): SeriesPlan {
 
     if (hasMixedKinds(source)) return { kind: 'copy' }
 
-    const firstNonEmpty = source.find((c) => !isEmpty(c))
+    const firstNonEmpty = source.find(c => !isEmpty(c))
     if (firstNonEmpty == null) return { kind: 'copy' }
 
     const kind = firstNonEmpty.kind
@@ -163,15 +176,15 @@ function allEmpty(source: ClipboardCell[]): boolean {
 }
 
 function hasMixedKinds(source: ClipboardCell[]): boolean {
-    const nonEmpty = source.filter((c) => !isEmpty(c))
+    const nonEmpty = source.filter(c => !isEmpty(c))
     if (nonEmpty.length < 2) return false
     const first = nonEmpty[0].kind
-    return nonEmpty.some((c) => c.kind !== first)
+    return nonEmpty.some(c => c.kind !== first)
 }
 
 function detectLinearNumber(source: ClipboardCell[]): SeriesPlan {
     if (source.length < 2) return { kind: 'copy' }
-    const numbers = source.map((c) => (typeof c.raw === 'number' ? c.raw : Number.NaN))
+    const numbers = source.map(c => (typeof c.raw === 'number' ? c.raw : Number.NaN))
     if (numbers.some(Number.isNaN)) return { kind: 'copy' }
     const step = numbers[1] - numbers[0]
     for (let i = 2; i < numbers.length; i++) {
@@ -182,8 +195,8 @@ function detectLinearNumber(source: ClipboardCell[]): SeriesPlan {
 
 function detectLinearDate(source: ClipboardCell[]): SeriesPlan {
     if (source.length < 2) return { kind: 'copy' }
-    const times = source.map((c) => parseDateMs(c.raw))
-    if (times.some((t) => t == null)) return { kind: 'copy' }
+    const times = source.map(c => parseDateMs(c.raw))
+    if (times.some(t => t == null)) return { kind: 'copy' }
     const step = (times[1] as number) - (times[0] as number)
     for (let i = 2; i < times.length; i++) {
         if ((times[i] as number) - (times[i - 1] as number) !== step) return { kind: 'copy' }
@@ -198,13 +211,13 @@ function parseDateMs(raw: CellRaw): number | null {
 }
 
 function detectLinearFormula(source: ClipboardCell[]): SeriesPlan {
-    if (source.some((c) => c.kind !== 'formula' || c.formula == null)) return { kind: 'copy' }
+    if (source.some(c => c.kind !== 'formula' || c.formula == null)) return { kind: 'copy' }
     return { kind: 'linear-formula' }
 }
 
 function detectStringSeries(source: ClipboardCell[]): SeriesPlan {
-    const strings = source.map((c) => (typeof c.raw === 'string' ? c.raw : ''))
-    if (strings.some((s) => s === '')) return { kind: 'copy' }
+    const strings = source.map(c => (typeof c.raw === 'string' ? c.raw : ''))
+    if (strings.some(s => s === '')) return { kind: 'copy' }
 
     const suffix = detectSuffixInt(strings)
     if (suffix != null) return suffix
@@ -237,7 +250,7 @@ function detectSuffixInt(strings: string[]): SeriesPlan | null {
         matches.push({ prefix: m[1], int: Number(intStr), digitCount, naturalCount })
     }
     const prefix = matches[0].prefix
-    if (matches.some((m) => m.prefix !== prefix)) return null
+    if (matches.some(m => m.prefix !== prefix)) return null
 
     if (matches.length < 2) {
         return {
@@ -269,7 +282,7 @@ function detectSuffixInt(strings: string[]): SeriesPlan | null {
 // width so subsequent projections aren't artificially padded
 // ("09","10" → "11", not "11" with leading zero).
 function padForMatches(matches: SuffixIntMatch[]): number {
-    const allPadded = matches.every((m) => m.digitCount > m.naturalCount)
+    const allPadded = matches.every(m => m.digitCount > m.naturalCount)
     if (allPadded) {
         return matches.reduce((acc, m) => Math.min(acc, m.digitCount), matches[0].digitCount)
     }
@@ -282,8 +295,8 @@ function detectNameSeries(
     shortNames: string[],
     kind: 'month' | 'weekday'
 ): SeriesPlan | null {
-    const longLower = longNames.map((n) => n.toLowerCase())
-    const shortLower = shortNames.map((n) => n.toLowerCase())
+    const longLower = longNames.map(n => n.toLowerCase())
+    const shortLower = shortNames.map(n => n.toLowerCase())
 
     const firstLower = strings[0].toLowerCase()
     const firstIsLong = longLower.includes(firstLower)
@@ -306,7 +319,7 @@ function detectNameSeries(
     }
 
     const casing = casings[0]
-    if (casings.some((c) => c !== casing)) return null
+    if (casings.some(c => c !== casing)) return null
 
     const wrap = long ? longNames.length : shortNames.length
 
@@ -332,7 +345,7 @@ function detectNameSeries(
 function wrappedDelta(from: number, to: number, wrap: number): number {
     // Smallest positive forward step modulo `wrap`. (Dec→Jan reads as
     // step 1, not -11.) Returns 0 if from === to (constant series).
-    return ((to - from) % wrap + wrap) % wrap
+    return (((to - from) % wrap) + wrap) % wrap
 }
 
 function detectCasing(s: string): NameCasing | null {

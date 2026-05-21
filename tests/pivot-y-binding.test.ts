@@ -95,10 +95,7 @@ describe('writePivot / readPivot', () => {
     it('subsequent writePivot overwrites the existing entry', () => {
         const doc = new Y.Doc()
         writePivot(doc, makeDef())
-        writePivot(
-            doc,
-            makeDef({ rows: [{ sourceColumn: 'Region', displayName: 'R' }] })
-        )
+        writePivot(doc, makeDef({ rows: [{ sourceColumn: 'Region', displayName: 'R' }] }))
         const out = readPivot(doc, 'p1')!
         expect(out.rows).toEqual([{ sourceColumn: 'Region', displayName: 'R' }])
     })

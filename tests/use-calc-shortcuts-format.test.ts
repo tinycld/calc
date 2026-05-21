@@ -13,7 +13,7 @@ import type { ClipboardActions } from '../tinycld/calc/hooks/use-clipboard'
 // predicates without rendering React.
 
 interface FakeStoreState {
-    selection: { ranges: Array<unknown> } | null
+    selection: { ranges: unknown[] } | null
     editSession: { draft: string } | null
     cutPending: boolean
     clearClipboardMarker: () => void

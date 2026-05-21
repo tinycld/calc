@@ -12,9 +12,11 @@ function num(n: number): CellValue {
 
 function makeCells(sheetId: string, rows: CellValue[][]): Map<string, CellValue> {
     const m = new Map<string, CellValue>()
-    rows.forEach((row, r) =>
-        row.forEach((c, i) => m.set(yCellKey(sheetId, r + 1, i + 1), c))
-    )
+    rows.forEach((row, r) => {
+        row.forEach((c, i) => {
+            m.set(yCellKey(sheetId, r + 1, i + 1), c)
+        })
+    })
     return m
 }
 
@@ -99,11 +101,7 @@ describe('computePivot — errors', () => {
     })
 
     it('surfaces no-values when def.values is empty', () => {
-        const cells = makeCells('s1', [
-            [str('Region')],
-            [str('East')],
-            [str('West')],
-        ])
+        const cells = makeCells('s1', [[str('Region')], [str('East')], [str('West')]])
         const out = computePivot(
             defOf({
                 sourceRange: 'Sheet1!A1:A3',

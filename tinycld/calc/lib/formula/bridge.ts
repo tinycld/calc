@@ -6,8 +6,8 @@ import type {
 } from 'hyperformula'
 import * as Y from 'yjs'
 import { setYCellFormulaResult } from '../../hooks/use-y-cell'
-import { bumpConditionalFormatVersion } from '../conditional-format/version-store'
 import { rewriteFormula } from '../clipboard/rewrite-formula'
+import { bumpConditionalFormatVersion } from '../conditional-format/version-store'
 import { parseYCellKey, yCellKey } from '../y-cell-key'
 import { CELLS_MAP, readYCell, SHEETS_MAP, type YCellValue, ydocSheetIds } from '../y-doc-bootstrap'
 import { HYPERFORMULA_LICENSE_KEY } from './hyperformula-license'
@@ -193,12 +193,7 @@ export class FormulaBridge {
     // Returns null when the sheet is unknown, the formula doesn't
     // parse, or HF emits an error result. The caller treats null as
     // "rule does not match".
-    evaluateFormulaAt(
-        formula: string,
-        sheetName: string,
-        row: number,
-        col: number
-    ): unknown {
+    evaluateFormulaAt(formula: string, sheetName: string, row: number, col: number): unknown {
         const hfId = this.findSheetIdByName(sheetName)
         if (hfId == null) return null
         // The clipboard rewriter requires a leading `=`. The CF

@@ -78,8 +78,7 @@ export function applyPayloadToDoc(
                         const existing = findMergeContaining(doc, sheetId, rr, cc)
                         if (
                             existing != null &&
-                            (existing.anchorRow !== anchorRow ||
-                                existing.anchorCol !== anchorCol)
+                            (existing.anchorRow !== anchorRow || existing.anchorCol !== anchorCol)
                         ) {
                             conflict = true
                         }

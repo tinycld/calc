@@ -34,11 +34,6 @@ export async function downloadCsv(filename: string, text: string): Promise<void>
     const uri = `${dir}${safeName}`
     await fileSystem.writeAsStringAsync(uri, text)
     if (!(await sharing.isAvailableAsync())) {
-        // No share sheet — file is written to the cache, but the user
-        // has no way to extract it. Surface the path so a developer
-        // can find it via Xcode device-files browsing.
-        // biome-ignore lint/suspicious/noConsoleLog: developer aid
-        console.log('CSV written to cache (Sharing unavailable):', uri)
         return
     }
     await sharing.shareAsync(uri, {

@@ -12,12 +12,10 @@ export function PivotEmptyState({ onOpenSidePanel }: PivotEmptyStateProps) {
     return (
         <View className="flex-1 items-center justify-center bg-background px-8">
             <View className="max-w-[420px] items-center rounded-xl border border-border bg-surface-secondary p-8">
-                <Text className="text-base font-medium text-foreground">
-                    Configure your pivot
-                </Text>
+                <Text className="text-base font-medium text-foreground">Configure your pivot</Text>
                 <Text className="mt-2 text-center text-sm text-muted-foreground">
-                    Drag fields from the side panel into Rows, Columns, Values,
-                    or Filters to build your pivot.
+                    Drag fields from the side panel into Rows, Columns, Values, or Filters to build
+                    your pivot.
                 </Text>
                 <Pressable
                     accessibilityRole="button"

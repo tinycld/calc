@@ -7,17 +7,17 @@ import { useFilterView } from '../../hooks/use-filter-view'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { useSheetConditionalFormats } from '../../hooks/use-sheet-conditional-formats'
 import { useYSheets } from '../../hooks/use-y-sheets'
-import { autosizeCol, commitColWidth, commitRowHeight } from './resize-actions'
 import { rangeToSheetRelativeA1 } from '../../lib/conditional-format/a1'
 import { anyRuleOverlapsRect } from '../../lib/conditional-format/range-index'
+import { DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT } from '../../lib/dimensions'
 import { clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
 import { allRanges, isDisjoint, primaryRange } from '../../lib/selection-range'
-import { useConditionalFormatPanelStore } from '../../lib/stores/conditional-format-panel-store'
 import { detectHeaderRow, sortRange } from '../../lib/sort'
+import { useConditionalFormatPanelStore } from '../../lib/stores/conditional-format-panel-store'
 import { columnLabel } from '../../lib/workbook-types'
-import { DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT } from '../../lib/dimensions'
 import { MIN_COLS, MIN_ROWS } from './constants'
+import { autosizeCol, commitColWidth, commitRowHeight } from './resize-actions'
 
 interface HeaderContextMenuProps {
     doc: Y.Doc | null
@@ -207,7 +207,7 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
         })
 
     const onOpenConditionalFormatting = useCallback(() => {
-        const defaultRanges = allRanges(selection).map((r) =>
+        const defaultRanges = allRanges(selection).map(r =>
             rangeToSheetRelativeA1(r.startRow, r.startCol, r.endRow, r.endCol)
         )
         useConditionalFormatPanelStore.getState().open(sheetId, { defaultRanges })

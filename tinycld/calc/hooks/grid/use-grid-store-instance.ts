@@ -11,13 +11,13 @@ import {
     snapPointToMerge,
     unmergeCells,
 } from '../../lib/merge'
-import type { CellRange } from '../grid-store'
 import {
     deleteColumns,
     deleteRows,
     insertColumns,
     insertRows,
 } from '../../lib/structural-mutations'
+import type { CellRange } from '../grid-store'
 import { createGridStore, type GridStoreApi, type GridStoreDeps } from '../grid-store'
 import { setYCell } from '../use-y-cell'
 import { setFrozenCols, setFrozenRows } from '../use-y-sheets'
@@ -109,8 +109,7 @@ export function useGridStoreInstance({
                 applyFillToDoc({ doc, sheetId, sourceRange, destRange, direction })
             },
             resolveMergeAnchor: (row, col) => snapPointToMerge(doc, sheetId, row, col),
-            expandRangeOverMerges: (range: CellRange) =>
-                expandRangeOverMerges(doc, sheetId, range),
+            expandRangeOverMerges: (range: CellRange) => expandRangeOverMerges(doc, sheetId, range),
             findMergesInRange: (range: CellRange) =>
                 getAllMerges(doc, sheetId).filter(m => {
                     const mEndRow = m.anchorRow + m.rowSpan - 1

@@ -52,7 +52,7 @@ describe('CF y-binding round-trip', () => {
         writeRule(doc, sheetId, b)
         writeRule(doc, sheetId, c)
         const out = readRulesForSheet(doc, sheetId)
-        expect(out.map((r) => r.id)).toEqual(['a', 'b', 'c'])
+        expect(out.map(r => r.id)).toEqual(['a', 'b', 'c'])
     })
 
     it('round-trips customFormula condition', () => {
@@ -93,7 +93,7 @@ describe('CF y-binding round-trip', () => {
         writeRule(doc, sheetId, ruleFixture({ id: 'keep' }))
         writeRule(doc, sheetId, ruleFixture({ id: 'drop' }))
         expect(deleteRule(doc, sheetId, 'drop')).toBe(true)
-        expect(readRulesForSheet(doc, sheetId).map((r) => r.id)).toEqual(['keep'])
+        expect(readRulesForSheet(doc, sheetId).map(r => r.id)).toEqual(['keep'])
     })
 
     it('updateRule replaces in place', () => {
@@ -120,7 +120,7 @@ describe('CF y-binding round-trip', () => {
         writeRule(doc, sheetId, ruleFixture({ id: 'c' }))
         // Move 'c' to the front.
         expect(reorderRule(doc, sheetId, 'c', 0)).toBe(true)
-        expect(readRulesForSheet(doc, sheetId).map((r) => r.id)).toEqual(['c', 'a', 'b'])
+        expect(readRulesForSheet(doc, sheetId).map(r => r.id)).toEqual(['c', 'a', 'b'])
     })
 
     it('returns empty when sheet has no rules', () => {

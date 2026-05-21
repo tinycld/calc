@@ -10,9 +10,8 @@
 
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import * as Y from 'yjs'
-import { readRuleFromMap } from '../lib/conditional-format/y-binding'
 import type { CFRule } from '../lib/conditional-format/types'
-import { CONDITIONAL_FORMATS_KEY } from '../lib/conditional-format/y-binding'
+import { CONDITIONAL_FORMATS_KEY, readRuleFromMap } from '../lib/conditional-format/y-binding'
 import { SHEETS_MAP } from '../lib/y-doc-bootstrap'
 
 interface SnapshotState {
@@ -23,7 +22,7 @@ function createSnapshotState(): SnapshotState {
     return { cache: [] }
 }
 
-function subscribe(doc: Y.Doc | null, sheetId: string, onChange: () => void): () => void {
+function subscribe(doc: Y.Doc | null, _sheetId: string, onChange: () => void): () => void {
     if (doc == null) return () => {}
     const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
     const handler = () => onChange()
@@ -36,11 +35,7 @@ function subscribe(doc: Y.Doc | null, sheetId: string, onChange: () => void): ()
     return () => sheetsMap.unobserveDeep(handler)
 }
 
-function computeSnapshot(
-    doc: Y.Doc | null,
-    sheetId: string,
-    state: SnapshotState
-): CFRule[] {
+function computeSnapshot(doc: Y.Doc | null, sheetId: string, state: SnapshotState): CFRule[] {
     if (doc == null) return state.cache
     const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
     const sheet = sheetsMap.get(sheetId)
@@ -56,7 +51,7 @@ function computeSnapshot(
         return state.cache
     }
     const next: CFRule[] = []
-    arr.forEach((entry) => {
+    arr.forEach(entry => {
         if (!(entry instanceof Y.Map)) return
         const rule = readRuleFromMap(entry)
         if (rule != null) next.push(rule)
@@ -74,10 +69,7 @@ function sameRuleList(a: CFRule[], b: CFRule[]): boolean {
     return true
 }
 
-export function useSheetConditionalFormats(
-    doc: Y.Doc | null,
-    sheetId: string
-): CFRule[] {
+export function useSheetConditionalFormats(doc: Y.Doc | null, sheetId: string): CFRule[] {
     const stateRef = useRef<SnapshotState | null>(null)
     if (stateRef.current == null) stateRef.current = createSnapshotState()
     const state = stateRef.current

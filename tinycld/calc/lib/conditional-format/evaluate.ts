@@ -62,13 +62,25 @@ export function matchesCondition(
         case 'isNotEmpty':
             return text !== ''
         case 'textContains':
-            return condition.value1 != null && text.toLowerCase().includes(condition.value1.toLowerCase())
+            return (
+                condition.value1 != null &&
+                text.toLowerCase().includes(condition.value1.toLowerCase())
+            )
         case 'textDoesNotContain':
-            return condition.value1 != null && !text.toLowerCase().includes(condition.value1.toLowerCase())
+            return (
+                condition.value1 != null &&
+                !text.toLowerCase().includes(condition.value1.toLowerCase())
+            )
         case 'textStartsWith':
-            return condition.value1 != null && text.toLowerCase().startsWith(condition.value1.toLowerCase())
+            return (
+                condition.value1 != null &&
+                text.toLowerCase().startsWith(condition.value1.toLowerCase())
+            )
         case 'textEndsWith':
-            return condition.value1 != null && text.toLowerCase().endsWith(condition.value1.toLowerCase())
+            return (
+                condition.value1 != null &&
+                text.toLowerCase().endsWith(condition.value1.toLowerCase())
+            )
         case 'textEquals':
             return condition.value1 != null && text.toLowerCase() === condition.value1.toLowerCase()
         case 'dateIs':

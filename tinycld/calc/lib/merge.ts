@@ -268,11 +268,7 @@ export function expandRangeOverMergeList(range: CellRange, merges: MergeRange[])
 // intersect. Used by selection helpers (shift-click extend, drag) and
 // by mergeSelection so a partial-overlap selection auto-grows to a
 // merge-respecting rectangle before committing.
-export function expandRangeOverMerges(
-    doc: Y.Doc,
-    sheetId: string,
-    range: CellRange
-): CellRange {
+export function expandRangeOverMerges(doc: Y.Doc, sheetId: string, range: CellRange): CellRange {
     return expandRangeOverMergeList(range, getAllMerges(doc, sheetId))
 }
 
@@ -314,11 +310,7 @@ export type MergeShiftOp =
     | { kind: 'deleteRows'; from: number; count: number }
     | { kind: 'deleteColumns'; from: number; count: number }
 
-export function applyStructuralShiftToMerges(
-    doc: Y.Doc,
-    sheetId: string,
-    op: MergeShiftOp
-): void {
+export function applyStructuralShiftToMerges(doc: Y.Doc, sheetId: string, op: MergeShiftOp): void {
     const meta = getSheetMeta(doc, sheetId)
     if (meta == null) return
     const merges = meta.get(MERGES_KEY)
@@ -437,11 +429,7 @@ export function applyStructuralShiftToMerges(
             continue
         }
         const newKey = mergeKey(nextAnchorRow, nextAnchorCol)
-        if (
-            newKey === s.key &&
-            nextRowSpan === s.rowSpan &&
-            nextColSpan === s.colSpan
-        ) {
+        if (newKey === s.key && nextRowSpan === s.rowSpan && nextColSpan === s.colSpan) {
             continue
         }
         mutations.push({

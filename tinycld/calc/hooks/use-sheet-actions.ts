@@ -1,10 +1,7 @@
 import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import { useMemo } from 'react'
 import * as Y from 'yjs'
-import {
-    propagateSheetDelete,
-    propagateSheetRename,
-} from '../lib/pivot/lifecycle'
+import { propagateSheetDelete, propagateSheetRename } from '../lib/pivot/lifecycle'
 import { parseYCellKey, yCellKey } from '../lib/y-cell-key'
 import {
     CELLS_MAP,

@@ -14,14 +14,10 @@
 //      which CLAUDE.md rules out (no calculations inside JSX).
 
 import * as Y from 'yjs'
-import type { PivotDefinition } from '../../lib/workbook-types'
 import { parseA1Range } from '../../lib/pivot/range-parse'
-import {
-    CELLS_MAP,
-    SHEETS_MAP,
-    readYCell,
-} from '../../lib/y-doc-bootstrap'
+import type { PivotDefinition } from '../../lib/workbook-types'
 import { yCellKey } from '../../lib/y-cell-key'
+import { CELLS_MAP, readYCell, SHEETS_MAP } from '../../lib/y-doc-bootstrap'
 
 // Cap on the number of distinct filter values we extract per source
 // column. The FilterFieldRow already paginates the visible chips (see
@@ -47,10 +43,7 @@ export interface PivotSourceMetadata {
 // the rest of the pivot pipeline expects from source-read.ts. Blank
 // headers are kept in place rather than dropped, so column ordering
 // from FieldList stays aligned with source-column indices.
-export function readSourceMetadata(
-    doc: Y.Doc,
-    def: PivotDefinition
-): PivotSourceMetadata {
+export function readSourceMetadata(doc: Y.Doc, def: PivotDefinition): PivotSourceMetadata {
     const parsed = parseA1Range(def.sourceRange)
     if (!parsed.ok) return { headers: [], distinctByColumn: {} }
 
@@ -62,9 +55,7 @@ export function readSourceMetadata(
 
     const headers: string[] = []
     for (let c = parsed.startCol; c <= parsed.endCol; c++) {
-        headers.push(
-            readHeaderCell(cellsMap, sheetId, parsed.startRow, c)
-        )
+        headers.push(readHeaderCell(cellsMap, sheetId, parsed.startRow, c))
     }
 
     const distinctByColumn: Record<string, string[]> = {}
@@ -81,10 +72,7 @@ export function readSourceMetadata(
     return { headers, distinctByColumn }
 }
 
-function findSheetIdByName(
-    sheetsMap: Y.Map<Y.Map<unknown>>,
-    name: string
-): string | null {
+function findSheetIdByName(sheetsMap: Y.Map<Y.Map<unknown>>, name: string): string | null {
     let found: string | null = null
     sheetsMap.forEach((meta, id) => {
         if (found != null || !(meta instanceof Y.Map)) return

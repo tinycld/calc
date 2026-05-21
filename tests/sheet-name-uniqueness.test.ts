@@ -48,7 +48,7 @@ describe('rename validation', () => {
         expect(actions.renameSheet('sheet2', 'alpha')).toEqual({ ok: true })
     })
 
-    it('renaming to a sheet\'s own current name is allowed', () => {
+    it("renaming to a sheet's own current name is allowed", () => {
         const doc = makeDoc(['Alpha'])
         const actions = buildSheetActions(doc)
         expect(actions.renameSheet('sheet1', 'Alpha')).toEqual({ ok: true })

@@ -20,9 +20,9 @@
 import { describe, expect, it } from 'vitest'
 import {
     FILTER_VALUES_PREVIEW_LIMIT,
-    PIVOT_AGGREGATIONS,
     filterSummaryLabel,
     filterValueLabel,
+    PIVOT_AGGREGATIONS,
     shouldShowAllToggle,
     showAllToggleLabel,
     toggleFilterSelection,
@@ -90,12 +90,8 @@ describe('visibleFilterValues / shouldShowAllToggle', () => {
     })
 
     it('caps the preview at FILTER_VALUES_PREVIEW_LIMIT when collapsed', () => {
-        expect(visibleFilterValues(many, false)).toHaveLength(
-            FILTER_VALUES_PREVIEW_LIMIT
-        )
-        expect(visibleFilterValues(many, false)).toEqual(
-            many.slice(0, FILTER_VALUES_PREVIEW_LIMIT)
-        )
+        expect(visibleFilterValues(many, false)).toHaveLength(FILTER_VALUES_PREVIEW_LIMIT)
+        expect(visibleFilterValues(many, false)).toEqual(many.slice(0, FILTER_VALUES_PREVIEW_LIMIT))
     })
 
     it('returns every value when expanded', () => {
@@ -103,16 +99,11 @@ describe('visibleFilterValues / shouldShowAllToggle', () => {
     })
 
     it('hides the toggle when the list fits in the preview', () => {
-        expect(
-            shouldShowAllToggle(['a', 'b', 'c'])
-        ).toBe(false)
+        expect(shouldShowAllToggle(['a', 'b', 'c'])).toBe(false)
     })
 
     it('hides the toggle exactly at the limit', () => {
-        const exact = Array.from(
-            { length: FILTER_VALUES_PREVIEW_LIMIT },
-            (_, i) => `v${i}`
-        )
+        const exact = Array.from({ length: FILTER_VALUES_PREVIEW_LIMIT }, (_, i) => `v${i}`)
         expect(shouldShowAllToggle(exact)).toBe(false)
     })
 

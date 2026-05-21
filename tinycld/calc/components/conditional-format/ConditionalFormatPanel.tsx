@@ -5,6 +5,7 @@
 // lib/conditional-format/mutate.ts so rule edits ride the calc undo
 // manager (SHEETS_MAP is in the undo scope).
 
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {
     Drawer,
     DrawerBackdrop,
@@ -14,18 +15,12 @@ import {
     DrawerFooter,
     DrawerHeader,
 } from '@tinycld/core/ui/drawer'
-import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Plus, Trash2, X } from 'lucide-react-native'
 import { useMemo, useRef } from 'react'
 import { Platform, Pressable, Text, View } from 'react-native'
 import type * as Y from 'yjs'
 import { useSheetConditionalFormats } from '../../hooks/use-sheet-conditional-formats'
-import {
-    addRule,
-    deleteRule,
-    newRuleId,
-    updateRule,
-} from '../../lib/conditional-format/mutate'
+import { addRule, deleteRule, newRuleId, updateRule } from '../../lib/conditional-format/mutate'
 import type { CFRule } from '../../lib/conditional-format/types'
 import {
     NEW_RULE_ID,
@@ -40,16 +35,12 @@ export interface ConditionalFormatPanelProps {
     readOnly?: boolean
 }
 
-export function ConditionalFormatPanel({
-    doc,
-    sheetId,
-    readOnly,
-}: ConditionalFormatPanelProps) {
-    const openForSheetId = useConditionalFormatPanelStore((s) => s.openForSheetId)
-    const close = useConditionalFormatPanelStore((s) => s.close)
-    const editingRuleId = useConditionalFormatPanelStore((s) => s.editingRuleId)
-    const defaultRanges = useConditionalFormatPanelStore((s) => s.defaultRanges)
-    const setEditingRule = useConditionalFormatPanelStore((s) => s.setEditingRule)
+export function ConditionalFormatPanel({ doc, sheetId, readOnly }: ConditionalFormatPanelProps) {
+    const openForSheetId = useConditionalFormatPanelStore(s => s.openForSheetId)
+    const close = useConditionalFormatPanelStore(s => s.close)
+    const editingRuleId = useConditionalFormatPanelStore(s => s.editingRuleId)
+    const defaultRanges = useConditionalFormatPanelStore(s => s.defaultRanges)
+    const setEditingRule = useConditionalFormatPanelStore(s => s.setEditingRule)
     const rules = useSheetConditionalFormats(doc, sheetId)
     const iconColor = useThemeColor('foreground')
 
@@ -60,7 +51,7 @@ export function ConditionalFormatPanel({
         if (editingRuleId === NEW_RULE_ID) {
             return makeDraftRule(defaultRanges)
         }
-        return rules.find((r) => r.id === editingRuleId) ?? null
+        return rules.find(r => r.id === editingRuleId) ?? null
     }, [editingRuleId, defaultRanges, rules])
 
     const editorRef = useRef<RuleEditorHandle | null>(null)
@@ -140,19 +131,12 @@ function RuleList({ rules, readOnly, onAdd, onEdit, onDelete }: RuleListProps) {
         <View>
             {rules.length === 0 ? (
                 <Text className="py-2 text-sm text-muted-foreground">
-                    No rules yet. Add one to highlight cells based on their
-                    values.
+                    No rules yet. Add one to highlight cells based on their values.
                 </Text>
             ) : (
-                rules.map((rule) => (
-                    <View
-                        key={rule.id}
-                        className="mb-2 flex-row items-center gap-2"
-                    >
-                        <Pressable
-                            className="flex-1"
-                            onPress={() => onEdit(rule.id)}
-                        >
+                rules.map(rule => (
+                    <View key={rule.id} className="mb-2 flex-row items-center gap-2">
+                        <Pressable className="flex-1" onPress={() => onEdit(rule.id)}>
                             <RuleListRow rule={rule} />
                         </Pressable>
                         <Pressable
@@ -171,7 +155,9 @@ function RuleList({ rules, readOnly, onAdd, onEdit, onDelete }: RuleListProps) {
                 onPress={onAdd}
                 disabled={readOnly}
                 accessibilityLabel="Add rule"
-                hitSlop={Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }}
+                hitSlop={
+                    Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }
+                }
             >
                 <Plus size={14} color={trashColor} />
                 <Text className="text-sm text-foreground">Add another rule</Text>

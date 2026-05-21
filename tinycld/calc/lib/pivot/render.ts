@@ -22,12 +22,9 @@ export function renderPivot(tree: GroupedTree, def: PivotDefinition): RenderedPi
     const renderRows = buildRenderRows(tree, def)
     const renderCols = buildRenderCols(tree, def)
 
-    const totalRows =
-        headerRowCount + renderRows.length + (def.colGrandTotals ? 1 : 0)
+    const totalRows = headerRowCount + renderRows.length + (def.colGrandTotals ? 1 : 0)
     const totalCols =
-        headerColCount +
-        renderCols.length * valueCount +
-        (def.rowGrandTotals ? valueCount : 0)
+        headerColCount + renderCols.length * valueCount + (def.rowGrandTotals ? valueCount : 0)
 
     const cells = new Map<string, CellValue>()
 
@@ -36,15 +33,9 @@ export function renderPivot(tree: GroupedTree, def: PivotDefinition): RenderedPi
     if (def.rowGrandTotals) {
         const startCol = headerColCount + renderCols.length * valueCount
         for (let v = 0; v < valueCount; v++) {
-            cells.set(
-                `1:${startCol + v + 1}`,
-                stringCell(valueCount > 1 ? '' : 'Grand Total')
-            )
+            cells.set(`1:${startCol + v + 1}`, stringCell(valueCount > 1 ? '' : 'Grand Total'))
             if (valueCount > 1) {
-                cells.set(
-                    `${headerRowCount}:${startCol + v + 1}`,
-                    stringCell(valueLabel(def, v))
-                )
+                cells.set(`${headerRowCount}:${startCol + v + 1}`, stringCell(valueLabel(def, v)))
             }
         }
         if (valueCount === 1 && headerRowCount > 1) {
@@ -67,10 +58,7 @@ export function renderPivot(tree: GroupedTree, def: PivotDefinition): RenderedPi
                       ? subtotalCellValues(tree, def, r.prefixKey, c.key)
                       : undefined
             for (let v = 0; v < valueCount; v++) {
-                cells.set(
-                    `${renderRowIdx}:${colBase + v}`,
-                    numericCell(folded?.[v], def, v)
-                )
+                cells.set(`${renderRowIdx}:${colBase + v}`, numericCell(folded?.[v], def, v))
             }
         }
         if (def.rowGrandTotals) {
@@ -82,10 +70,7 @@ export function renderPivot(tree: GroupedTree, def: PivotDefinition): RenderedPi
                       ? rowSubtotalGrand(tree, def, r.prefixKey)
                       : undefined
             for (let v = 0; v < valueCount; v++) {
-                cells.set(
-                    `${renderRowIdx}:${colBase + v}`,
-                    numericCell(totals?.[v], def, v)
-                )
+                cells.set(`${renderRowIdx}:${colBase + v}`, numericCell(totals?.[v], def, v))
             }
         }
     }
@@ -99,19 +84,13 @@ export function renderPivot(tree: GroupedTree, def: PivotDefinition): RenderedPi
             const colBase = headerColCount + j * valueCount + 1
             const totals = tree.colTotals.get(c.key)
             for (let v = 0; v < valueCount; v++) {
-                cells.set(
-                    `${grandRow}:${colBase + v}`,
-                    numericCell(totals?.[v], def, v)
-                )
+                cells.set(`${grandRow}:${colBase + v}`, numericCell(totals?.[v], def, v))
             }
         }
         if (def.rowGrandTotals) {
             const colBase = headerColCount + renderCols.length * valueCount + 1
             for (let v = 0; v < valueCount; v++) {
-                cells.set(
-                    `${grandRow}:${colBase + v}`,
-                    numericCell(tree.grandTotals[v], def, v)
-                )
+                cells.set(`${grandRow}:${colBase + v}`, numericCell(tree.grandTotals[v], def, v))
             }
         }
     }
@@ -175,7 +154,7 @@ function buildRenderCols(
     if (tree.colKeys.length === 0) {
         return [{ tuple: [], key: JSON.stringify([]) }]
     }
-    return tree.colKeys.map((t) => ({ tuple: t, key: JSON.stringify(t) }))
+    return tree.colKeys.map(t => ({ tuple: t, key: JSON.stringify(t) }))
 }
 
 // ---------- header writers ----------
@@ -204,10 +183,7 @@ function writeColHeaders(
         for (let j = 0; j < renderCols.length; j++) {
             const colBase = headerColCount + j * valueCount + 1
             for (let v = 0; v < def.values.length; v++) {
-                cells.set(
-                    `${lastRow}:${colBase + v}`,
-                    stringCell(valueLabel(def, v))
-                )
+                cells.set(`${lastRow}:${colBase + v}`, stringCell(valueLabel(def, v)))
             }
         }
     } else if (def.cols.length === 0 && def.values.length === 1) {
@@ -270,11 +246,7 @@ function subtotalCellValues(
     return touched ? result : undefined
 }
 
-function rowSubtotalGrand(
-    tree: GroupedTree,
-    def: PivotDefinition,
-    prefixKey: string
-): number[] {
+function rowSubtotalGrand(tree: GroupedTree, def: PivotDefinition, prefixKey: string): number[] {
     const prefix = JSON.parse(prefixKey) as string[]
     const result = new Array(def.values.length).fill(0)
     for (const [rk, totals] of tree.rowTotals) {
@@ -301,11 +273,7 @@ function stringCell(s: string): CellValue {
     return { kind: 'string', raw: s, display: s }
 }
 
-function numericCell(
-    n: number | undefined,
-    def: PivotDefinition,
-    valueIdx: number
-): CellValue {
+function numericCell(n: number | undefined, def: PivotDefinition, valueIdx: number): CellValue {
     if (n == null || !Number.isFinite(n)) {
         return { kind: 'string', raw: '', display: '' }
     }
@@ -327,9 +295,7 @@ function valueLabel(def: PivotDefinition, valueIdx: number): string {
     return `${verb} of ${label}`
 }
 
-function aggregationVerb(
-    agg: PivotDefinition['values'][number]['aggregation']
-): string {
+function aggregationVerb(agg: PivotDefinition['values'][number]['aggregation']): string {
     switch (agg) {
         case 'sum':
             return 'Sum'

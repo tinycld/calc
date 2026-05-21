@@ -15,13 +15,10 @@ import { useMemo } from 'react'
 import type * as Y from 'yjs'
 import {
     type EvaluableCell,
-    evaluateRulesForCell,
     type EvaluationContext,
+    evaluateRulesForCell,
 } from '../lib/conditional-format/evaluate'
-import {
-    buildRuleRangeIndex,
-    filterRulesForCell,
-} from '../lib/conditional-format/range-index'
+import { buildRuleRangeIndex, filterRulesForCell } from '../lib/conditional-format/range-index'
 import { useConditionalFormatVersionStore } from '../lib/conditional-format/version-store'
 import { getFormulaBridge } from '../lib/formula/bridge'
 import type { CellStyle } from '../lib/workbook-types'
@@ -40,10 +37,8 @@ export function useConditionalStyleForCell(
     // this sheet uses a custom formula — otherwise we'd re-render
     // every cell on every keystroke through HF, defeating the
     // memoization. Selector returns 0 when no rule needs it.
-    const hasCustomFormula = rules.some((r) => r.condition.type === 'customFormula')
-    const version = useConditionalFormatVersionStore((s) =>
-        hasCustomFormula ? s.version : 0
-    )
+    const hasCustomFormula = rules.some(r => r.condition.type === 'customFormula')
+    const _version = useConditionalFormatVersionStore(s => (hasCustomFormula ? s.version : 0))
 
     const index = useMemo(() => buildRuleRangeIndex(rules), [rules])
 
@@ -69,7 +64,7 @@ export function useConditionalStyleForCell(
         // dependency values. The cell-value identity (`cell`) covers
         // changes to THIS cell; `version` covers changes to any cell
         // a custom formula references.
-    }, [doc, sheetId, index, row, col, cell, version])
+    }, [doc, sheetId, index, row, col, cell])
 }
 
 function readSheetName(doc: Y.Doc, sheetId: string): string | null {

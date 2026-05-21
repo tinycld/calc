@@ -32,17 +32,13 @@ export interface PrintDialogProviderProps {
 }
 
 export function PrintDialogProvider({ store, children }: PrintDialogProviderProps) {
-    return (
-        <PrintDialogContext.Provider value={store}>{children}</PrintDialogContext.Provider>
-    )
+    return <PrintDialogContext.Provider value={store}>{children}</PrintDialogContext.Provider>
 }
 
 export function usePrintDialogStoreApi(): PrintDialogStore {
     const ctx = useContext(PrintDialogContext)
     if (ctx == null) {
-        throw new Error(
-            'usePrintDialogStoreApi must be used inside a <PrintDialogProvider>'
-        )
+        throw new Error('usePrintDialogStoreApi must be used inside a <PrintDialogProvider>')
     }
     return ctx
 }

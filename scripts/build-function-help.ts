@@ -20,9 +20,15 @@ function escapePipes(s: string): string {
     return s.replace(/\|/g, '\\|')
 }
 
-function renderCategory(title: string, entries: typeof FUNCTION_CATALOG[number]['entries']): string {
+function renderCategory(
+    title: string,
+    entries: (typeof FUNCTION_CATALOG)[number]['entries']
+): string {
     const rows = entries
-        .map(e => `| \`${escapePipes(e.name)}\` | ${escapePipes(e.description)} | \`${escapePipes(e.syntax)}\` |`)
+        .map(
+            e =>
+                `| \`${escapePipes(e.name)}\` | ${escapePipes(e.description)} | \`${escapePipes(e.syntax)}\` |`
+        )
         .join('\n')
     return [
         `## ${title}`,
@@ -60,4 +66,3 @@ const body = FUNCTION_CATALOG.map(c => renderCategory(c.title, c.entries)).join(
 
 const output = `${frontmatter}\n${intro}${body}`
 writeFileSync(OUT, output)
-console.log(`Wrote ${OUT} — ${totalCount} functions across ${FUNCTION_CATALOG.length} categories.`)

@@ -13,9 +13,9 @@ interface CFVersionState {
     bump(): void
 }
 
-export const useConditionalFormatVersionStore = create<CFVersionState>((set) => ({
+export const useConditionalFormatVersionStore = create<CFVersionState>(set => ({
     version: 0,
-    bump: () => set((s) => ({ version: s.version + 1 })),
+    bump: () => set(s => ({ version: s.version + 1 })),
 }))
 
 export function bumpConditionalFormatVersion(): void {

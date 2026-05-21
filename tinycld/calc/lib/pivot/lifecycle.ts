@@ -5,11 +5,7 @@
 
 import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import * as Y from 'yjs'
-import {
-    PIVOT_SHEET_KEY,
-    PIVOTS_MAP,
-    SHEETS_MAP,
-} from '../y-doc-bootstrap'
+import { PIVOT_SHEET_KEY, PIVOTS_MAP, SHEETS_MAP } from '../y-doc-bootstrap'
 import { buildA1Range, parseA1Range } from './range-parse'
 import { deletePivot } from './y-binding'
 
@@ -19,11 +15,7 @@ import { deletePivot } from './y-binding'
 // untouched. Quoted/unquoted rendering of the new name is handled by
 // buildA1Range. Pivots whose sourceRange fails to parse stay as-is —
 // the engine surfaces a parse error to the user.
-export function propagateSheetRename(
-    doc: Y.Doc,
-    oldName: string,
-    newName: string
-): void {
+export function propagateSheetRename(doc: Y.Doc, oldName: string, newName: string): void {
     if (oldName === newName) return
     const pivots = doc.getMap<Y.Map<unknown>>(PIVOTS_MAP)
     doc.transact(() => {

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+import type { WorkbookModel } from '../tinycld/calc/lib/workbook-types'
 import {
+    bootstrapYDocFromWorkbook,
     FROZEN_COLS_KEY,
     FROZEN_ROWS_KEY,
-    bootstrapYDocFromWorkbook,
     readFrozenCount,
-    setYFrozenCount,
     SHEETS_MAP,
+    setYFrozenCount,
 } from '../tinycld/calc/lib/y-doc-bootstrap'
-import type { WorkbookModel } from '../tinycld/calc/lib/workbook-types'
 
 // Pin the freeze-pane Y.Doc layer: the meta-key reader/writer round-
 // trips, setting count <= 0 deletes the key (sparse "no freeze"

@@ -13,14 +13,10 @@ test.describe('Calc conditional formatting', () => {
         await openNewSpreadsheet(page)
 
         await page.getByRole('button', { name: 'Format', exact: true }).click()
-        await page
-            .getByRole('menuitem', { name: /Conditional formatting/ })
-            .click()
+        await page.getByRole('menuitem', { name: /Conditional formatting/ }).click()
 
         // The empty state text appears in the drawer.
-        await expect(
-            page.getByText(/No rules yet/)
-        ).toBeVisible()
+        await expect(page.getByText(/No rules yet/)).toBeVisible()
     })
 
     test('greater-than rule colors matching cells', async ({ page }) => {
@@ -35,23 +31,19 @@ test.describe('Calc conditional formatting', () => {
         await page.getByLabel('Cell A1', { exact: true }).click()
 
         await page.getByRole('button', { name: 'Format', exact: true }).click()
-        await page
-            .getByRole('menuitem', { name: /Conditional formatting/ })
-            .click()
+        await page.getByRole('menuitem', { name: /Conditional formatting/ }).click()
         await page.getByLabel('Add rule', { exact: true }).click()
 
         // Open the condition picker and pick Greater than.
         await page.getByLabel('Choose condition', { exact: true }).click()
-        await page
-            .getByRole('menuitem', { name: 'Greater than', exact: true })
-            .click()
+        await page.getByRole('menuitem', { name: 'Greater than', exact: true }).click()
 
         // Operand input now appears for the chosen condition.
         await page.locator('input[placeholder="0"]').fill('50')
         await page.getByLabel('Done', { exact: true }).click()
 
         const readBg = (label: string) =>
-            page.evaluate((l) => {
+            page.evaluate(l => {
                 const cell = document.querySelector(`[aria-label="${l}"]`)
                 return cell == null ? null : getComputedStyle(cell as Element).backgroundColor
             }, label)
@@ -77,9 +69,7 @@ test.describe('Calc conditional formatting', () => {
         await page.getByLabel('Cell A1', { exact: true }).click()
 
         await page.getByRole('button', { name: 'Format', exact: true }).click()
-        await page
-            .getByRole('menuitem', { name: /Conditional formatting/ })
-            .click()
+        await page.getByRole('menuitem', { name: /Conditional formatting/ }).click()
 
         // The drawer's empty state has an "Add another rule" trigger.
         // RN-Web Pressable renders as a generic with aria-label rather
@@ -94,7 +84,7 @@ test.describe('Calc conditional formatting', () => {
         // non-transparent fill. RN-Web spreads `backgroundColor` onto
         // the cell wrapper.
         const readBg = (label: string) =>
-            page.evaluate((l) => {
+            page.evaluate(l => {
                 const cell = document.querySelector(`[aria-label="${l}"]`)
                 return cell == null ? null : getComputedStyle(cell as Element).backgroundColor
             }, label)

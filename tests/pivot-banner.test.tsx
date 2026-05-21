@@ -36,7 +36,7 @@ function makeError(code: PivotErrorCode, message: string): PivotError {
 }
 
 describe('PivotBanner / bannerLinesFor', () => {
-    it("uses the fixed \"can't render\" title regardless of error code", () => {
+    it('uses the fixed "can\'t render" title regardless of error code', () => {
         const codes: PivotErrorCode[] = [
             'missing-source-sheet',
             'malformed-range',

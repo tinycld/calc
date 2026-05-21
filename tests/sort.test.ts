@@ -118,14 +118,7 @@ describe('sortRange', () => {
         setYCell(doc, 'sheet1', 3, 1, '1')
         setYCell(doc, 'sheet1', 4, 1, '2')
 
-        sortRange(
-            doc,
-            'sheet1',
-            { startRow: 1, endRow: 4, startCol: 1, endCol: 1 },
-            1,
-            'asc',
-            true
-        )
+        sortRange(doc, 'sheet1', { startRow: 1, endRow: 4, startCol: 1, endCol: 1 }, 1, 'asc', true)
         expect(readCell(doc, 'sheet1', 1, 1)?.raw).toBe('Score')
         expect(readCell(doc, 'sheet1', 2, 1)?.raw).toBe(1)
         expect(readCell(doc, 'sheet1', 3, 1)?.raw).toBe(2)

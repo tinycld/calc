@@ -34,9 +34,7 @@ export function FindMatchOverlay({ sheetId, colOffsets, rowOffsets }: FindMatchO
         overlays.push(
             <View
                 key={`${m.row}:${m.col}`}
-                accessibilityLabel={
-                    isCurrent ? 'Find current match' : 'Find match'
-                }
+                accessibilityLabel={isCurrent ? 'Find current match' : 'Find match'}
                 pointerEvents="none"
                 style={{
                     position: 'absolute',

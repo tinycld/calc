@@ -30,8 +30,7 @@ export interface SheetTabsState {
 
 export const useSheetTabsStore = create<SheetTabsState>(set => ({
     renamingId: null,
-    startRename: (sheetId: string) =>
-        set({ renamingId: sheetId, contextMenu: null }),
+    startRename: (sheetId: string) => set({ renamingId: sheetId, contextMenu: null }),
     cancelRename: () => set({ renamingId: null }),
 
     contextMenu: null,

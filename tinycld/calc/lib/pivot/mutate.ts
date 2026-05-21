@@ -9,21 +9,14 @@ import { PIVOTS_MAP } from '../y-doc-bootstrap'
 
 type SlotKey = 'rows' | 'cols' | 'values' | 'filters'
 
-function withEntry<R>(
-    doc: Y.Doc,
-    id: string,
-    fn: (entry: Y.Map<unknown>) => R
-): R | undefined {
+function withEntry<R>(doc: Y.Doc, id: string, fn: (entry: Y.Map<unknown>) => R): R | undefined {
     const map = doc.getMap<Y.Map<unknown>>(PIVOTS_MAP)
     const entry = map.get(id)
     if (!(entry instanceof Y.Map)) return undefined
     return fn(entry)
 }
 
-function getArr(
-    entry: Y.Map<unknown>,
-    slot: SlotKey
-): Y.Array<Y.Map<unknown>> | null {
+function getArr(entry: Y.Map<unknown>, slot: SlotKey): Y.Array<Y.Map<unknown>> | null {
     const arr = entry.get(slot)
     return arr instanceof Y.Array ? (arr as Y.Array<Y.Map<unknown>>) : null
 }
@@ -43,7 +36,7 @@ export function addValue(
     aggregation: PivotAggregation
 ): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => {
+        withEntry(doc, id, entry => {
             const arr = getArr(entry, 'values')
             if (arr == null) return
             const m = new Y.Map<unknown>()
@@ -58,14 +51,9 @@ export function addFilter(doc: Y.Doc, id: string, sourceColumn: string): void {
     appendField(doc, id, 'filters', sourceColumn)
 }
 
-function appendField(
-    doc: Y.Doc,
-    id: string,
-    slot: SlotKey,
-    sourceColumn: string
-): void {
+function appendField(doc: Y.Doc, id: string, slot: SlotKey, sourceColumn: string): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => {
+        withEntry(doc, id, entry => {
             const arr = getArr(entry, slot)
             if (arr == null) return
             const m = new Y.Map<unknown>()
@@ -75,14 +63,9 @@ function appendField(
     }, LOCAL_ORIGIN)
 }
 
-export function removeField(
-    doc: Y.Doc,
-    id: string,
-    slot: SlotKey,
-    index: number
-): void {
+export function removeField(doc: Y.Doc, id: string, slot: SlotKey, index: number): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => {
+        withEntry(doc, id, entry => {
             const arr = getArr(entry, slot)
             if (arr == null || index < 0 || index >= arr.length) return
             arr.delete(index, 1)
@@ -98,7 +81,7 @@ export function moveField(
     toIndex: number
 ): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => {
+        withEntry(doc, id, entry => {
             const arr = getArr(entry, slot)
             if (arr == null) return
             if (fromIndex < 0 || fromIndex >= arr.length) return
@@ -109,7 +92,9 @@ export function moveField(
             // (sourceColumn + optional displayName/aggregation/numFmt).
             const src = arr.get(fromIndex) as Y.Map<unknown>
             const replacement = new Y.Map<unknown>()
-            src.forEach((v, k) => replacement.set(k, v))
+            src.forEach((v, k) => {
+                replacement.set(k, v)
+            })
             arr.delete(fromIndex, 1)
             const insertAt = toIndex > fromIndex ? toIndex - 1 : toIndex
             arr.insert(insertAt, [replacement])
@@ -124,7 +109,7 @@ export function setValueAggregation(
     aggregation: PivotAggregation
 ): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => {
+        withEntry(doc, id, entry => {
             const arr = getArr(entry, 'values')
             if (arr == null) return
             const m = arr.get(valueIndex)
@@ -133,14 +118,9 @@ export function setValueAggregation(
     }, LOCAL_ORIGIN)
 }
 
-export function setValueNumFmt(
-    doc: Y.Doc,
-    id: string,
-    valueIndex: number,
-    numFmt: string
-): void {
+export function setValueNumFmt(doc: Y.Doc, id: string, valueIndex: number, numFmt: string): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => {
+        withEntry(doc, id, entry => {
             const arr = getArr(entry, 'values')
             if (arr == null) return
             const m = arr.get(valueIndex)
@@ -158,7 +138,7 @@ export function setFilterSelection(
     values: readonly string[]
 ): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => {
+        withEntry(doc, id, entry => {
             const sel = entry.get('filterSelections')
             if (!(sel instanceof Y.Map)) return
             if (values.length === 0) {
@@ -179,25 +159,21 @@ export function setBoolean(
     value: boolean
 ): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => {
+        withEntry(doc, id, entry => {
             entry.set(key, value)
         })
     }, LOCAL_ORIGIN)
 }
 
-export function setSourceRange(
-    doc: Y.Doc,
-    id: string,
-    sourceRange: string
-): void {
+export function setSourceRange(doc: Y.Doc, id: string, sourceRange: string): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => entry.set('sourceRange', sourceRange))
+        withEntry(doc, id, entry => entry.set('sourceRange', sourceRange))
     }, LOCAL_ORIGIN)
 }
 
 export function setStyleName(doc: Y.Doc, id: string, name: string): void {
     doc.transact(() => {
-        withEntry(doc, id, (entry) => {
+        withEntry(doc, id, entry => {
             if (name === '') entry.delete('styleName')
             else entry.set('styleName', name)
         })

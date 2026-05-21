@@ -16,7 +16,7 @@ function empty(): CellValue {
 function table(headers: string[], rows: CellValue[][]): SourceTable {
     return {
         headers,
-        rows: rows.map((r) => {
+        rows: rows.map(r => {
             const o: Record<string, CellValue> = {}
             headers.forEach((h, i) => {
                 o[h] = r[i] ?? empty()
@@ -121,17 +121,13 @@ describe('aggregate — each aggregation function', () => {
     it('stdDev (sample)', () =>
         expect(Math.abs(run('stdDev') - 2.138089935299395) < 1e-9).toBe(true))
     it('stdDevp (population)', () => expect(Math.abs(run('stdDevp') - 2) < 1e-9).toBe(true))
-    it('var (sample)', () =>
-        expect(Math.abs(run('var') - 4.571428571428571) < 1e-9).toBe(true))
+    it('var (sample)', () => expect(Math.abs(run('var') - 4.571428571428571) < 1e-9).toBe(true))
     it('varp (population)', () => expect(Math.abs(run('varp') - 4) < 1e-9).toBe(true))
 })
 
 describe('aggregate — count vs countNums', () => {
     it('count counts non-empty, countNums counts numeric', () => {
-        const t = table(
-            ['Sales'],
-            [[num(1)], [str('text')], [empty()], [num(2)]]
-        )
+        const t = table(['Sales'], [[num(1)], [str('text')], [empty()], [num(2)]])
         const tCount = aggregate(
             t,
             baseDef({

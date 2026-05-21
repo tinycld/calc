@@ -26,10 +26,7 @@ export function readPivot(doc: Y.Doc, id: string): PivotDefinition | null {
     return readPivotFromMap(id, entry)
 }
 
-export function readPivotFromMap(
-    id: string,
-    entry: Y.Map<unknown>
-): PivotDefinition {
+export function readPivotFromMap(id: string, entry: Y.Map<unknown>): PivotDefinition {
     return {
         id,
         sourceRange: readString(entry, 'sourceRange'),
@@ -93,9 +90,7 @@ function buildFieldMap(f: PivotField): Y.Map<unknown> {
     return m
 }
 
-function buildValueFieldArray(
-    fields: PivotValueField[]
-): Y.Array<Y.Map<unknown>> {
+function buildValueFieldArray(fields: PivotValueField[]): Y.Array<Y.Map<unknown>> {
     const arr = new Y.Array<Y.Map<unknown>>()
     for (const f of fields) {
         const m = buildFieldMap(f)
@@ -106,9 +101,7 @@ function buildValueFieldArray(
     return arr
 }
 
-function buildFilterSelections(
-    sel: Record<string, string[]>
-): Y.Map<Y.Array<string>> {
+function buildFilterSelections(sel: Record<string, string[]>): Y.Map<Y.Array<string>> {
     const m = new Y.Map<Y.Array<string>>()
     for (const [col, vals] of Object.entries(sel)) {
         if (!Array.isArray(vals) || vals.length === 0) continue
@@ -136,9 +129,7 @@ function readFieldFromMap(m: Y.Map<unknown>): PivotField {
     return {
         sourceColumn: typeof sourceColumn === 'string' ? sourceColumn : '',
         displayName:
-            typeof displayName === 'string' && displayName !== ''
-                ? displayName
-                : undefined,
+            typeof displayName === 'string' && displayName !== '' ? displayName : undefined,
     }
 }
 
@@ -180,10 +171,7 @@ function readString(entry: Y.Map<unknown>, key: string): string {
     return typeof v === 'string' ? v : ''
 }
 
-function readOptionalString(
-    entry: Y.Map<unknown>,
-    key: string
-): string | undefined {
+function readOptionalString(entry: Y.Map<unknown>, key: string): string | undefined {
     const v = entry.get(key)
     return typeof v === 'string' && v !== '' ? v : undefined
 }

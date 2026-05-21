@@ -1,7 +1,7 @@
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { X } from 'lucide-react-native'
 import { useState } from 'react'
 import { Pressable, Text, View } from 'react-native'
-import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {
     filterSummaryLabel,
     filterValueLabel,
@@ -89,7 +89,7 @@ export function FilterFieldRow({
                     <Pressable
                         accessibilityRole="button"
                         accessibilityLabel="Show all values"
-                        onPress={() => setShowAll((s) => !s)}
+                        onPress={() => setShowAll(s => !s)}
                         className="rounded-md border border-border px-2 py-1"
                     >
                         <Text className="text-xs text-muted-foreground">
@@ -109,18 +109,11 @@ interface FilterValueChipProps {
     onPress: (value: string) => void
 }
 
-function FilterValueChip({
-    value,
-    active,
-    disabled,
-    onPress,
-}: FilterValueChipProps) {
+function FilterValueChip({ value, active, disabled, onPress }: FilterValueChipProps) {
     const containerClass = active
         ? 'rounded-md px-2 py-1 bg-accent'
         : 'rounded-md px-2 py-1 bg-background border border-border'
-    const textClass = active
-        ? 'text-xs text-accent-foreground'
-        : 'text-xs text-foreground'
+    const textClass = active ? 'text-xs text-accent-foreground' : 'text-xs text-foreground'
     return (
         <Pressable
             accessibilityRole="button"

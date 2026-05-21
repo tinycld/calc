@@ -29,15 +29,10 @@ export function FieldList({
                     </Text>
                 )}
                 {headers.map((h, i) => (
-                    <View
-                        key={`${i}:${h}`}
-                        className="flex-row items-center justify-between"
-                    >
-                        <Text className="flex-1 text-sm text-foreground">
-                            {h || '(unnamed)'}
-                        </Text>
+                    <View key={`${i}:${h}`} className="flex-row items-center justify-between">
+                        <Text className="flex-1 text-sm text-foreground">{h || '(unnamed)'}</Text>
                         <View className="flex-row gap-1">
-                            {(['R', 'C', 'V', 'F'] as const).map((letter) => (
+                            {(['R', 'C', 'V', 'F'] as const).map(letter => (
                                 <Pressable
                                     key={letter}
                                     accessibilityLabel={`Add ${h} to ${letter}`}
@@ -50,9 +45,7 @@ export function FieldList({
                                     }}
                                     className="rounded-md border border-border bg-surface-secondary px-2 py-1"
                                 >
-                                    <Text className="text-xs text-foreground">
-                                        {letter}
-                                    </Text>
+                                    <Text className="text-xs text-foreground">{letter}</Text>
                                 </Pressable>
                             ))}
                         </View>

@@ -5,11 +5,11 @@ import type * as Y from 'yjs'
 import { useClipboard } from '../../hooks/use-clipboard'
 import { useFilterView } from '../../hooks/use-filter-view'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
+import { useSheetConditionalFormats } from '../../hooks/use-sheet-conditional-formats'
 import { setYCell } from '../../hooks/use-y-cell'
 import { useYSheets } from '../../hooks/use-y-sheets'
 import { rangeToSheetRelativeA1 } from '../../lib/conditional-format/a1'
 import { anyRuleOverlapsRect } from '../../lib/conditional-format/range-index'
-import { useSheetConditionalFormats } from '../../hooks/use-sheet-conditional-formats'
 import { applyValuesFilterFromSelection, clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
 import {
@@ -18,8 +18,8 @@ import {
     isDisjoint,
     primaryRange,
 } from '../../lib/selection-range'
-import { useConditionalFormatPanelStore } from '../../lib/stores/conditional-format-panel-store'
 import { detectHeaderRow, sortRange } from '../../lib/sort'
+import { useConditionalFormatPanelStore } from '../../lib/stores/conditional-format-panel-store'
 import { columnLabel } from '../../lib/workbook-types'
 import { MIN_COLS, MIN_ROWS } from './constants'
 
@@ -219,7 +219,7 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
         })
 
     const onOpenConditionalFormatting = useCallback(() => {
-        const defaultRanges = allRanges(selection).map((r) =>
+        const defaultRanges = allRanges(selection).map(r =>
             rangeToSheetRelativeA1(r.startRow, r.startCol, r.endRow, r.endCol)
         )
         useConditionalFormatPanelStore.getState().open(sheetId, { defaultRanges })
@@ -334,9 +334,7 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                                 <Menu.ItemTitle>Freeze 2 columns</Menu.ItemTitle>
                             </Menu.Item>
                             {rightCol != null && rightCol > 0 && (
-                                <Menu.Item
-                                    onPress={() => store.getState().setFrozenCols(rightCol)}
-                                >
+                                <Menu.Item onPress={() => store.getState().setFrozenCols(rightCol)}>
                                     <Menu.ItemTitle>
                                         Freeze up to column {columnLabel(rightCol)}
                                     </Menu.ItemTitle>
@@ -362,10 +360,7 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                         </>
                     ) : null}
                     {filterView == null ? (
-                        <Menu.Item
-                            onPress={onCreateFilter}
-                            isDisabled={range == null || disjoint}
-                        >
+                        <Menu.Item onPress={onCreateFilter} isDisabled={range == null || disjoint}>
                             <Menu.ItemTitle>Filter</Menu.ItemTitle>
                         </Menu.Item>
                     ) : filterView.mode === 'range' ? (

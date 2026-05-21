@@ -218,11 +218,7 @@ export function containsAny(selection: Selection, row: number, col: number): boo
 // or null. Used by openCellContextMenu to decide whether a right-click
 // should keep the disjoint selection (click landed inside any sub-
 // range) or collapse to single-cell.
-export function subRangeAtCell(
-    selection: Selection,
-    row: number,
-    col: number
-): SubRange | null {
+export function subRangeAtCell(selection: Selection, row: number, col: number): SubRange | null {
     if (selection == null) return null
     for (const sr of selection.ranges) {
         if (rangeContainsCell(sr.range, row, col)) return sr
@@ -294,10 +290,7 @@ export function clampSubRangesForDelete(
     for (const sr of selection.ranges) {
         if (axis === 'row') {
             // Drop sub-ranges entirely inside the deleted span.
-            if (
-                sr.range.startRow >= fromIndex &&
-                sr.range.endRow < fromIndex + count
-            ) {
+            if (sr.range.startRow >= fromIndex && sr.range.endRow < fromIndex + count) {
                 continue
             }
             const startRow = clampIndexForDelete(sr.range.startRow, fromIndex, count, newAxisCount)
@@ -319,10 +312,7 @@ export function clampSubRangesForDelete(
                 scope: sr.scope,
             })
         } else {
-            if (
-                sr.range.startCol >= fromIndex &&
-                sr.range.endCol < fromIndex + count
-            ) {
+            if (sr.range.startCol >= fromIndex && sr.range.endCol < fromIndex + count) {
                 continue
             }
             const startCol = clampIndexForDelete(sr.range.startCol, fromIndex, count, newAxisCount)

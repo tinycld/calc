@@ -883,11 +883,9 @@ test.describe('Calc', () => {
 
             await page.mouse.move(a1Box.x + a1Box.width / 2, a1Box.y + a1Box.height / 2)
             await page.mouse.down()
-            await page.mouse.move(
-                b2Box.x + b2Box.width / 2,
-                b2Box.y + b2Box.height / 2,
-                { steps: 8 }
-            )
+            await page.mouse.move(b2Box.x + b2Box.width / 2, b2Box.y + b2Box.height / 2, {
+                steps: 8,
+            })
             await page.mouse.up()
 
             // Confirm the range extended before issuing the shortcut.
@@ -1154,9 +1152,7 @@ test.describe('Sort & Filter', () => {
         await typeIntoCell(page, formulaBar, 'A3', 'Cherry')
         await typeIntoCell(page, formulaBar, 'B3', '3')
 
-        await page
-            .getByLabel('Select column A', { exact: true })
-            .click({ button: 'right' })
+        await page.getByLabel('Select column A', { exact: true }).click({ button: 'right' })
         await page.getByRole('menuitem', { name: 'Sort sheet Z→A' }).click()
 
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Cherry')
@@ -1200,9 +1196,7 @@ test.describe('Sort & Filter', () => {
         await expect(page.getByLabel('Cell A4', { exact: true })).toHaveText('Date')
     })
 
-    test('header-mode filter via Create filter dialog applies a condition', async ({
-        page,
-    }) => {
+    test('header-mode filter via Create filter dialog applies a condition', async ({ page }) => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
 
@@ -1223,9 +1217,7 @@ test.describe('Sort & Filter', () => {
         // clearing icon should now be visible in the column A header.
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveCount(0)
         await expect(page.getByLabel('Cell A3', { exact: true })).toHaveCount(0)
-        await expect(
-            page.getByRole('button', { name: 'Clear filter on column A' })
-        ).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Clear filter on column A' })).toBeVisible()
 
         // Click the clearing icon — only this column's criterion is
         // removed, which (being the last) also clears the whole filter.
@@ -1694,9 +1686,7 @@ test.describe('Calc CSV import/export', () => {
         await page.getByRole('button', { name: 'File', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Download', exact: true }).hover()
         const downloadPromise = page.waitForEvent('download')
-        await page
-            .getByRole('menuitem', { name: 'Download as CSV (current sheet)' })
-            .click()
+        await page.getByRole('menuitem', { name: 'Download as CSV (current sheet)' }).click()
         const download = await downloadPromise
         expect(download.suggestedFilename()).toMatch(/\.csv$/)
 

@@ -41,10 +41,7 @@ export function subscribeAwarenessToStore(
         }
         if (state.selection !== prev.selection) {
             const next = primaryAnchor(state.selection)
-            if (
-                next?.row !== prevPrimary?.row ||
-                next?.col !== prevPrimary?.col
-            ) {
+            if (next?.row !== prevPrimary?.row || next?.col !== prevPrimary?.col) {
                 prevPrimary = next
                 publish()
             }

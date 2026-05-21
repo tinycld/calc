@@ -32,9 +32,9 @@ describe('serializeSheetToCsv', () => {
     it('quotes fields containing commas, quotes, or newlines and doubles inner quotes', () => {
         const doc = new Y.Doc()
         bootstrapSheet(doc)
-        setYCell(doc, 'sheet1', 1, 1, "He said \"hi\"")
+        setYCell(doc, 'sheet1', 1, 1, 'He said "hi"')
         setYCell(doc, 'sheet1', 1, 2, 'a,b,c')
-        setYCell(doc, 'sheet1', 2, 1, "line1\nline2")
+        setYCell(doc, 'sheet1', 2, 1, 'line1\nline2')
         setYCell(doc, 'sheet1', 2, 2, 'plain')
 
         const csv = serializeSheetToCsv(doc, 'sheet1')

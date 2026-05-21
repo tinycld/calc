@@ -94,27 +94,21 @@ function makeDepsWithMerges(merges: FakeMerge[]): GridStoreDeps {
 
 describe('grid-store merge-aware selection', () => {
     it('selectCell on a covered cell snaps to the merge anchor', () => {
-        const deps = makeDepsWithMerges([
-            { anchorRow: 2, anchorCol: 2, rowSpan: 3, colSpan: 3 },
-        ])
+        const deps = makeDepsWithMerges([{ anchorRow: 2, anchorCol: 2, rowSpan: 3, colSpan: 3 }])
         const store = createGridStore(deps)
         store.getState().selectCell({ row: 4, col: 4 })
         expect(primaryAnchor(store.getState().selection)).toEqual({ row: 2, col: 2 })
     })
 
     it('selectCell on a free cell stays put', () => {
-        const deps = makeDepsWithMerges([
-            { anchorRow: 2, anchorCol: 2, rowSpan: 3, colSpan: 3 },
-        ])
+        const deps = makeDepsWithMerges([{ anchorRow: 2, anchorCol: 2, rowSpan: 3, colSpan: 3 }])
         const store = createGridStore(deps)
         store.getState().selectCell({ row: 7, col: 7 })
         expect(primaryAnchor(store.getState().selection)).toEqual({ row: 7, col: 7 })
     })
 
     it('extendSelectionTo through a merge expands the range to fully contain it', () => {
-        const deps = makeDepsWithMerges([
-            { anchorRow: 4, anchorCol: 4, rowSpan: 3, colSpan: 3 },
-        ])
+        const deps = makeDepsWithMerges([{ anchorRow: 4, anchorCol: 4, rowSpan: 3, colSpan: 3 }])
         const store = createGridStore(deps)
         // Anchor at (1,1)
         store.getState().selectCell({ row: 1, col: 1 })
@@ -131,9 +125,7 @@ describe('grid-store merge-aware selection', () => {
     })
 
     it('extendSelectionTo on a non-touching range leaves it alone', () => {
-        const deps = makeDepsWithMerges([
-            { anchorRow: 4, anchorCol: 4, rowSpan: 3, colSpan: 3 },
-        ])
+        const deps = makeDepsWithMerges([{ anchorRow: 4, anchorCol: 4, rowSpan: 3, colSpan: 3 }])
         const store = createGridStore(deps)
         store.getState().selectCell({ row: 10, col: 10 })
         store.getState().extendActiveRangeTo({ row: 12, col: 12 })

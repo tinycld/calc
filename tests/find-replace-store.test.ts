@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import {
-    computeMatches,
-} from '../tinycld/calc/hooks/find/use-find-actions'
+import { computeMatches } from '../tinycld/calc/hooks/find/use-find-actions'
 import { setYCell, setYCellTyped } from '../tinycld/calc/hooks/use-y-cell'
-import { bootstrapYDocFromWorkbook } from '../tinycld/calc/lib/y-doc-bootstrap'
 import type { WorkbookModel } from '../tinycld/calc/lib/workbook-types'
+import { bootstrapYDocFromWorkbook } from '../tinycld/calc/lib/y-doc-bootstrap'
 
 function makeDoc(): Y.Doc {
     const doc = new Y.Doc()
