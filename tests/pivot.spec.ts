@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { login, navigateToPackage } from '../../../../tests/e2e/helpers'
+import { login, navigateToPackage } from '../../app/tests/e2e/helpers'
 
 // End-to-end coverage for the pivot UI surface. Each test owns its
 // own workbook so a destructive action (rename, delete, undo) can't

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { login, navigateToPackage } from '../../../../tests/e2e/helpers'
+import { login, navigateToPackage } from '../../app/tests/e2e/helpers'
 
 test.describe('Calc', () => {
     // Bump the test timeout: tests that hit "New spreadsheet" wait on a
