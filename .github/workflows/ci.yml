@@ -7,63 +7,77 @@ on:
     branches: [main]
 
 env:
-  APP_REPO: tinycld/tinycld
-  APP_REF: main
-  # @tinycld/drive owns the comment_mentions migration that core's
-  # notify hook + TS store reference. Without drive linked, the schema
-  # regen below produces a pbSchema.ts missing comment_mentions and
-  # core's typecheck fails on its own store registration.
-  DRIVE_REPO: tinycld/drive
-  DRIVE_REF: main
+  PACKAGE: calc
+  TEST_USER_LOGIN: user@tinycld.org
+  TEST_USER_PW: TestUser1234!
+  ADMIN_USER_LOGIN: admin@tinycld.org
+  ADMIN_USER_PW: AdminPass1234!
 
 jobs:
-  checks:
-    name: Lint, typecheck, unit tests
+  check:
+    name: Typecheck & Unit
+    runs-on: ubuntu-latest
+    steps:
+      # 1. The workspace meta-repo becomes the job root.
+      - uses: actions/checkout@v5
+        with:
+          repository: tinycld/workspace
+          ref: main
+          path: ws
+      # 2. This PR's code, checked out into the member slot.
+      - uses: actions/checkout@v5
+        with:
+          path: ws/${{ env.PACKAGE }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: ws/.node-version
+          cache: npm
+          cache-dependency-path: ws/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ws/.go-version
+      # 3. Clone app + core (the PR's PACKAGE is already checked out into its
+      #    slot; bootstrap --tooling skips dirs that already exist). A sibling
+      #    only needs app + core + itself to typecheck + unit-test.
+      - name: Assemble workspace (app + core)
+        working-directory: ws
+        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --tooling
+      - name: Install (workspace root)
+        working-directory: ws
+        run: npm install
+      - name: Typecheck + unit
+        working-directory: ws/${{ env.PACKAGE }}
+        run: npx tinycld-pkg check
+
+  e2e:
+    name: E2E
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
-          path: calc
+          repository: tinycld/workspace
+          ref: main
+          path: ws
       - uses: actions/checkout@v5
         with:
-          repository: ${{ env.APP_REPO }}
-          ref: ${{ env.APP_REF }}
-          path: tinycld
-      - uses: actions/checkout@v5
-        with:
-          repository: ${{ env.DRIVE_REPO }}
-          ref: ${{ env.DRIVE_REF }}
-          path: drive
+          path: ws/${{ env.PACKAGE }}
       - uses: actions/setup-node@v5
         with:
-          node-version-file: tinycld/.node-version
+          node-version-file: ws/.node-version
           cache: npm
-          cache-dependency-path: tinycld/package-lock.json
-
-      - name: Install tinycld deps (biome lives here)
-        working-directory: tinycld
-        run: npm ci
-
-      - name: Link drive into tinycld app shell
-        working-directory: tinycld
-        run: npm run packages:link ../drive
-
-      - name: Link calc into tinycld app shell
-        working-directory: tinycld
-        run: npm run packages:link ../calc
-
-      - name: Lint (biome runs from tinycld; scans linked calc via app rules)
-        working-directory: tinycld
-        run: npm run lint
-
-      # Typecheck runs from inside tinycld so module resolution sees the
-      # full app-shell tree (uniwind augments, expo types, etc).
-      - name: Typecheck (full app shell, package included via link)
-        working-directory: tinycld
-        env:
-          NODE_OPTIONS: --preserve-symlinks
-        run: npm run typecheck
-
-      - name: Run unit tests (vitest picks up calc via packages glob)
-        working-directory: tinycld
-        run: npx vitest run packages/@tinycld/calc
+          cache-dependency-path: ws/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ws/.go-version
+      - name: Assemble workspace (app + core)
+        working-directory: ws
+        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --tooling
+      - name: Install (workspace root)
+        working-directory: ws
+        run: npm install
+      - name: Install Playwright browsers
+        working-directory: ws/app
+        run: npx playwright install --with-deps chromium
+      - name: E2E
+        working-directory: ws/${{ env.PACKAGE }}
+        run: npx tinycld-pkg test:e2e
