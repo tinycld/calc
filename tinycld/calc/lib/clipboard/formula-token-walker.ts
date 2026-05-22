@@ -47,6 +47,121 @@ const REF_RE = /(\$?)([A-Z]{1,3})(\$?)(\d+)/y
 // text. Matched character-by-character when scanning backwards.
 const UNQUOTED_SHEET_CHAR = /[A-Za-zÀ-ʯ0-9_]/
 
+const ID_CHAR = /[A-Za-z0-9_]/
+
+interface StringScanResult {
+    out: string
+    i: number
+    inString: boolean
+}
+
+// Advance one step while inside a double-quoted string. Handles the
+// `""` embedded-quote escape: consumes both chars and stays in-string.
+// Returns the closing `"` without escape as end-of-string (inString→false).
+function advanceInString(formula: string, i: number, out: string): StringScanResult {
+    const ch = formula[i]
+    out += ch
+    if (ch === '"') {
+        if (formula[i + 1] === '"') {
+            // `""` escape: consume both, stay in string.
+            out += '"'
+            return { out, i: i + 2, inString: true }
+        }
+        return { out, i: i + 1, inString: false }
+    }
+    return { out, i: i + 1, inString: true }
+}
+
+interface QuotedPrefixResult {
+    prefixStart: number
+    found: boolean
+}
+
+// Scan backwards from `bang - 2` for the opening `'` of a quoted sheet
+// name, treating `''` as an embedded apostrophe. `bang` is the index of
+// the `!`; `formula[bang - 1]` must already be `'` (the closing quote).
+function scanQuotedSheetPrefix(formula: string, bang: number): QuotedPrefixResult {
+    let q = bang - 2
+    while (q >= 0) {
+        if (formula[q] === "'") {
+            if (q > 0 && formula[q - 1] === "'") {
+                // `''` embedded apostrophe: skip both chars.
+                q -= 2
+                continue
+            }
+            return { prefixStart: q, found: true }
+        }
+        q--
+    }
+    return { prefixStart: 0, found: false }
+}
+
+interface UnquotedPrefixResult {
+    prefixStart: number
+    found: boolean
+}
+
+// Scan backwards from `bang - 1` over UNQUOTED_SHEET_CHAR. At least
+// one matching char is required for the result to count as a real prefix.
+function scanUnquotedSheetPrefix(formula: string, bang: number): UnquotedPrefixResult {
+    let q = bang - 1
+    while (q >= 0 && UNQUOTED_SHEET_CHAR.test(formula[q])) q--
+    if (q < bang - 1) {
+        return { prefixStart: q + 1, found: true }
+    }
+    return { prefixStart: bang, found: false }
+}
+
+interface SheetPrefixResult {
+    sheetPrefix: string
+    prefixStart: number
+    // True when the identifier-tail guard fired after prefix resolution;
+    // the caller should emit m[0] verbatim and skip the transform.
+    verbatim: boolean
+}
+
+// Parse a sheet-qualified prefix backwards from colStart. colStart is
+// the index of the first column letter in the A1 match (skipping any
+// leading `$`). Returns the prefix bytes and where they start, or an
+// empty prefix when none is present or the guard fires.
+function parseSheetPrefix(formula: string, colStart: number): SheetPrefixResult {
+    const noPrefix: SheetPrefixResult = { sheetPrefix: '', prefixStart: colStart, verbatim: false }
+
+    if (colStart === 0 || formula[colStart - 1] !== '!') return noPrefix
+
+    const bang = colStart - 1
+    let prefixStart: number
+    let found: boolean
+
+    if (bang > 0 && formula[bang - 1] === "'") {
+        // Quoted form: scan back for the matching opening "'",
+        // treating "''" as an embedded apostrophe (which
+        // belongs to the name, not the delimiter).
+        ;({ prefixStart, found } = scanQuotedSheetPrefix(formula, bang))
+    } else {
+        // Unquoted form: scan back over the unquoted-name char
+        // class. At least one char is required for it to be a
+        // real prefix.
+        ;({ prefixStart, found } = scanUnquotedSheetPrefix(formula, bang))
+    }
+
+    if (!found) return noPrefix
+
+    const sheetPrefix = formula.slice(prefixStart, colStart)
+
+    // If we resolved a prefix, the identifier-tail guard on the
+    // LEFT side has to be re-checked against the char before
+    // the prefix — `FOO'Sheet'!A1` shouldn't be treated as a
+    // sheet-qualified ref because `FOO` glues onto the quoted
+    // name. (In practice formulas don't look like this, but
+    // matching the same guard keeps the walker robust.)
+    if (prefixStart > 0 && ID_CHAR.test(formula[prefixStart - 1])) {
+        return { sheetPrefix: '', prefixStart: colStart, verbatim: true }
+    }
+
+    return { sheetPrefix, prefixStart, verbatim: false }
+}
+
 export function walkFormulaTokens(formula: string, transform: FormulaTokenTransform): string {
     if (!formula.startsWith('=')) return formula
 
@@ -58,16 +173,7 @@ export function walkFormulaTokens(formula: string, transform: FormulaTokenTransf
         const ch = formula[i]
 
         if (inString) {
-            out += ch
-            if (ch === '"') {
-                if (formula[i + 1] === '"') {
-                    out += '"'
-                    i += 2
-                    continue
-                }
-                inString = false
-            }
-            i++
+            ;({ out, i, inString } = advanceInString(formula, i, out))
             continue
         }
 
@@ -91,12 +197,12 @@ export function walkFormulaTokens(formula: string, transform: FormulaTokenTransf
         // Identifier-tail guard: a letter/digit/underscore on either
         // side of the match means the A1-shape is just the suffix of a
         // longer identifier (named range, etc.) — pass through verbatim.
-        if (tail < formula.length && /[A-Za-z0-9_]/.test(formula[tail])) {
+        if (tail < formula.length && ID_CHAR.test(formula[tail])) {
             out += m[0]
             i = tail
             continue
         }
-        if (m.index > 0 && /[A-Za-z0-9_]/.test(formula[m.index - 1])) {
+        if (m.index > 0 && ID_CHAR.test(formula[m.index - 1])) {
             out += m[0]
             i = tail
             continue
@@ -107,57 +213,12 @@ export function walkFormulaTokens(formula: string, transform: FormulaTokenTransf
         // the optional `$`); the prefix's `!` sits immediately before
         // colStart when present.
         const colStart = m[1] === '$' ? m.index + 1 : m.index
-        let prefixStart = colStart
-        let sheetPrefix = ''
-        if (colStart > 0 && formula[colStart - 1] === '!') {
-            const bang = colStart - 1
-            if (bang > 0 && formula[bang - 1] === "'") {
-                // Quoted form: scan back for the matching opening "'",
-                // treating "''" as an embedded apostrophe (which
-                // belongs to the name, not the delimiter).
-                let q = bang - 2
-                let foundOpen = false
-                while (q >= 0) {
-                    if (formula[q] === "'") {
-                        if (q > 0 && formula[q - 1] === "'") {
-                            q -= 2
-                            continue
-                        }
-                        foundOpen = true
-                        break
-                    }
-                    q--
-                }
-                if (foundOpen) {
-                    prefixStart = q
-                    sheetPrefix = formula.slice(prefixStart, colStart)
-                }
-            } else {
-                // Unquoted form: scan back over the unquoted-name char
-                // class. At least one char is required for it to be a
-                // real prefix.
-                let q = bang - 1
-                while (q >= 0 && UNQUOTED_SHEET_CHAR.test(formula[q])) q--
-                if (q < bang - 1) {
-                    prefixStart = q + 1
-                    sheetPrefix = formula.slice(prefixStart, colStart)
-                }
-            }
+        const { sheetPrefix, verbatim } = parseSheetPrefix(formula, colStart)
 
-            // If we resolved a prefix, the identifier-tail guard on the
-            // LEFT side has to be re-checked against the char before
-            // the prefix — `FOO'Sheet'!A1` shouldn't be treated as a
-            // sheet-qualified ref because `FOO` glues onto the quoted
-            // name. (In practice formulas don't look like this, but
-            // matching the same guard keeps the walker robust.)
-            if (sheetPrefix !== '' && prefixStart > 0) {
-                const prev = formula[prefixStart - 1]
-                if (/[A-Za-z0-9_]/.test(prev)) {
-                    out += m[0]
-                    i = tail
-                    continue
-                }
-            }
+        if (verbatim) {
+            out += m[0]
+            i = tail
+            continue
         }
 
         const ctx: FormulaTokenContext = {
