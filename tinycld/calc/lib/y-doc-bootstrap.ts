@@ -129,90 +129,129 @@ export function bootstrapYDocFromWorkbook(doc: Y.Doc, model: WorkbookModel): voi
             const sheet = model.sheets[i]
             const sheetId = `sheet${i + 1}`
 
-            const meta = new Y.Map<unknown>()
-            meta.set('name', sheet.name)
-            meta.set('position', i)
-            meta.set('rowCount', sheet.rowCount)
-            meta.set('colCount', sheet.colCount)
-            if (sheet.color != null && sheet.color !== '') {
-                meta.set(SHEET_COLOR_KEY, sheet.color)
-            }
-            if (sheet.hidden === true) {
-                meta.set(SHEET_HIDDEN_KEY, true)
-            }
-            if (typeof sheet.frozenRows === 'number' && sheet.frozenRows > 0) {
-                meta.set(FROZEN_ROWS_KEY, Math.floor(sheet.frozenRows))
-            }
-            if (typeof sheet.frozenCols === 'number' && sheet.frozenCols > 0) {
-                meta.set(FROZEN_COLS_KEY, Math.floor(sheet.frozenCols))
-            }
+            const meta = buildSheetMetaMap(sheet, i)
+            writeSheetMerges(meta, sheet)
             sheetsMap.set(sheetId, meta)
 
-            if (sheet.merges != null && sheet.merges.length > 0) {
-                const mergesMap = new Y.Map<Y.Map<number>>()
-                for (const m of sheet.merges) {
-                    if (m.rowSpan < 1 || m.colSpan < 1) continue
-                    if (m.rowSpan === 1 && m.colSpan === 1) continue
-                    // Each entry must be a nested Y.Map so the Go
-                    // snapshot decoder (server/runtime.go::decodeMerges)
-                    // recognizes it. See merge.ts for the full
-                    // explanation.
-                    const entry = new Y.Map<number>()
-                    entry.set('rowSpan', m.rowSpan)
-                    entry.set('colSpan', m.colSpan)
-                    mergesMap.set(`${m.anchorRow}:${m.anchorCol}`, entry)
-                }
-                if (mergesMap.size > 0) {
-                    meta.set(MERGES_KEY, mergesMap)
-                }
-            }
-
-            for (const [localKey, value] of Object.entries(sheet.cells)) {
-                const parts = localKey.split(':')
-                if (parts.length !== 2) continue
-                const row = Number(parts[0])
-                const col = Number(parts[1])
-                if (!Number.isFinite(row) || !Number.isFinite(col)) continue
-
-                const cell = new Y.Map<unknown>()
-                // `kind` is authoritative for what the cell IS; `raw`
-                // carries the value in a Yjs-serializable form (Dates
-                // are normalized to ISO strings upstream by the
-                // adapter). `display` is the cache of formatCell(kind,
-                // raw) so old peers (and serializers without the
-                // formatter) can render correctly without recomputing.
-                cell.set('kind', value.kind)
-                cell.set('raw', toYRaw(value.raw))
-                cell.set('display', value.display)
-                if (value.formula) {
-                    cell.set('formula', value.formula)
-                }
-                if (value.style != null) {
-                    const styleMap = buildStyleYMap(value.style)
-                    if (styleMap != null) {
-                        cell.set(STYLE_KEY, styleMap)
-                    }
-                }
-                cellsMap.set(yCellKey(sheetId, row, col), cell)
-            }
+            populateSheetCells(cellsMap, sheetId, sheet)
         }
 
-        if (model.pivots != null) {
-            const sheetIdByName: Record<string, string> = {}
-            for (let i = 0; i < model.sheets.length; i++) {
-                sheetIdByName[model.sheets[i].name] = `sheet${i + 1}`
-            }
-            for (const def of model.pivots) {
-                writePivot(doc, def)
-                const targetSheetId = sheetIdByName[def.targetSheetName]
-                if (targetSheetId == null) continue
-                const targetMeta = sheetsMap.get(targetSheetId)
-                if (targetMeta instanceof Y.Map) {
-                    targetMeta.set(PIVOT_SHEET_KEY, def.id)
-                }
-            }
-        }
+        writeBootstrapPivots(doc, sheetsMap, model)
     })
+}
+
+// buildSheetMetaMap creates the per-sheet metadata Y.Map from a parsed
+// sheet model. Sparse optional fields (color, hidden, frozenRows,
+// frozenCols) are written only when present and non-zero so the
+// "absent = default" invariant holds for downstream readers.
+function buildSheetMetaMap(
+    sheet: WorkbookModel['sheets'][number],
+    position: number
+): Y.Map<unknown> {
+    const meta = new Y.Map<unknown>()
+    meta.set('name', sheet.name)
+    meta.set('position', position)
+    meta.set('rowCount', sheet.rowCount)
+    meta.set('colCount', sheet.colCount)
+    if (sheet.color != null && sheet.color !== '') {
+        meta.set(SHEET_COLOR_KEY, sheet.color)
+    }
+    if (sheet.hidden === true) {
+        meta.set(SHEET_HIDDEN_KEY, true)
+    }
+    if (typeof sheet.frozenRows === 'number' && sheet.frozenRows > 0) {
+        meta.set(FROZEN_ROWS_KEY, Math.floor(sheet.frozenRows))
+    }
+    if (typeof sheet.frozenCols === 'number' && sheet.frozenCols > 0) {
+        meta.set(FROZEN_COLS_KEY, Math.floor(sheet.frozenCols))
+    }
+    return meta
+}
+
+// writeSheetMerges populates the merges Y.Map on the sheet's metadata
+// Y.Map. Each entry must be a nested Y.Map so the Go snapshot decoder
+// (server/runtime.go::decodeMerges) recognizes it — see merge.ts for
+// the full explanation. Skips degenerate ranges (span < 1 or 1×1).
+// No-ops when the sheet has no merges or all entries are degenerate.
+function writeSheetMerges(meta: Y.Map<unknown>, sheet: WorkbookModel['sheets'][number]): void {
+    if (sheet.merges == null || sheet.merges.length === 0) return
+    const mergesMap = new Y.Map<Y.Map<number>>()
+    for (const m of sheet.merges) {
+        if (m.rowSpan < 1 || m.colSpan < 1) continue
+        if (m.rowSpan === 1 && m.colSpan === 1) continue
+        const entry = new Y.Map<number>()
+        entry.set('rowSpan', m.rowSpan)
+        entry.set('colSpan', m.colSpan)
+        mergesMap.set(`${m.anchorRow}:${m.anchorCol}`, entry)
+    }
+    if (mergesMap.size > 0) {
+        meta.set(MERGES_KEY, mergesMap)
+    }
+}
+
+// populateSheetCells writes one Y.Map per cell into the shared cellsMap,
+// keyed by yCellKey(sheetId, row, col). Skips entries whose local key
+// is not a valid "row:col" pair or whose row/col are non-finite.
+// `kind`/`raw`/`display` are always written; `formula` and `style` are
+// written only when present so the "absent = unset" rule applies.
+function populateSheetCells(
+    cellsMap: Y.Map<Y.Map<unknown>>,
+    sheetId: string,
+    sheet: WorkbookModel['sheets'][number]
+): void {
+    for (const [localKey, value] of Object.entries(sheet.cells)) {
+        const parts = localKey.split(':')
+        if (parts.length !== 2) continue
+        const row = Number(parts[0])
+        const col = Number(parts[1])
+        if (!Number.isFinite(row) || !Number.isFinite(col)) continue
+
+        const cell = new Y.Map<unknown>()
+        // `kind` is authoritative for what the cell IS; `raw`
+        // carries the value in a Yjs-serializable form (Dates
+        // are normalized to ISO strings upstream by the
+        // adapter). `display` is the cache of formatCell(kind,
+        // raw) so old peers (and serializers without the
+        // formatter) can render correctly without recomputing.
+        cell.set('kind', value.kind)
+        cell.set('raw', toYRaw(value.raw))
+        cell.set('display', value.display)
+        if (value.formula) {
+            cell.set('formula', value.formula)
+        }
+        if (value.style != null) {
+            const styleMap = buildStyleYMap(value.style)
+            if (styleMap != null) {
+                cell.set(STYLE_KEY, styleMap)
+            }
+        }
+        cellsMap.set(yCellKey(sheetId, row, col), cell)
+    }
+}
+
+// writeBootstrapPivots writes pivot definitions into the doc and tags
+// each pivot's target sheet meta with PIVOT_SHEET_KEY. No-ops when the
+// model has no pivots. Runs after all sheets have been committed to
+// sheetsMap so targetMeta lookups always resolve.
+function writeBootstrapPivots(
+    doc: Y.Doc,
+    sheetsMap: Y.Map<Y.Map<unknown>>,
+    model: WorkbookModel
+): void {
+    if (model.pivots == null) return
+    const sheetIdByName: Record<string, string> = {}
+    for (let i = 0; i < model.sheets.length; i++) {
+        sheetIdByName[model.sheets[i].name] = `sheet${i + 1}`
+    }
+    for (const def of model.pivots) {
+        writePivot(doc, def)
+        const targetSheetId = sheetIdByName[def.targetSheetName]
+        if (targetSheetId == null) continue
+        const targetMeta = sheetsMap.get(targetSheetId)
+        if (targetMeta instanceof Y.Map) {
+            targetMeta.set(PIVOT_SHEET_KEY, def.id)
+        }
+    }
 }
 
 // toYRaw normalizes a CellValue.raw (which may carry a JS Date from
