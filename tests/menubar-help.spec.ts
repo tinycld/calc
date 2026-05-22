@@ -54,15 +54,24 @@ test.describe('Calc Help menu', () => {
         await expect(page.getByRole('link', { name: /Read all tinycld help/i })).toBeVisible()
     })
 
-    test('Function list opens a dialog listing formula functions', async ({ page }) => {
+    test('Function list opens the help drawer to the functions topic', async ({ page }) => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
 
         await page.getByRole('button', { name: 'Help', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Function list' }).click()
 
-        const dialog = page.getByRole('dialog', { name: /Function list/i })
-        await expect(dialog).toBeVisible()
-        await expect(dialog.getByText('SUM', { exact: true })).toBeVisible()
+        // Function list opens the help drawer (not a standalone dialog) to
+        // the calc:functions topic. The menu must have dismissed first so a
+        // "matched the menu label" false-pass can't slip through.
+        await expect(page.getByRole('menuitem', { name: 'Function list' })).toBeHidden()
+
+        // The drawer's footer "Read all tinycld help →" link only exists
+        // inside the help drawer surface — same signal the Keyboard
+        // shortcuts test uses to prove the drawer opened.
+        await expect(page.getByRole('link', { name: /Read all tinycld help/i })).toBeVisible()
+
+        // The functions topic renders the SUM reference row.
+        await expect(page.getByText('SUM', { exact: true }).first()).toBeVisible()
     })
 })

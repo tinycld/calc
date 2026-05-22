@@ -11,13 +11,15 @@ test.describe('Calc File menu', () => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
 
-        page.once('dialog', async dialog => {
-            expect(dialog.type()).toBe('prompt')
-            await dialog.accept('Renamed Scorecard')
-        })
-
         await page.getByRole('button', { name: 'File', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Rename' }).click()
+
+        // Rename opens an in-app PromptDialog (not a native prompt). Its
+        // input carries accessibilityLabel="Rename" (the dialog title) and
+        // the confirm button is labelled "Rename".
+        const input = page.getByRole('textbox', { name: 'Rename', exact: true })
+        await input.fill('Renamed Scorecard')
+        await page.getByRole('button', { name: 'Rename', exact: true }).click()
 
         await expect(page.locator('[data-test-id="calc-workbook-header"]')).toHaveText(
             'Renamed Scorecard',
