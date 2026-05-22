@@ -48,51 +48,21 @@ export function renderPivot(tree: GroupedTree, def: PivotDefinition): RenderedPi
         const r = renderRows[i]
         const renderRowIdx = headerRowCount + i + 1
         writeRowHeaders(cells, def, r, renderRowIdx, headerColCount)
-        for (let j = 0; j < renderCols.length; j++) {
-            const c = renderCols[j]
-            const colBase = headerColCount + j * valueCount + 1
-            const folded =
-                r.kind === 'data'
-                    ? tree.cells.get(r.key)?.get(c.key)
-                    : r.kind === 'subtotal'
-                      ? subtotalCellValues(tree, def, r.prefixKey, c.key)
-                      : undefined
-            for (let v = 0; v < valueCount; v++) {
-                cells.set(`${renderRowIdx}:${colBase + v}`, numericCell(folded?.[v], def, v))
-            }
-        }
-        if (def.rowGrandTotals) {
-            const colBase = headerColCount + renderCols.length * valueCount + 1
-            const totals =
-                r.kind === 'data'
-                    ? tree.rowTotals.get(r.key)
-                    : r.kind === 'subtotal'
-                      ? rowSubtotalGrand(tree, def, r.prefixKey)
-                      : undefined
-            for (let v = 0; v < valueCount; v++) {
-                cells.set(`${renderRowIdx}:${colBase + v}`, numericCell(totals?.[v], def, v))
-            }
-        }
+        writeDataCells(cells, def, tree, r, renderRowIdx, renderCols, headerColCount, valueCount)
     }
 
     // ----- grand-total row -----
     if (def.colGrandTotals) {
-        const grandRow = headerRowCount + renderRows.length + 1
-        cells.set(`${grandRow}:1`, stringCell('Grand Total'))
-        for (let j = 0; j < renderCols.length; j++) {
-            const c = renderCols[j]
-            const colBase = headerColCount + j * valueCount + 1
-            const totals = tree.colTotals.get(c.key)
-            for (let v = 0; v < valueCount; v++) {
-                cells.set(`${grandRow}:${colBase + v}`, numericCell(totals?.[v], def, v))
-            }
-        }
-        if (def.rowGrandTotals) {
-            const colBase = headerColCount + renderCols.length * valueCount + 1
-            for (let v = 0; v < valueCount; v++) {
-                cells.set(`${grandRow}:${colBase + v}`, numericCell(tree.grandTotals[v], def, v))
-            }
-        }
+        writeGrandTotalRow(
+            cells,
+            def,
+            tree,
+            renderCols,
+            headerRowCount,
+            renderRows.length,
+            headerColCount,
+            valueCount
+        )
     }
 
     return {
@@ -210,6 +180,71 @@ function writeRowHeaders(
         // Subsequent row-header columns are left blank.
         for (let level = 1; level < def.rows.length; level++) {
             cells.set(`${rowIdx}:${level + 1}`, stringCell(''))
+        }
+    }
+}
+
+function writeDataCells(
+    cells: Map<string, CellValue>,
+    def: PivotDefinition,
+    tree: GroupedTree,
+    r: RenderRow,
+    renderRowIdx: number,
+    renderCols: Array<{ tuple: string[]; key: string }>,
+    headerColCount: number,
+    valueCount: number
+): void {
+    for (let j = 0; j < renderCols.length; j++) {
+        const c = renderCols[j]
+        const colBase = headerColCount + j * valueCount + 1
+        const folded =
+            r.kind === 'data'
+                ? tree.cells.get(r.key)?.get(c.key)
+                : r.kind === 'subtotal'
+                  ? subtotalCellValues(tree, def, r.prefixKey, c.key)
+                  : undefined
+        for (let v = 0; v < valueCount; v++) {
+            cells.set(`${renderRowIdx}:${colBase + v}`, numericCell(folded?.[v], def, v))
+        }
+    }
+    if (def.rowGrandTotals) {
+        const colBase = headerColCount + renderCols.length * valueCount + 1
+        const totals =
+            r.kind === 'data'
+                ? tree.rowTotals.get(r.key)
+                : r.kind === 'subtotal'
+                  ? rowSubtotalGrand(tree, def, r.prefixKey)
+                  : undefined
+        for (let v = 0; v < valueCount; v++) {
+            cells.set(`${renderRowIdx}:${colBase + v}`, numericCell(totals?.[v], def, v))
+        }
+    }
+}
+
+function writeGrandTotalRow(
+    cells: Map<string, CellValue>,
+    def: PivotDefinition,
+    tree: GroupedTree,
+    renderCols: Array<{ tuple: string[]; key: string }>,
+    headerRowCount: number,
+    renderRowCount: number,
+    headerColCount: number,
+    valueCount: number
+): void {
+    const grandRow = headerRowCount + renderRowCount + 1
+    cells.set(`${grandRow}:1`, stringCell('Grand Total'))
+    for (let j = 0; j < renderCols.length; j++) {
+        const c = renderCols[j]
+        const colBase = headerColCount + j * valueCount + 1
+        const totals = tree.colTotals.get(c.key)
+        for (let v = 0; v < valueCount; v++) {
+            cells.set(`${grandRow}:${colBase + v}`, numericCell(totals?.[v], def, v))
+        }
+    }
+    if (def.rowGrandTotals) {
+        const colBase = headerColCount + renderCols.length * valueCount + 1
+        for (let v = 0; v < valueCount; v++) {
+            cells.set(`${grandRow}:${colBase + v}`, numericCell(tree.grandTotals[v], def, v))
         }
     }
 }
