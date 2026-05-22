@@ -310,6 +310,72 @@ export type MergeShiftOp =
     | { kind: 'deleteRows'; from: number; count: number }
     | { kind: 'deleteColumns'; from: number; count: number }
 
+// Result of shifting a single axis (row or column) of a merge. `drop`
+// means the merge must be deleted entirely.
+interface AxisShiftResult {
+    nextAnchor: number
+    nextSpan: number
+    drop: boolean
+}
+
+// shiftAxisForInsert computes the new anchor/span after an insertion at
+// `at` with `count` new rows/columns. Insertions at or before the
+// anchor shift the anchor; insertions strictly inside grow the span.
+function shiftAxisForInsert(
+    anchor: number,
+    span: number,
+    at: number,
+    count: number
+): AxisShiftResult {
+    const end = anchor + span - 1
+    if (at <= anchor) {
+        return { nextAnchor: anchor + count, nextSpan: span, drop: false }
+    }
+    if (at <= end) {
+        return { nextAnchor: anchor, nextSpan: span + count, drop: false }
+    }
+    return { nextAnchor: anchor, nextSpan: span, drop: false }
+}
+
+// shiftAxisForDelete computes the new anchor/span after deleting
+// `count` rows/columns starting at `from`. Returns drop=true when the
+// deleted band fully covers the merge extent along this axis.
+function shiftAxisForDelete(
+    anchor: number,
+    span: number,
+    from: number,
+    count: number
+): AxisShiftResult {
+    const end = anchor + span - 1
+    const delStart = from
+    const delEnd = from + count - 1
+
+    if (delStart <= anchor && delEnd >= end) {
+        // Deleted band fully contains this merge extent — remove it.
+        return { nextAnchor: anchor, nextSpan: span, drop: true }
+    }
+    if (delEnd < anchor) {
+        // Deleted band is entirely before anchor — shift anchor up.
+        return { nextAnchor: anchor - count, nextSpan: span, drop: false }
+    }
+    if (delStart > end) {
+        // Deleted band is entirely after merge extent — no change.
+        return { nextAnchor: anchor, nextSpan: span, drop: false }
+    }
+    if (delStart <= anchor && delEnd < end) {
+        // Deletion overlaps the leading edge — anchor moves to deletion start,
+        // span shrinks by the number of cells removed from the merge head.
+        const removed = delEnd - anchor + 1
+        return { nextAnchor: delStart, nextSpan: span - removed, drop: false }
+    }
+    if (delStart > anchor && delEnd >= end) {
+        // Deletion overlaps the trailing edge — span truncated at deletion start.
+        return { nextAnchor: anchor, nextSpan: delStart - anchor, drop: false }
+    }
+    // Deletion is fully interior — span shrinks by count, anchor unchanged.
+    return { nextAnchor: anchor, nextSpan: span - count, drop: false }
+}
+
 export function applyStructuralShiftToMerges(doc: Y.Doc, sheetId: string, op: MergeShiftOp): void {
     const meta = getSheetMeta(doc, sheetId)
     if (meta == null) return
@@ -356,64 +422,30 @@ export function applyStructuralShiftToMerges(doc: Y.Doc, sheetId: string, op: Me
 
         switch (op.kind) {
             case 'insertRows': {
-                const endRow = s.anchorRow + s.rowSpan - 1
-                if (op.at <= s.anchorRow) {
-                    nextAnchorRow = s.anchorRow + op.count
-                } else if (op.at <= endRow) {
-                    nextRowSpan = s.rowSpan + op.count
-                }
+                const r = shiftAxisForInsert(s.anchorRow, s.rowSpan, op.at, op.count)
+                nextAnchorRow = r.nextAnchor
+                nextRowSpan = r.nextSpan
                 break
             }
             case 'insertColumns': {
-                const endCol = s.anchorCol + s.colSpan - 1
-                if (op.at <= s.anchorCol) {
-                    nextAnchorCol = s.anchorCol + op.count
-                } else if (op.at <= endCol) {
-                    nextColSpan = s.colSpan + op.count
-                }
+                const r = shiftAxisForInsert(s.anchorCol, s.colSpan, op.at, op.count)
+                nextAnchorCol = r.nextAnchor
+                nextColSpan = r.nextSpan
                 break
             }
             case 'deleteRows': {
-                const endRow = s.anchorRow + s.rowSpan - 1
-                const delStart = op.from
-                const delEnd = op.from + op.count - 1
-                if (delStart <= s.anchorRow && delEnd >= endRow) {
-                    drop = true
-                } else if (delEnd < s.anchorRow) {
-                    nextAnchorRow = s.anchorRow - op.count
-                } else if (delStart > endRow) {
-                    // No overlap, no shift
-                } else if (delStart <= s.anchorRow && delEnd < endRow) {
-                    const removed = delEnd - s.anchorRow + 1
-                    nextAnchorRow = delStart
-                    nextRowSpan = s.rowSpan - removed
-                } else if (delStart > s.anchorRow && delEnd >= endRow) {
-                    nextRowSpan = delStart - s.anchorRow
-                } else if (delStart > s.anchorRow && delEnd < endRow) {
-                    nextRowSpan = s.rowSpan - op.count
-                }
+                const r = shiftAxisForDelete(s.anchorRow, s.rowSpan, op.from, op.count)
+                drop = r.drop
+                nextAnchorRow = r.nextAnchor
+                nextRowSpan = r.nextSpan
                 if (!drop && nextRowSpan < 1) drop = true
                 break
             }
             case 'deleteColumns': {
-                const endCol = s.anchorCol + s.colSpan - 1
-                const delStart = op.from
-                const delEnd = op.from + op.count - 1
-                if (delStart <= s.anchorCol && delEnd >= endCol) {
-                    drop = true
-                } else if (delEnd < s.anchorCol) {
-                    nextAnchorCol = s.anchorCol - op.count
-                } else if (delStart > endCol) {
-                    // No overlap
-                } else if (delStart <= s.anchorCol && delEnd < endCol) {
-                    const removed = delEnd - s.anchorCol + 1
-                    nextAnchorCol = delStart
-                    nextColSpan = s.colSpan - removed
-                } else if (delStart > s.anchorCol && delEnd >= endCol) {
-                    nextColSpan = delStart - s.anchorCol
-                } else if (delStart > s.anchorCol && delEnd < endCol) {
-                    nextColSpan = s.colSpan - op.count
-                }
+                const r = shiftAxisForDelete(s.anchorCol, s.colSpan, op.from, op.count)
+                drop = r.drop
+                nextAnchorCol = r.nextAnchor
+                nextColSpan = r.nextSpan
                 if (!drop && nextColSpan < 1) drop = true
                 break
             }
