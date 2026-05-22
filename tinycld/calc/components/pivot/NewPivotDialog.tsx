@@ -1,3 +1,4 @@
+import { FormErrorSummary, TextInput, useForm, zodResolver } from '@tinycld/core/ui/form'
 import {
     Modal,
     ModalBackdrop,
@@ -6,7 +7,6 @@ import {
     ModalFooter,
     ModalHeader,
 } from '@tinycld/core/ui/modal'
-import { FormErrorSummary, TextInput, useForm, zodResolver } from '@tinycld/core/ui/form'
 import { useEffect } from 'react'
 import { Pressable, Text } from 'react-native'
 import { type NewPivotFormValues, newPivotSchema } from './new-pivot-dialog-helpers'
@@ -77,12 +77,12 @@ export function NewPivotDialog({
         <Modal isOpen={visible} onClose={onCancel} aria-label="Insert pivot table">
             <ModalBackdrop />
             <ModalContent
-                {...(typeof document !== 'undefined'
-                    ? { 'data-test-id': 'new-pivot-dialog' }
-                    : {})}
+                {...(typeof document !== 'undefined' ? { 'data-test-id': 'new-pivot-dialog' } : {})}
             >
                 <ModalHeader>
-                    <Text className="text-lg font-semibold text-foreground">Insert pivot table</Text>
+                    <Text className="text-lg font-semibold text-foreground">
+                        Insert pivot table
+                    </Text>
                 </ModalHeader>
                 <ModalBody>
                     <FormErrorSummary errors={errors} isEnabled={isSubmitted} />
