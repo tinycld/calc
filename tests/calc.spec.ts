@@ -5,12 +5,6 @@ import { expect, test } from '@playwright/test'
 import { login, navigateToPackage } from '../../app/tests/e2e/helpers'
 
 test.describe('Calc', () => {
-    // Bump the test timeout: tests that hit "New spreadsheet" wait on a
-    // drive_items create round-trip plus a Y.Doc realtime handshake, and
-    // both can be slow under parallel-worker contention against a single
-    // dev backend. The default 30s leaves no headroom.
-    test.setTimeout(120_000)
-
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
@@ -1101,8 +1095,6 @@ test.describe('Calc', () => {
 })
 
 test.describe('Sort & Filter', () => {
-    test.setTimeout(120_000)
-
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
@@ -1250,8 +1242,6 @@ async function readCellTextStyle(
 }
 
 test.describe('Persistence', () => {
-    test.setTimeout(180_000)
-
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
@@ -1321,8 +1311,6 @@ test.describe('Persistence', () => {
 })
 
 test.describe('Find & Replace', () => {
-    test.setTimeout(120_000)
-
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
@@ -1398,8 +1386,6 @@ test.describe('Find & Replace', () => {
 })
 
 test.describe('Sheet management', () => {
-    test.setTimeout(120_000)
-
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
@@ -1477,8 +1463,6 @@ test.describe('Sheet management', () => {
 })
 
 test.describe('Freeze panes', () => {
-    test.setTimeout(120_000)
-
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
@@ -1665,8 +1649,6 @@ async function readHeaderRects(page: import('@playwright/test').Page): Promise<{
 }
 
 test.describe('Calc CSV import/export', () => {
-    test.setTimeout(120_000)
-
     test.beforeEach(async ({ page }) => {
         await login(page)
     })

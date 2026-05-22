@@ -28,8 +28,6 @@ import { login, navigateToPackage } from '../../app/tests/e2e/helpers'
 //     CTA button accessibilityLabel="Edit pivot".
 
 test.describe('Calc pivot tables', () => {
-    test.setTimeout(180_000)
-
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
@@ -69,6 +67,10 @@ test.describe('Calc pivot tables', () => {
         // 30 appears twice (column-total row + row-totals column intersect),
         // so just confirm at least one appears.
         await expect(page.getByText('30', { exact: true }).first()).toBeVisible()
+
+        // Close the pivot panel — its modal backdrop covers the sheet-tab
+        // strip and would intercept the click below.
+        await closePivotPanel(page)
 
         // Mutate the source: switch back to Sheet1, set B2 to 99. The
         // pivot engine subscribes to the source range via the Y.Doc
@@ -258,8 +260,7 @@ test.describe('Calc pivot tables', () => {
         await expect(page.getByText('Pivot editor', { exact: true })).toBeVisible({
             timeout: 15_000,
         })
-        await page.getByRole('button', { name: 'Close pivot panel' }).click()
-        await expect(page.getByText('Pivot editor', { exact: true })).toHaveCount(0)
+        await closePivotPanel(page)
 
         // Empty-state CTA brings the panel back.
         await page.getByRole('button', { name: 'Open pivot editor' }).click()
@@ -315,8 +316,9 @@ test.describe('Calc pivot tables', () => {
         await page.getByLabel('Add Region to R').click()
 
         // Close the panel so the banner is the only visible affordance —
-        // the "Edit pivot" CTA we want to test is otherwise crowded.
-        await page.getByRole('button', { name: 'Close pivot panel' }).click()
+        // the "Edit pivot" CTA we want to test is otherwise crowded, and the
+        // panel's backdrop would intercept the click.
+        await closePivotPanel(page)
 
         // Banner shows; click "Edit pivot" → panel re-opens.
         await expect(page.getByLabel('Pivot error')).toBeVisible({ timeout: 15_000 })
@@ -343,6 +345,10 @@ test.describe('Calc pivot tables', () => {
         await page.getByLabel('Add Region to R').click()
         await page.getByLabel('Add Sales to V').click()
         await expect(page.getByText('East', { exact: true })).toBeVisible({ timeout: 15_000 })
+
+        // Close the pivot panel — its backdrop would intercept the
+        // right-click on the sheet tab below.
+        await closePivotPanel(page)
 
         // Right-click the tab to open SheetTabContextMenu, click
         // Rename — that swaps the tab label for an inline TextInput
@@ -383,6 +389,10 @@ test.describe('Calc pivot tables', () => {
         await page.getByLabel('Add Sales to V').click()
         // Make sure the pivot fully rendered before we destroy its sheet.
         await expect(page.getByText('East', { exact: true })).toBeVisible({ timeout: 15_000 })
+
+        // Close the pivot panel — its backdrop would intercept the
+        // right-click on the sheet tab below.
+        await closePivotPanel(page)
 
         // Right-click → Delete. The DeleteConfirm dialog only opens
         // when the sheet has stored cells; pivot output sheets are
@@ -425,6 +435,10 @@ test.describe('Calc pivot tables', () => {
             targetSheetName: 'WillUndo',
         })
         await expect(page.getByLabel('Sheet WillUndo')).toBeVisible({ timeout: 15_000 })
+
+        // Close the pivot panel — its backdrop would intercept the
+        // sheet-tab click below.
+        await closePivotPanel(page)
 
         // Grid branches: pivot sheets render PivotGrid without the
         // toolbar above them. Switch back to Sheet1 so the toolbar
@@ -498,4 +512,16 @@ async function createPivot(
     await targetInput.fill(targetSheetName)
     await page.getByRole('button', { name: 'Create pivot table' }).click()
     await expect(page.getByLabel(`Sheet ${targetSheetName}`)).toBeVisible({ timeout: 15_000 })
+}
+
+// Dismiss the PivotSidePanel and wait for it to fully unmount. The panel is a
+// modal Drawer whose full-screen backdrop covers the sheet-tab strip and grid,
+// so it must be closed before interacting with anything behind it. Escape is
+// the canonical dismiss (the Drawer registers an Escape shortcut in the 'modal'
+// scope) and is robust to the backdrop intercepting a close-button click.
+async function closePivotPanel(page: Page): Promise<void> {
+    await page.keyboard.press('Escape')
+    await expect(page.getByText('Pivot editor', { exact: true })).toHaveCount(0, {
+        timeout: 10_000,
+    })
 }

@@ -21,7 +21,6 @@ const SEQUENCE: Array<{ label: string; firstItem: RegExp }> = [
 ]
 
 test.describe('Calc menubar hover swap', () => {
-    test.setTimeout(180_000)
     test.beforeEach(async ({ page }) => {
         await login(page)
     })

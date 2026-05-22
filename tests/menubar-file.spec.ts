@@ -3,7 +3,6 @@ import { login, navigateToPackage } from '../../app/tests/e2e/helpers'
 import { openNewSpreadsheet } from './_menubar-helpers'
 
 test.describe('Calc File menu', () => {
-    test.setTimeout(120_000)
     test.beforeEach(async ({ page }) => {
         await login(page)
     })
