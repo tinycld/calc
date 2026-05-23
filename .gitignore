@@ -5,3 +5,5 @@ pnpm-lock.yaml
 .claude/
 .worktrees/
 .superpowers/
+# Playwright test output (traces, screenshots, videos).
+test-results/
