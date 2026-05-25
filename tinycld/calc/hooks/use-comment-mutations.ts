@@ -1,4 +1,5 @@
 import { useBaseCommentMutations } from '@tinycld/core/lib/comments'
+import { useEditorMount } from '@tinycld/core/lib/editor/editor-mount'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import type { CalcComments } from '../types'
 
@@ -18,6 +19,7 @@ export interface ReplyArgs extends AddCommentArgs {
 // and shapes the insert with the cell anchor (sheet_id / row / col).
 export function useCommentMutations() {
     const [calcCommentsCollection] = useStore('calc_comments')
+    const { identity } = useEditorMount()
 
     return useBaseCommentMutations<
         Omit<CalcComments, 'created' | 'updated'>,
@@ -33,5 +35,10 @@ export function useCommentMutations() {
             row: args.row,
             col: args.col,
         }),
+        identity: {
+            userOrgId: identity.userOrgId ?? '',
+            displayName: identity.displayName,
+            email: '',
+        },
     })
 }
