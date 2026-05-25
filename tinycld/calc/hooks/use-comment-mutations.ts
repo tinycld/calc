@@ -35,6 +35,8 @@ export function useCommentMutations() {
             row: args.row,
             col: args.col,
         }),
+        // commentor+ roles always have userOrgId; author_name resolves from
+        // displayName so email is unused here.
         identity: {
             userOrgId: identity.userOrgId ?? '',
             displayName: identity.displayName,

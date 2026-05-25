@@ -1,7 +1,10 @@
 import { eq } from '@tanstack/db'
+import { useAuth } from '@tinycld/core/lib/auth'
+import { EditorMountProvider, type EditorMount } from '@tinycld/core/lib/editor/editor-mount'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useCommentsDrawerStore } from '@tinycld/core/lib/stores/comments-drawer-store'
+import { useCurrentRole } from '@tinycld/core/lib/use-current-role'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { CopyToFolderDialog } from '@tinycld/drive/components/CopyToFolderDialog'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -13,7 +16,7 @@ import { CommentsProvider } from '../components/grid/CommentsContext'
 import { SheetTabs } from '../components/SheetTabs'
 import { useCellComments } from '../hooks/use-cell-comments'
 import { useFormulaBridge } from '../hooks/use-formula-bridge'
-import { useRealtime } from '../hooks/use-realtime'
+import { colorForUser, useRealtime } from '../hooks/use-realtime'
 import { useUndoManager } from '../hooks/use-undo-manager'
 import { useWorkbook, WorkbookProvider } from '../hooks/use-workbook-context'
 import { useWorkbookFileActions } from '../hooks/use-workbook-file-actions'
@@ -24,6 +27,8 @@ import { useCsvImportStore } from '../lib/csv/import-store'
 export default function CalcDetail() {
     const { id, sheet: sheetParam } = useLocalSearchParams<{ id: string; sheet?: string }>()
     const [driveItems] = useStore('drive_items')
+    const { user } = useAuth()
+    const { userOrgId } = useCurrentRole()
 
     const { data: items = [], isLoading: isItemLoading } = useOrgLiveQuery(
         (query, { orgId }) =>
@@ -36,10 +41,22 @@ export default function CalcDetail() {
 
     const item = items[0]
 
+    // Build the identity for awareness before the room is opened so
+    // useRealtime can stamp the initial awareness slot without needing
+    // EditorMountProvider (which is established later, in the return).
+    const identity: EditorMount['identity'] = {
+        kind: 'member',
+        userId: user.id,
+        userOrgId,
+        displayName: user.name,
+        color: colorForUser(user.id),
+    }
+    const realtimeCredential: EditorMount['realtimeCredential'] = { kind: 'auth' }
+
     // Open the realtime room as soon as we have a workbook id. The
     // server populates the doc from the source .xlsx before the first
     // SyncReply arrives, so the client never needs the file source.
-    const room = useRealtime({ workbookId: item?.id ?? '' })
+    const room = useRealtime({ workbookId: item?.id ?? '', identity, realtimeCredential })
 
     if (isItemLoading || !item) {
         return <CenteredMessage label="Loading spreadsheet…" spinner />
@@ -49,15 +66,30 @@ export default function CalcDetail() {
         return <CenteredMessage label="Opening…" spinner />
     }
 
+    const mount: EditorMount = {
+        itemId: item.id,
+        itemName: item.name,
+        itemFile: item.file ?? '',
+        mimeType: item.mime_type ?? '',
+        // Authed org member: full identity + all capabilities. The anon/guest
+        // mount (built on the share route) is a later task.
+        identity,
+        role: 'editor',
+        capabilities: { canEdit: true, canComment: true, canUseFileActions: true, canMention: true },
+        realtimeCredential,
+    }
+
     return (
-        <WorkbookProvider
-            doc={room.doc}
-            awareness={room.awareness}
-            isReady={room.isReady}
-            isConnected={room.isConnected}
-        >
-            <DetailContent itemName={item.name} workbookId={item.id} sheetParam={sheetParam} />
-        </WorkbookProvider>
+        <EditorMountProvider value={mount}>
+            <WorkbookProvider
+                doc={room.doc}
+                awareness={room.awareness}
+                isReady={room.isReady}
+                isConnected={room.isConnected}
+            >
+                <DetailContent itemName={item.name} workbookId={item.id} sheetParam={sheetParam} />
+            </WorkbookProvider>
+        </EditorMountProvider>
     )
 }
 
