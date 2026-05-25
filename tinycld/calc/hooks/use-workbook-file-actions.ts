@@ -1,3 +1,4 @@
+import { useEditorMount } from '@tinycld/core/lib/editor/editor-mount'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import {
     type DriveItemFileActions,
@@ -11,9 +12,16 @@ export type WorkbookFileActions = DriveItemFileActions
 // Thin wrapper over @tinycld/drive's shared file-actions hook that
 // supplies calc's post-trash redirect target.
 export function useWorkbookFileActions(workbookId: string): WorkbookFileActions {
+    const { capabilities } = useEditorMount()
     const orgHref = useOrgHref()
     const onTrashed = useCallback(() => {
         router.replace(orgHref('calc'))
     }, [orgHref])
-    return useDriveItemFileActions({ itemId: workbookId, onTrashed })
+    const actions = useDriveItemFileActions({ itemId: workbookId, onTrashed })
+    // Guests (no org membership) can't rename/trash/copy/open-in-drive.
+    // Return inert handlers so any still-mounted control is a no-op.
+    if (!capabilities.canUseFileActions) {
+        return { rename: () => {}, makeCopy: () => {}, moveToTrash: () => {}, openDriveDetails: () => {} }
+    }
+    return actions
 }
