@@ -18,4 +18,5 @@ import (
 func Register(app *pocketbase.PocketBase) {
 	registerRealtime(app)
 	registerAPI(app)
+	registerShareRenderAPI(app)
 }

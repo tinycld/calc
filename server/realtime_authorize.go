@@ -8,6 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"tinycld.org/core/realtime"
+	"tinycld.org/core/sharelink"
 )
 
 // roomKindCalc is the realtime roomKind name owned by this package.
@@ -52,6 +53,14 @@ func registerRealtime(app *pocketbase.PocketBase) {
 			}
 			return checkDriveItemAccess(app, auth.Id, roomID)
 		},
+		// Anonymous editable-link visitors: admit only when the share
+		// link is still live and grants edit. The session token was
+		// already signature-verified by the transport; we re-resolve the
+		// link here so revocation/expiry/downgrade takes effect at
+		// connect time.
+		AuthorizeShare: func(claims realtime.ShareClaims, roomID string) error {
+			return authorizeAnonShare(app, claims, roomID)
+		},
 		RuntimeProvider: runtime,
 		Journal:         journal,
 		OnRoomCreate:    coordinator.OnRoomCreate,
@@ -71,6 +80,34 @@ func registerRealtime(app *pocketbase.PocketBase) {
 		}
 		return e.Next()
 	})
+}
+
+// authorizeAnonShare admits an anonymous editable-link visitor to a calc
+// room. It re-resolves the share link (so a revoked/expired/downgraded
+// link is rejected at connect time, not just at mint time) and requires
+// an editor role bound to this exact drive_item. Read-only/commentor
+// links never reach the realtime editor — they use the HTML preview.
+//
+// LOAD-BEARING: the editor-only check below is the ONLY server-side write
+// gate for anonymous calc connections — calc has no per-message write
+// predicate and no read-only OnConnect signal (unlike text). Relaxing it
+// to admit viewer/commentor anons would silently grant them write access
+// to the Y.Doc. Any change here must add a matching in-room write gate.
+func authorizeAnonShare(app *pocketbase.PocketBase, claims realtime.ShareClaims, roomID string) error {
+	if claims.ItemID != roomID {
+		return errNoShare
+	}
+	link, item, err := sharelink.ResolveLink(app, claims.ShareToken)
+	if err != nil {
+		return err
+	}
+	if item.Id != roomID {
+		return errNoShare
+	}
+	if link.GetString("role") != sharelink.RoleEditor {
+		return errNoShare
+	}
+	return nil
 }
 
 // checkDriveItemAccess returns nil iff the user identified by userID has
