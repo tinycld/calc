@@ -1,4 +1,4 @@
-import { useAuth } from '@tinycld/core/lib/auth'
+import { useEditorMount } from '@tinycld/core/lib/editor/editor-mount'
 import {
     type RealtimeRoomHandle,
     useRealtimeRoom,
@@ -17,22 +17,23 @@ export interface UseRealtimeOptions {
 // from the source .xlsx before the first SyncReply goes out, so the
 // client never needs to fetch or parse xlsx bytes.
 export function useRealtime({ workbookId }: UseRealtimeOptions): RealtimeRoomHandle | null {
-    const { user } = useAuth()
+    const { identity, realtimeCredential } = useEditorMount()
     return useRealtimeRoom({
         roomKind: 'calc',
         roomID: workbookId,
         initialAwareness: {
-            user: { id: user.id, name: user.name, color: colorForUser(user.id) },
+            user: { id: identity.userId ?? identity.displayName, name: identity.displayName, color: identity.color },
             sheetId: null,
             selection: null,
             editing: null,
         },
+        shareSession: realtimeCredential.kind === 'shareSession' ? realtimeCredential.token : undefined,
     })
 }
 
 // colorForUser produces a deterministic HSL color string from a user id.
 // Same user → same color across sessions and across other users' views.
-function colorForUser(id: string): string {
+export function colorForUser(id: string): string {
     let h = 0
     for (let i = 0; i < id.length; i++) {
         h = (h * 31 + id.charCodeAt(i)) >>> 0
