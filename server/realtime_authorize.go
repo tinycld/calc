@@ -99,12 +99,28 @@ func registerRealtime(app *pocketbase.PocketBase) {
 // Returns false on any lookup error — fail closed. Mirrors text's
 // resolveShareRole().canWrite() but collapsed to a bool since calc only
 // needs the write decision.
+//
+// Org isolation: the share's user_org.org must equal the item's owning
+// org. Without this check, a stale share row pointing at item X (added
+// when X belonged to org A) would still grant write after the auth
+// user has left org A and X has been moved to org B — PB SDK methods
+// bypass API rules, so the implicit org filter from the collection
+// rule does NOT apply here. We re-implement the predicate explicitly,
+// matching the canonical filter in text/server/authorize.go.
 func memberCanWrite(app core.App, userID, driveItemID string) bool {
+	item, err := app.FindRecordById(driveItemsCollection, driveItemID)
+	if err != nil {
+		return false
+	}
+	orgID := item.GetString("org")
+	if orgID == "" {
+		return false
+	}
 	rows, err := app.FindRecordsByFilter(
 		"drive_shares",
-		"item = {:item} && user_org.user = {:user}",
+		"item = {:item} && user_org.user = {:user} && user_org.org = {:org}",
 		"", 0, 0,
-		map[string]any{"item": driveItemID, "user": userID},
+		map[string]any{"item": driveItemID, "user": userID, "org": orgID},
 	)
 	if err != nil || len(rows) == 0 {
 		return false
@@ -185,8 +201,8 @@ func authorizeAnonShare(app core.App, claims realtime.ShareClaims, roomID string
 }
 
 // checkDriveItemAccess returns nil iff the user identified by userID has
-// at least one drive_shares row connecting them (via any of their
-// user_org records) to the given drive_item.
+// at least one drive_shares row connecting them (via a user_org in the
+// same org that owns the drive_item) to the given drive_item.
 //
 // Mirrors the shape of the PB RLS rule:
 //
@@ -196,14 +212,27 @@ func authorizeAnonShare(app core.App, claims realtime.ShareClaims, roomID string
 // through drive_items because the room admission only cares whether
 // *any* share row exists for this (user, item) pair — role-level
 // distinctions are enforced elsewhere.
-func checkDriveItemAccess(app *pocketbase.PocketBase, userID, driveItemID string) error {
+//
+// Org isolation: the share's user_org.org must equal the item's owning
+// org so a stale share row from a previous org membership cannot
+// silently grant access after the item is moved to a different org.
+// Mirrors the canonical filter in text/server/authorize.go.
+func checkDriveItemAccess(app core.App, userID, driveItemID string) error {
+	item, err := app.FindRecordById(driveItemsCollection, driveItemID)
+	if err != nil {
+		return errNoShare
+	}
+	orgID := item.GetString("org")
+	if orgID == "" {
+		return errNoShare
+	}
 	rows, err := app.FindRecordsByFilter(
 		"drive_shares",
-		"item = {:item} && user_org.user = {:user}",
+		"item = {:item} && user_org.user = {:user} && user_org.org = {:org}",
 		"",
 		1,
 		0,
-		map[string]any{"item": driveItemID, "user": userID},
+		map[string]any{"item": driveItemID, "user": userID, "org": orgID},
 	)
 	if err != nil {
 		return err
