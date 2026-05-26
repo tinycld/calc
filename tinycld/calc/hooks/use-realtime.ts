@@ -4,6 +4,8 @@ import {
     useRealtimeRoom,
 } from '@tinycld/core/lib/realtime/use-realtime-room'
 
+export { colorForUser } from '@tinycld/core/lib/util/color'
+
 export interface CalcServerHello {
     readOnly: boolean
 }
@@ -57,15 +59,4 @@ export function useRealtime({
         shareSession:
             realtimeCredential.kind === 'shareSession' ? realtimeCredential.token : undefined,
     })
-}
-
-// colorForUser produces a deterministic HSL color string from a user id.
-// Same user → same color across sessions and across other users' views.
-export function colorForUser(id: string): string {
-    let h = 0
-    for (let i = 0; i < id.length; i++) {
-        h = (h * 31 + id.charCodeAt(i)) >>> 0
-    }
-    const hue = h % 360
-    return `hsl(${hue}, 70%, 45%)`
 }
