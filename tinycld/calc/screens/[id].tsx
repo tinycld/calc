@@ -24,7 +24,13 @@ import { addSheet, useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { applyCsvToDoc } from '../lib/csv/apply-paste'
 import { useCsvImportStore } from '../lib/csv/import-store'
 
-export function CalcEditorFromMount({ mount, sheetParam }: { mount: EditorMount; sheetParam?: string }) {
+export function CalcEditorFromMount({
+    mount,
+    sheetParam,
+}: {
+    mount: EditorMount
+    sheetParam?: string
+}) {
     const room = useRealtime({
         workbookId: mount.itemId,
         identity: mount.identity,
@@ -45,7 +51,11 @@ export function CalcEditorFromMount({ mount, sheetParam }: { mount: EditorMount;
                 isConnected={room.isConnected}
                 readOnly={readOnly}
             >
-                <DetailContent itemName={mount.itemName} workbookId={mount.itemId} sheetParam={sheetParam} />
+                <DetailContent
+                    itemName={mount.itemName}
+                    workbookId={mount.itemId}
+                    sheetParam={sheetParam}
+                />
             </WorkbookProvider>
         </EditorMountProvider>
     )
