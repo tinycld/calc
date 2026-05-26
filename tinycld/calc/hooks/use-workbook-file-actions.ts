@@ -21,7 +21,12 @@ export function useWorkbookFileActions(workbookId: string): WorkbookFileActions 
     // Guests (no org membership) can't rename/trash/copy/open-in-drive.
     // Return inert handlers so any still-mounted control is a no-op.
     if (!capabilities.canUseFileActions) {
-        return { rename: () => {}, makeCopy: () => {}, moveToTrash: () => {}, openDriveDetails: () => {} }
+        return {
+            rename: () => {},
+            makeCopy: () => {},
+            moveToTrash: () => {},
+            openDriveDetails: () => {},
+        }
     }
     return actions
 }

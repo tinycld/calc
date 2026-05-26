@@ -1,6 +1,6 @@
 import { eq } from '@tanstack/db'
 import { useAuth } from '@tinycld/core/lib/auth'
-import { EditorMountProvider, type EditorMount } from '@tinycld/core/lib/editor/editor-mount'
+import { type EditorMount, EditorMountProvider } from '@tinycld/core/lib/editor/editor-mount'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useCommentsDrawerStore } from '@tinycld/core/lib/stores/comments-drawer-store'
@@ -75,7 +75,12 @@ export default function CalcDetail() {
         // mount (built on the share route) is a later task.
         identity,
         role: 'editor',
-        capabilities: { canEdit: true, canComment: true, canUseFileActions: true, canMention: true },
+        capabilities: {
+            canEdit: true,
+            canComment: true,
+            canUseFileActions: true,
+            canMention: true,
+        },
         realtimeCredential,
     }
 
