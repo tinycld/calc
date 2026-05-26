@@ -13,7 +13,13 @@ test.describe('Calc Format menu', () => {
 
         const a1 = page.getByLabel('Cell A1', { exact: true })
         await a1.click()
-        await page.keyboard.press('Meta+B')
+        // Drop any edit session so the bold shortcut's selectedCellWritable
+        // gate is satisfied, then use the cross-platform modifier. Hardcoding
+        // Meta only works on macOS — on the Linux CI runner Meta is the Super
+        // key, not $mod (Ctrl), so the shortcut never fired and bold never
+        // applied. ControlOrMeta resolves to Ctrl on Linux / Cmd on macOS.
+        await page.keyboard.press('Escape')
+        await page.keyboard.press('ControlOrMeta+b')
 
         // RN-Web compiles textStyle.fontWeight = 'bold' to inline style on
         // the inner text node (a div), not the cell wrapper. Match the
