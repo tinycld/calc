@@ -23,11 +23,17 @@ export interface MenuBarProps extends ToolbarProps {
     allSheets: ReadonlyArray<{ id: string; name: string; hidden?: boolean }>
     onShowSheet: (sheetId: string) => void
     onShowComments: () => void
+    /** Read-only viewers (anon share links) see the menu bar as a row of
+     *  greyed-out triggers — the menus exist for context but do not open.
+     *  Forwarded to CoreMenuBar's allMenusDisabled, which propagates via
+     *  context so every MenuBarMenu underneath flips its trigger to
+     *  disabled without each per-menu file needing to know. */
+    isReadOnly?: boolean
 }
 
 export function MenuBar(props: MenuBarProps) {
     return (
-        <CoreMenuBar>
+        <CoreMenuBar allMenusDisabled={props.isReadOnly}>
             <FileMenu {...props} />
             <EditMenu {...props} />
             <ViewMenu {...props} />

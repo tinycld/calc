@@ -451,6 +451,7 @@ function GridInner({
                 allSheets={allSheets}
                 onShowSheet={id => sheetActions.showSheet(id)}
                 onShowComments={onShowComments}
+                isReadOnly={readOnly}
             />
             <Toolbar {...toolbarPropsBundle} />
             <SortStatusBanner />
