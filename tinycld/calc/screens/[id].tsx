@@ -24,6 +24,33 @@ import { addSheet, useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { applyCsvToDoc } from '../lib/csv/apply-paste'
 import { useCsvImportStore } from '../lib/csv/import-store'
 
+export function CalcEditorFromMount({ mount, sheetParam }: { mount: EditorMount; sheetParam?: string }) {
+    const room = useRealtime({
+        workbookId: mount.itemId,
+        identity: mount.identity,
+        realtimeCredential: mount.realtimeCredential,
+    })
+    const readOnly = calcReadOnly(room)
+
+    if (room == null || !room.isReady) {
+        return <CenteredMessage label="Opening…" spinner />
+    }
+
+    return (
+        <EditorMountProvider value={mount}>
+            <WorkbookProvider
+                doc={room.doc}
+                awareness={room.awareness}
+                isReady={room.isReady}
+                isConnected={room.isConnected}
+                readOnly={readOnly}
+            >
+                <DetailContent itemName={mount.itemName} workbookId={mount.itemId} sheetParam={sheetParam} />
+            </WorkbookProvider>
+        </EditorMountProvider>
+    )
+}
+
 export default function CalcDetail() {
     const { id, sheet: sheetParam } = useLocalSearchParams<{ id: string; sheet?: string }>()
     const [driveItems] = useStore('drive_items')
@@ -41,30 +68,8 @@ export default function CalcDetail() {
 
     const item = items[0]
 
-    // Build the identity for awareness before the room is opened so
-    // useRealtime can stamp the initial awareness slot without needing
-    // EditorMountProvider (which is established later, in the return).
-    const identity: EditorMount['identity'] = {
-        kind: 'member',
-        userId: user.id,
-        userOrgId,
-        displayName: user.name,
-        color: colorForUser(user.id),
-    }
-    const realtimeCredential: EditorMount['realtimeCredential'] = { kind: 'auth' }
-
-    // Open the realtime room as soon as we have a workbook id. The
-    // server populates the doc from the source .xlsx before the first
-    // SyncReply arrives, so the client never needs the file source.
-    const room = useRealtime({ workbookId: item?.id ?? '', identity, realtimeCredential })
-    const readOnly = calcReadOnly(room)
-
     if (isItemLoading || !item) {
         return <CenteredMessage label="Loading spreadsheet…" spinner />
-    }
-
-    if (room == null || !room.isReady) {
-        return <CenteredMessage label="Opening…" spinner />
     }
 
     const mount: EditorMount = {
@@ -74,7 +79,13 @@ export default function CalcDetail() {
         mimeType: item.mime_type ?? '',
         // Authed org member: full identity + all capabilities. The anon/guest
         // mount (built on the share route) is a later task.
-        identity,
+        identity: {
+            kind: 'member',
+            userId: user.id,
+            userOrgId,
+            displayName: user.name,
+            color: colorForUser(user.id),
+        },
         role: 'editor',
         capabilities: {
             canEdit: true,
@@ -82,22 +93,10 @@ export default function CalcDetail() {
             canUseFileActions: true,
             canMention: true,
         },
-        realtimeCredential,
+        realtimeCredential: { kind: 'auth' },
     }
 
-    return (
-        <EditorMountProvider value={mount}>
-            <WorkbookProvider
-                doc={room.doc}
-                awareness={room.awareness}
-                isReady={room.isReady}
-                isConnected={room.isConnected}
-                readOnly={readOnly}
-            >
-                <DetailContent itemName={item.name} workbookId={item.id} sheetParam={sheetParam} />
-            </WorkbookProvider>
-        </EditorMountProvider>
-    )
+    return <CalcEditorFromMount mount={mount} sheetParam={sheetParam} />
 }
 
 interface DetailContentProps {
