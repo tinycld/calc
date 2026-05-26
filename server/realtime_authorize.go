@@ -155,19 +155,13 @@ func makeOnConnect(app core.App) realtime.ServerHelloFn {
 	}
 }
 
-// authorizeAnonShare admits an anonymous editable-link visitor to a calc
-// room. It re-resolves the share link (so a revoked/expired/downgraded
-// link is rejected at connect time, not just at mint time) and requires
-// an editor role bound to this exact drive_item. Read-only/commentor
-// links never reach the realtime editor — they use the HTML preview.
-//
-// LOAD-BEARING: calc now has a server-side WritePredicate + read-only
-// serverHello (added alongside this), so a read-only connection cannot
-// mutate the Y.Doc even if its client ignores the readOnly flag. This
-// function still admits ONLY editor-role anonymous links; admitting
-// viewer/commentor anons (in read-only mode) is a separate change that
-// pairs with the public share route. Until then, anon = editor = writable.
-func authorizeAnonShare(app *pocketbase.PocketBase, claims realtime.ShareClaims, roomID string) error {
+// authorizeAnonShare admits an anonymous share-link visitor to a calc room.
+// It re-resolves the share link (so a revoked/expired/downgraded link is
+// rejected at connect time, not just at mint time) and admits any recognized
+// share role (viewer, commentor, or editor) bound to this exact drive_item.
+// Non-editor roles are admitted read-only: write enforcement is delegated to
+// the broker's WritePredicate (isReadOnlyForConn / SetReadOnly in OnConnect).
+func authorizeAnonShare(app core.App, claims realtime.ShareClaims, roomID string) error {
 	if claims.ItemID != roomID {
 		return errNoShare
 	}
@@ -178,7 +172,13 @@ func authorizeAnonShare(app *pocketbase.PocketBase, claims realtime.ShareClaims,
 	if item.Id != roomID {
 		return errNoShare
 	}
-	if link.GetString("role") != sharelink.RoleEditor {
+	role := link.GetString("role")
+	switch role {
+	case sharelink.RoleViewer, sharelink.RoleCommentor, sharelink.RoleEditor:
+		// Admit — read-only enforcement for non-editor roles happens via
+		// the broker WritePredicate (isReadOnlyForConn), so viewers and
+		// commentors may open the room but cannot write.
+	default:
 		return errNoShare
 	}
 	return nil
