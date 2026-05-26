@@ -1,18 +1,31 @@
+import { useEditorMount } from '@tinycld/core/lib/editor/editor-mount'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { ConfirmDialog } from '@tinycld/core/ui/ConfirmDialog'
 import { Menu, MenuBarMenu, MenuShortcut, Separator } from '@tinycld/core/ui/menubar'
 import { PromptDialog } from '@tinycld/core/ui/PromptDialog'
 import { router } from 'expo-router'
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import type { MenuBarProps } from './MenuBar'
 import { SaveVersionDialog } from './SaveVersionDialog'
 
+// Lazy: ShareDialogConnected → ShareDialog → use-contact-suggestions →
+// use-packages → static-registry, which reads tinycldConfig at module init.
+// Importing it eagerly from this file creates a cycle: tinycld.config.ts
+// pulls @tinycld/calc/provider, the provider eagerly imports screens/[id]
+// for share-route dispatch, [id] imports this menu, and the menu would then
+// re-enter tinycld.config.ts before its exports are bound. Deferring with
+// React.lazy breaks the chain — the import doesn't fire until the user
+// actually opens the Share dialog.
+const ShareDialogConnected = lazy(() => import('@tinycld/drive/components/ShareDialogConnected'))
+
 export function FileMenu(props: MenuBarProps) {
     const orgHref = useOrgHref()
+    const { capabilities } = useEditorMount()
     const [isSaveVersionOpen, setSaveVersionOpen] = useState(false)
     const [isCopyOpen, setCopyOpen] = useState(false)
     const [isRenameOpen, setRenameOpen] = useState(false)
     const [isTrashOpen, setTrashOpen] = useState(false)
+    const [isShareOpen, setShareOpen] = useState(false)
     // The CSV import flow lives on the calc index screen (it owns the
     // file-picker and the staged-rows handoff via `setPendingImport`).
     // From the detail screen we just bounce back to the index — opening
@@ -49,6 +62,11 @@ export function FileMenu(props: MenuBarProps) {
                 <Menu.Item onPress={() => setCopyOpen(true)}>
                     <Menu.ItemTitle>Make a copy</Menu.ItemTitle>
                 </Menu.Item>
+                {capabilities.canUseFileActions && (
+                    <Menu.Item onPress={() => setShareOpen(true)}>
+                        <Menu.ItemTitle>Share</Menu.ItemTitle>
+                    </Menu.Item>
+                )}
                 <Menu.Item onPress={() => setSaveVersionOpen(true)}>
                     <Menu.ItemTitle>Save version</Menu.ItemTitle>
                 </Menu.Item>
@@ -120,6 +138,16 @@ export function FileMenu(props: MenuBarProps) {
                 confirmLabel="Move to trash"
                 isDestructive
             />
+            {capabilities.canUseFileActions && isShareOpen && (
+                <Suspense fallback={null}>
+                    <ShareDialogConnected
+                        open={isShareOpen}
+                        itemId={props.workbookId}
+                        itemName={props.workbookName}
+                        onClose={() => setShareOpen(false)}
+                    />
+                </Suspense>
+            )}
         </>
     )
 }
