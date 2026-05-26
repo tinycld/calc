@@ -1,6 +1,7 @@
 package calc
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 
@@ -67,6 +68,13 @@ func registerRealtime(app *pocketbase.PocketBase) {
 		OnDocUpdate:     coordinator.OnDocUpdate,
 		OnDocUpdateSeq:  coordinator.NoteSeq,
 		OnEmpty:         coordinator.OnRoomEmpty,
+		OnConnect:       makeOnConnect(app),
+		// Server-side write gate: drop mutations from read-only
+		// connections (viewer members; anon viewers once admitted). This
+		// is what makes calc's read-only mode real rather than client-only.
+		WritePredicate: func(c *realtime.Client, roomID string) bool {
+			return !isReadOnlyForConn(app, roomID, c)
+		},
 	})
 
 	// Cascade-clean WAL rows when a drive_items record (calc workbook)
@@ -82,17 +90,74 @@ func registerRealtime(app *pocketbase.PocketBase) {
 	})
 }
 
+// memberCanWrite reports whether the authenticated user holds an
+// owner/editor drive_shares role on the item (viewers get read-only).
+// Returns false on any lookup error — fail closed. Mirrors text's
+// resolveShareRole().canWrite() but collapsed to a bool since calc only
+// needs the write decision.
+func memberCanWrite(app core.App, userID, driveItemID string) bool {
+	rows, err := app.FindRecordsByFilter(
+		"drive_shares",
+		"item = {:item} && user_org.user = {:user}",
+		"", 0, 0,
+		map[string]any{"item": driveItemID, "user": userID},
+	)
+	if err != nil || len(rows) == 0 {
+		return false
+	}
+	for _, r := range rows {
+		switch r.GetString("role") {
+		case "owner", "editor":
+			return true
+		}
+	}
+	return false
+}
+
+// isReadOnlyForConn decides whether the connecting client gets a
+// read-only editor. Anonymous share-session visitors are admitted only
+// for editor-role links today (see authorizeAnonShare), so an anon here
+// is writable iff its share role is editor. Authenticated members are
+// writable iff they hold an owner/editor drive_shares role; viewer
+// members (and any lookup failure) are read-only — fail closed.
+func isReadOnlyForConn(app core.App, roomID string, conn *realtime.Client) bool {
+	if conn.IsAnonymous() {
+		return conn.ShareRole() != sharelink.RoleEditor
+	}
+	userID := conn.AuthID()
+	if userID == "" {
+		return true
+	}
+	return !memberCanWrite(app, userID, roomID)
+}
+
+// calcServerHello is the JSON payload of the MsgServerHello frame calc
+// sends each joining client. The client decodes it via the symmetric TS
+// type in @tinycld/calc/hooks/use-realtime. Mirrors text's serverHello
+// but carries only readOnly (calc has no import-warning concept).
+type calcServerHello struct {
+	ReadOnly bool `json:"readOnly"`
+}
+
+// makeOnConnect builds the per-client ServerHelloFn: { readOnly }.
+func makeOnConnect(app core.App) realtime.ServerHelloFn {
+	return func(roomID string, conn *realtime.Client) ([]byte, error) {
+		return json.Marshal(calcServerHello{ReadOnly: isReadOnlyForConn(app, roomID, conn)})
+	}
+}
+
 // authorizeAnonShare admits an anonymous editable-link visitor to a calc
 // room. It re-resolves the share link (so a revoked/expired/downgraded
 // link is rejected at connect time, not just at mint time) and requires
 // an editor role bound to this exact drive_item. Read-only/commentor
 // links never reach the realtime editor — they use the HTML preview.
 //
-// LOAD-BEARING: the editor-only check below is the ONLY server-side write
-// gate for anonymous calc connections — calc has no per-message write
-// predicate and no read-only OnConnect signal (unlike text). Relaxing it
-// to admit viewer/commentor anons would silently grant them write access
-// to the Y.Doc. Any change here must add a matching in-room write gate.
+// LOAD-BEARING: calc now has a server-side WritePredicate + read-only
+// serverHello (added alongside this), so a read-only connection cannot
+// mutate the Y.Doc even if its client ignores the readOnly flag. This
+// function still admits ONLY editor-role anonymous links; admitting
+// viewer/commentor anons (in read-only mode) is a separate change that
+// pairs with the public share route. Until then, anon = editor = writable.
 func authorizeAnonShare(app *pocketbase.PocketBase, claims realtime.ShareClaims, roomID string) error {
 	if claims.ItemID != roomID {
 		return errNoShare

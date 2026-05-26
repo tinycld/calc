@@ -7,6 +7,7 @@ export interface WorkbookContextValue {
     awareness: Awareness
     isReady: boolean
     isConnected: boolean
+    readOnly: boolean
 }
 
 const WorkbookContext = createContext<WorkbookContextValue | null>(null)
@@ -20,9 +21,10 @@ export function WorkbookProvider({
     awareness,
     isReady,
     isConnected,
+    readOnly,
     children,
 }: WorkbookProviderProps) {
-    const value: WorkbookContextValue = { doc, awareness, isReady, isConnected }
+    const value: WorkbookContextValue = { doc, awareness, isReady, isConnected, readOnly }
     return <WorkbookContext.Provider value={value}>{children}</WorkbookContext.Provider>
 }
 

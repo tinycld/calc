@@ -16,7 +16,7 @@ import { CommentsProvider } from '../components/grid/CommentsContext'
 import { SheetTabs } from '../components/SheetTabs'
 import { useCellComments } from '../hooks/use-cell-comments'
 import { useFormulaBridge } from '../hooks/use-formula-bridge'
-import { colorForUser, useRealtime } from '../hooks/use-realtime'
+import { calcReadOnly, colorForUser, useRealtime } from '../hooks/use-realtime'
 import { useUndoManager } from '../hooks/use-undo-manager'
 import { useWorkbook, WorkbookProvider } from '../hooks/use-workbook-context'
 import { useWorkbookFileActions } from '../hooks/use-workbook-file-actions'
@@ -57,6 +57,7 @@ export default function CalcDetail() {
     // server populates the doc from the source .xlsx before the first
     // SyncReply arrives, so the client never needs the file source.
     const room = useRealtime({ workbookId: item?.id ?? '', identity, realtimeCredential })
+    const readOnly = calcReadOnly(room)
 
     if (isItemLoading || !item) {
         return <CenteredMessage label="Loading spreadsheet…" spinner />
@@ -91,6 +92,7 @@ export default function CalcDetail() {
                 awareness={room.awareness}
                 isReady={room.isReady}
                 isConnected={room.isConnected}
+                readOnly={readOnly}
             >
                 <DetailContent itemName={item.name} workbookId={item.id} sheetParam={sheetParam} />
             </WorkbookProvider>
@@ -105,7 +107,7 @@ interface DetailContentProps {
 }
 
 function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps) {
-    const { doc, isConnected } = useWorkbook()
+    const { doc, isConnected, readOnly } = useWorkbook()
     const undoState = useUndoManager(doc)
     useFormulaBridge(doc)
     const sheets = useYSheets(doc)
@@ -173,6 +175,7 @@ function DetailContent({ itemName, workbookId, sheetParam }: DetailContentProps)
                     fileActions={fileActions}
                     onActivateSheet={onSelect}
                     onShowComments={onShowComments}
+                    readOnly={readOnly}
                 />
                 <SheetTabs
                     doc={doc}

@@ -4,6 +4,20 @@ import {
     useRealtimeRoom,
 } from '@tinycld/core/lib/realtime/use-realtime-room'
 
+export interface CalcServerHello {
+    readOnly: boolean
+}
+
+// calcReadOnly narrows the room's opaque serverHello to calc's shape.
+// Defaults to NOT read-only until the frame arrives (the editor starts
+// editable and locks down only if the server says read-only) — matches
+// text's typedServerHello posture.
+export function calcReadOnly(room: RealtimeRoomHandle | null): boolean {
+    if (room == null || room.serverHello == null) return false
+    const hello = room.serverHello as Partial<CalcServerHello>
+    return hello.readOnly === true
+}
+
 export interface UseRealtimeOptions {
     // The drive_item.id used as the room identifier.
     workbookId: string
