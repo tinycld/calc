@@ -72,8 +72,12 @@ func registerRealtime(app *pocketbase.PocketBase) {
 		// Server-side write gate: drop mutations from read-only
 		// connections (viewer members; anon viewers once admitted). This
 		// is what makes calc's read-only mode real rather than client-only.
-		WritePredicate: func(c *realtime.Client, roomID string) bool {
-			return !isReadOnlyForConn(app, roomID, c)
+		// Pure in-memory check: read-only was resolved once in OnConnect
+		// (SetReadOnly) — do NOT re-query the DB here, this runs on every
+		// inbound MsgDocUpdate. Relies on OnConnect having run first (it
+		// does: OnConnect fires during the handshake before the read loop).
+		WritePredicate: func(c *realtime.Client, _ string) bool {
+			return !c.ReadOnly()
 		},
 	})
 
@@ -142,7 +146,12 @@ type calcServerHello struct {
 // makeOnConnect builds the per-client ServerHelloFn: { readOnly }.
 func makeOnConnect(app core.App) realtime.ServerHelloFn {
 	return func(roomID string, conn *realtime.Client) ([]byte, error) {
-		return json.Marshal(calcServerHello{ReadOnly: isReadOnlyForConn(app, roomID, conn)})
+		readOnly := isReadOnlyForConn(app, roomID, conn)
+		// Cache on the connection so the broker's WritePredicate (hot
+		// path, every MsgDocUpdate) is a pure field read, not a per-frame
+		// DB query. Role can't change mid-session.
+		conn.SetReadOnly(readOnly)
+		return json.Marshal(calcServerHello{ReadOnly: readOnly})
 	}
 }
 
