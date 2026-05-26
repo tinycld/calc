@@ -65,15 +65,18 @@ For manual iPad release-gating, see `tinycld/calc/tests/manual/ipad-smoke.md`.
 A Sheets-style menubar sits above the toolbar:
 
 - **File** — New spreadsheet, Open, Import, Make a copy (clones the
-  workbook's xlsx blob into a new drive_items row and opens it),
-  Download as CSV (current sheet / all sheets), Rename, Move to trash,
-  Details, Print. The menu is wired to accept an optional XLSX
-  download handler (`onDownloadXlsx` on `FileMenu` / `Toolbar`), but no
-  caller currently provides one — the "Download as XLSX" item is
-  conditionally hidden until that handler is connected. Round-tripping
-  the doc back to xlsx happens server-side on every save, so the bits
-  for an XLSX download already exist on `drive_items.file`; wiring is
-  the missing piece.
+  workbook's xlsx blob into a new drive_items row and opens it), Share
+  (Drive's share dialog rendered directly inside the editor — gated on
+  EditorMount `capabilities.canUseFileActions` so guest/anon share-link
+  visitors don't see it), Save version (snapshots the current xlsx +
+  yjs state for later restore from Drive's version history), Download
+  as CSV (current sheet / all sheets), Rename, Move to trash, Details,
+  Print. The menu is wired to accept an optional XLSX download handler
+  (`onDownloadXlsx` on `FileMenu` / `Toolbar`), but no caller currently
+  provides one — the "Download as XLSX" item is conditionally hidden
+  until that handler is connected. Round-tripping the doc back to xlsx
+  happens server-side on every save, so the bits for an XLSX download
+  already exist on `drive_items.file`; wiring is the missing piece.
 - **Edit** — Undo, Redo, Cut, Copy, Paste, Paste special (Values only,
   Format only), Find and replace.
 - **View** — Freeze (rows / columns / up to selection / Unfreeze), Hidden
@@ -83,8 +86,9 @@ A Sheets-style menubar sits above the toolbar:
   Font size, Merge cells, Conditional formatting, Clear formatting (⌘\\).
 - **Data** — Sort range, Create / Remove filter. (Pivot tables are
   created from a toolbar button, not the Data menu.)
-- **Help** — Documentation (`tinycld.org/docs`), Function list (every
-  HyperFormula function name), Keyboard shortcuts (⌘/).
+- **Help** — Search help (⌘/), Keyboard shortcuts, Function list (every
+  HyperFormula function name), Browse calc help (opens the package's
+  topic index).
 
 The toolbar is trimmed to the core formatting controls (Undo/Redo, number
 format, currency / percent / decimal stepper, font size, bold / italic /
