@@ -2,6 +2,8 @@ package calc
 
 import (
 	"github.com/pocketbase/pocketbase"
+
+	"tinycld.org/core/userorg"
 )
 
 // Register wires server-side hooks for the Sheets package. Core's
@@ -16,6 +18,8 @@ import (
 // See contacts/server/register.go or calendar/server/register.go for richer
 // examples.
 func Register(app *pocketbase.PocketBase) {
+	userorg.RegisterReassignable(userorg.ReassignableRef{Collection: "calc_comments", Field: "author"})
+
 	registerRealtime(app)
 	registerAPI(app)
 }
