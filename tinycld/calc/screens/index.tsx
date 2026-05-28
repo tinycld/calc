@@ -1,7 +1,7 @@
-import { NoFilePanel } from '@tinycld/core/components/NoFilePanel'
 import { captureException } from '@tinycld/core/lib/errors'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useToastStore } from '@tinycld/core/lib/stores/toast-store'
+import { NoFilePanel } from '@tinycld/drive/components/NoFilePanel'
 import { useCreateDriveItem } from '@tinycld/drive/lib/upload-to-drive'
 import { router } from 'expo-router'
 import { useCallback, useState } from 'react'
@@ -61,7 +61,11 @@ export default function CalcIndex() {
     return (
         <>
             <NoFilePanel
-                kind="calc"
+                headline="A fresh sheet."
+                sublabel="Where the next idea lands."
+                newLabel="New sheet"
+                uploadHint=".xlsx, .csv"
+                accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
                 onCreateNew={handleCreateNew}
                 onUpload={handleUpload}
                 isPending={create.isPending}
