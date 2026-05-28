@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { login, navigateToPackage, ORG_SLUG } from '../../app/tests/e2e/helpers'
 
@@ -5,10 +6,8 @@ import { login, navigateToPackage, ORG_SLUG } from '../../app/tests/e2e/helpers'
 // on /calc without a deep-link (the rail otherwise reopens the last
 // edited file). Covers: panel is visible, three cards render with the
 // right copy, the New / Browse Recent / Browse All actions all
-// navigate. Upload is not exercised here because Playwright's file
-// chooser flow is covered by drive's upload specs — the panel's web
-// path is a label-wrapped <input type="file"> that delegates to the
-// same useCreateDriveItem mutation as the rest of the app.
+// navigate, and Upload drops the file into a new workbook the user
+// can immediately edit.
 test.describe('Calc No-File panel', () => {
     test.beforeEach(async ({ page }) => {
         await login(page)
@@ -42,6 +41,32 @@ test.describe('Calc No-File panel', () => {
         // realtime room opens.
         await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
         await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 75_000 })
+    })
+
+    test('Upload xlsx creates a workbook whose cells are editable', async ({ page }) => {
+        await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
+            timeout: 30_000,
+        })
+
+        // The upload card hides its <input type="file"> behind a label
+        // wrapper; setInputFiles targets the input directly. The fixture
+        // is the seeded tests/assets/tiny.xlsx (10-row people list with
+        // distinctive cell values like 'Dulce' and 'Hashimoto').
+        const fixturePath = join(import.meta.dirname, 'assets', 'tiny.xlsx')
+        await page.locator('input[type="file"]').setInputFiles(fixturePath)
+
+        // Single .xlsx upload skips the CSV preview dialog and routes
+        // straight to the editor.
+        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
+        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 75_000 })
+
+        // Header row + body cells from tiny.xlsx must render — proves
+        // the upload landed and the editor loaded it for editing.
+        await expect(page.getByText('First Name', { exact: true })).toBeVisible({
+            timeout: 30_000,
+        })
+        await expect(page.getByText('Dulce', { exact: true })).toBeVisible()
+        await expect(page.getByText('Hashimoto', { exact: true })).toBeVisible()
     })
 
     test('Browse Recent navigates to drive recent view', async ({ page }) => {
