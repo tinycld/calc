@@ -4,10 +4,11 @@ import { type EditorMount, EditorMountProvider } from '@tinycld/core/lib/editor/
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useCommentsDrawerStore } from '@tinycld/core/lib/stores/comments-drawer-store'
+import { useWorkspaceStore } from '@tinycld/core/lib/stores/workspace-store'
 import { useCurrentRole } from '@tinycld/core/lib/use-current-role'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { CopyToFolderDialog } from '@tinycld/drive/components/CopyToFolderDialog'
-import { router, useLocalSearchParams } from 'expo-router'
+import { router, useLocalSearchParams, usePathname } from 'expo-router'
 import { useCallback, useEffect, useRef } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import type * as Y from 'yjs'
@@ -66,6 +67,10 @@ export default function CalcDetail() {
     const [driveItems] = useStore('drive_items')
     const { user } = useAuth()
     const { userOrgId } = useCurrentRole()
+    const pathname = usePathname()
+    const setLastPackageHref = useWorkspaceStore(s => s.setLastPackageHref)
+    const clearLastPackageHref = useWorkspaceStore(s => s.clearLastPackageHref)
+    const orgHref = useOrgHref()
 
     const { data: items = [], isLoading: isItemLoading } = useOrgLiveQuery(
         (query, { orgId }) =>
@@ -77,6 +82,23 @@ export default function CalcDetail() {
     )
 
     const item = items[0]
+
+    // Persist the rail deep-link only after the file has actually
+    // loaded. Writing on mount would keep a stale href alive even when
+    // the file is gone — the rail would keep dead-linking to it.
+    useEffect(() => {
+        if (id && item) setLastPackageHref('calc', pathname)
+    }, [id, item, pathname, setLastPackageHref])
+
+    // When the query has settled with no item, the file is gone (deleted,
+    // access revoked, or the cached rail href referenced a never-existing
+    // id). Clear the rail's deep-link and bounce to /calc so the user
+    // lands on the No-File panel instead of a permanent spinner.
+    useEffect(() => {
+        if (!id || isItemLoading || item) return
+        clearLastPackageHref('calc')
+        router.replace(orgHref('calc'))
+    }, [id, isItemLoading, item, clearLastPackageHref, orgHref])
 
     if (isItemLoading || !item) {
         return <CenteredMessage label="Loading spreadsheet…" spinner />

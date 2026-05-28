@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { login, navigateToPackage } from '../../app/tests/e2e/helpers'
+import { login, navigateToPackage, ORG_SLUG } from '../../app/tests/e2e/helpers'
 
 test.describe('Calc', () => {
     test.beforeEach(async ({ page }) => {
@@ -10,8 +10,10 @@ test.describe('Calc', () => {
     })
 
     test('opening a sheet renders cells in the correct columns', async ({ page }) => {
-        await navigateToPackage(page, 'calc')
-        await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible()
+        // The seeded Team Scorecard.xlsx no longer appears on calc's index
+        // (which is now a panel with three CTAs, not a recent-files list).
+        // Browse to drive's recent view to find it and click through.
+        await page.goto(`/a/${ORG_SLUG}/drive/recent`)
         await page.getByText('Team Scorecard.xlsx').click()
 
         await expect(page.getByText('Name', { exact: true })).toBeVisible()
@@ -1604,16 +1606,14 @@ async function typeIntoCell(
 // before mounting the Grid; tests that read DOM geometry or click
 // cells immediately after waitForURL race that mount.
 async function openNewSpreadsheet(page: import('@playwright/test').Page): Promise<void> {
-    // Wait for the calc index to fully render before clicking the create
-    // button. handleNew inside CalcIndex throws "Organization context not
-    // ready" if useOrgInfo / useCurrentUserOrg haven't resolved yet, and
-    // when that happens the click silently does nothing — the page stays
-    // on the index and the subsequent waitForURL hangs until the test
-    // timeout.
-    await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible({
+    // Wait for the No-File panel's headline to render before clicking the
+    // create button. handleCreateNew throws "Organization context not
+    // ready" if useOrgInfo / useCurrentUserOrg haven't resolved yet; when
+    // that happens the click silently does nothing and waitForURL hangs.
+    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
         timeout: 30_000,
     })
-    const newBtn = page.getByRole('button', { name: 'New spreadsheet' })
+    const newBtn = page.getByRole('button', { name: 'New sheet' })
     await newBtn.click()
     // The click triggers an async create + navigation. Under parallel-
     // worker contention either the create or the realtime open can take
