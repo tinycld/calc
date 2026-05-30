@@ -34,6 +34,8 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
             focusActiveInput: () => {
                 focusCalls += 1
             },
+            focusSentinel: () => {},
+            scrollToCell: () => {},
             applyStructuralMutation: op => structuralOps.push(op),
             applyFill: () => {},
             resolveMergeAnchor: (row, col) => ({ row, col }),

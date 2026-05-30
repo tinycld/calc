@@ -18,6 +18,8 @@ function makeStubDeps(): GridStoreDeps {
         readOnly: false,
         writeCell: () => {},
         focusActiveInput: () => {},
+        focusSentinel: () => {},
+        scrollToCell: () => {},
         applyStructuralMutation: (_op: StructuralOp) => {},
         applyFill: () => {},
         resolveMergeAnchor: (row, col) => ({ row, col }),

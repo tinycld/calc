@@ -26,6 +26,14 @@ export interface GridStoreInstance {
     store: GridStoreApi
     formulaBarInputRef: React.RefObject<TextInput | null>
     cellEditorInputRef: React.RefObject<TextInput | null>
+    // Set by GridInner after the viewport is ready; the store's
+    // navigateSelection / commitAndNavigate actions call through this
+    // to scroll the new cell into view.
+    scrollToCellRef: React.MutableRefObject<((row: number, col: number) => void) | null>
+    // Set by GridInner to point at the web-only focus sentinel element.
+    // Called after navigation / edit-commit so keyboard events keep
+    // working without a double-click to re-focus the grid.
+    focusSentinelRef: React.MutableRefObject<(() => void) | null>
 }
 
 interface UseGridStoreInstanceArgs {
@@ -52,6 +60,8 @@ export function useGridStoreInstance({
 }: UseGridStoreInstanceArgs): GridStoreInstance {
     const formulaBarInputRef = useRef<TextInput>(null)
     const cellEditorInputRef = useRef<TextInput>(null)
+    const scrollToCellRef = useRef<((row: number, col: number) => void) | null>(null)
+    const focusSentinelRef = useRef<(() => void) | null>(null)
 
     const store = useMemo(() => {
         // Holder lets the focusActiveInput closure call back into the
@@ -71,6 +81,8 @@ export function useGridStoreInstance({
                     surface === 'bar' ? formulaBarInputRef.current : cellEditorInputRef.current
                 target?.focus()
             },
+            scrollToCell: (row, col) => scrollToCellRef.current?.(row, col),
+            focusSentinel: () => focusSentinelRef.current?.(),
             setFrozenRows: n => setFrozenRows(doc, sheetId, n),
             setFrozenCols: n => setFrozenCols(doc, sheetId, n),
             applyStructuralMutation: op => {
@@ -140,5 +152,5 @@ export function useGridStoreInstance({
         [store, awareness, sheetId]
     )
 
-    return { store, formulaBarInputRef, cellEditorInputRef }
+    return { store, formulaBarInputRef, cellEditorInputRef, scrollToCellRef, focusSentinelRef }
 }

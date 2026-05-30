@@ -292,6 +292,12 @@ function appendHeaderCells(
                                   .getState()
                                   .openHeaderMenu('col', col, rowCount, e.clientX, e.clientY)
                           },
+                          onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+                              if (e.key === 'Delete' || e.key === 'Backspace') {
+                                  e.preventDefault()
+                                  filter.store.getState().clearSelection()
+                              }
+                          },
                       }
                     : null
             const onPlainPress = () => {
@@ -311,7 +317,7 @@ function appendHeaderCells(
                     onPress={onPlainPress}
                     onLongPress={onLongPress}
                     accessibilityLabel={`Select column ${columnLabel(col)}`}
-                    className={`border-r border-b border-border flex-row items-center justify-center ${
+                    className={`border-r border-b border-border flex-row items-center justify-center web:outline-none ${
                         isActive ? 'bg-accent' : 'bg-surface-secondary'
                     }`}
                     style={{
