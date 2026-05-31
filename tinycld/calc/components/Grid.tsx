@@ -303,28 +303,16 @@ function GridInner({
             const state = instance.store.getState()
             const anchor = primaryAnchor(state.selection)
             if (anchor == null) return
-            const maxRow = rows - 1
-            const maxCol = cols - 1
-            // Enter moves down, Tab moves right (Shift+Tab left)
-            if (e.key === 'Enter') {
-                e.preventDefault()
-                state.navigateSelection('down', maxRow, maxCol)
-                return
-            }
-            if (e.key === 'Tab') {
-                e.preventDefault()
-                state.navigateSelection(e.shiftKey ? 'left' : 'right', maxRow, maxCol)
-                return
-            }
             const action = classifyCellKey(e)
             if (action.kind === 'ignore') return
-            if (action.kind === 'arrow') {
-                e.preventDefault()
+            e.preventDefault()
+            const maxRow = rows - 1
+            const maxCol = cols - 1
+            if (action.kind === 'arrow' || action.kind === 'navigate') {
                 state.navigateSelection(action.direction, maxRow, maxCol)
                 return
             }
             if (action.kind === 'extend') {
-                e.preventDefault()
                 const next = computeShiftArrowTarget(
                     state.selection,
                     action.direction,
@@ -336,7 +324,6 @@ function GridInner({
                 state.extendActiveRangeTo(next)
                 return
             }
-            e.preventDefault()
             if (action.kind === 'clear') {
                 state.clearSelection()
                 return
@@ -548,23 +535,20 @@ function GridInner({
             {/* Focus sentinel: zero-size focusable element that holds keyboard
                 focus between edit sessions so arrow keys / typing work without
                 requiring a double-click to re-activate the grid. */}
+            {/* biome-ignore lint/suspicious/noExplicitAny: tabIndex + onKeyDown are web-only props */}
             <View
                 ref={sentinelRef}
-                style={{ position: 'absolute', width: 0, height: 0 }}
-                // biome-ignore lint/suspicious/noExplicitAny: web-only tabIndex + onKeyDown
-                {...(Platform.OS === 'web'
-                    ? ({
-                          tabIndex: 0,
-                          onKeyDown: onSentinelKeyDown,
-                          style: {
-                              position: 'absolute',
-                              width: 0,
-                              height: 0,
-                              overflow: 'hidden',
-                              outline: 'none',
-                          },
-                      } as any)
-                    : {})}
+                {...({
+                    tabIndex: -1,
+                    onKeyDown: onSentinelKeyDown,
+                    style: {
+                        position: 'absolute',
+                        width: 0,
+                        height: 0,
+                        overflow: 'hidden',
+                        outline: 'none',
+                    },
+                } as any)}
             />
             <MenuBar
                 {...toolbarPropsBundle}

@@ -23,6 +23,7 @@ export type CellKeyAction =
     | { kind: 'startEdit'; seed: string }
     | { kind: 'arrow'; direction: ArrowDirection }
     | { kind: 'extend'; direction: ArrowDirection }
+    | { kind: 'navigate'; direction: ArrowDirection }
 
 // classifyCellKey returns the action to take for a keypress on a
 // focused, non-editing cell. Modifier-combo keys (Cmd+B, Ctrl+C, …)
@@ -50,6 +51,8 @@ export function classifyCellKey(e: CellKeyEvent): CellKeyAction {
         if (e.ctrlKey || e.metaKey || e.altKey) return { kind: 'ignore' }
         return e.shiftKey ? { kind: 'extend', direction: dir } : { kind: 'arrow', direction: dir }
     }
+    if (key === 'Enter') return { kind: 'navigate', direction: 'down' }
+    if (key === 'Tab') return { kind: 'navigate', direction: e.shiftKey ? 'left' : 'right' }
     if (e.ctrlKey || e.metaKey || e.altKey) return { kind: 'ignore' }
     // Single-character printable keys only.
     if (key.length !== 1 || key < ' ') return { kind: 'ignore' }

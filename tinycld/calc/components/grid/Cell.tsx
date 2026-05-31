@@ -385,7 +385,7 @@ export const Cell = memo(function Cell({
         if (readOnly) return
         const action = classifyCellKey(e)
         if (action.kind === 'ignore') return
-        if (action.kind === 'arrow') {
+        if (action.kind === 'arrow' || action.kind === 'navigate') {
             // Cells are absolute-positioned; there is no browser focus
             // traversal between them. preventDefault to stop the page
             // from scrolling, then move the selection explicitly.

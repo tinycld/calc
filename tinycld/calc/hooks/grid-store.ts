@@ -891,28 +891,8 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             },
 
             commitAndNavigate: (row, col, draft, direction, maxRow, maxCol) => {
-                if (!deps.readOnly) deps.writeCell(row, col, draft)
-                refs.lastRefSlice.current = null
-                const newRow =
-                    direction === 'up'
-                        ? Math.max(1, row - 1)
-                        : direction === 'down'
-                          ? Math.min(maxRow, row + 1)
-                          : row
-                const newCol =
-                    direction === 'left'
-                        ? Math.max(1, col - 1)
-                        : direction === 'right'
-                          ? Math.min(maxCol, col + 1)
-                          : col
-                const target: SelectedCell = { row: newRow, col: newCol }
-                set({
-                    selection: singleCellSelection(target),
-                    editSession: null,
-                    pendingSelection: null,
-                })
-                deps.scrollToCell(newRow, newCol)
-                deps.focusSentinel()
+                get().commitEdit(row, col, draft)
+                get().navigateSelection(direction, maxRow, maxCol)
             },
 
             selectAll: (rowCount, colCount) => {
