@@ -98,8 +98,6 @@ describe('classifyCellKey', () => {
 
     describe('ignore', () => {
         it.each([
-            ['Enter'],
-            ['Tab'],
             ['Escape'],
             ['F2'],
             ['Home'],
@@ -113,6 +111,13 @@ describe('classifyCellKey', () => {
             ['CapsLock'],
         ])('ignores named key %j (length > 1)', key => {
             expect(classifyCellKey({ key })).toEqual({ kind: 'ignore' })
+        })
+
+        it.each([
+            ['Enter', { kind: 'navigate', direction: 'down' }],
+            ['Tab', { kind: 'navigate', direction: 'right' }],
+        ] as const)('routes %j to navigate %o', (key, expected) => {
+            expect(classifyCellKey({ key })).toEqual(expected)
         })
 
         it('ignores Cmd+letter — belongs to the global shortcut registry', () => {
