@@ -13,17 +13,13 @@ test.describe('Calc', () => {
         // The seeded Team Scorecard.xlsx no longer appears on calc's index
         // (which is now a panel with three CTAs, not a recent-files list).
         // Browse to drive's recent view to find it and click through.
+        // Drive rows on the recent view open a preview pane on single
+        // click rather than navigating to the package editor. Use the
+        // row's context menu's "Open in Calc" action to bypass the
+        // preview and land directly in the calc editor.
         await page.goto(`/a/${ORG_SLUG}/drive/recent`)
-        // Drive rows: single click selects, double click opens.
-        // getByRole anchors on the accessible name which includes the
-        // file's "me May 31, 2026" suffix; the regex matches the
-        // filename prefix.
-        await page.getByRole('button', { name: /Team Scorecard\.xlsx/ }).dblclick()
-
-        // Gate on the URL changing to /calc/<id> first — without it,
-        // getByText('Name') below would erroneously match the drive
-        // recent-view 'Sort by Name' column-header button before the
-        // calc-screen navigation lands.
+        await page.getByText('Team Scorecard.xlsx').click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Open in Calc' }).click()
         await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 30_000 })
 
         // Header row mounts as the xlsx parse + grid hydration completes.
@@ -32,9 +28,15 @@ test.describe('Calc', () => {
         // between cells can exceed the default 5s, so each header gets
         // its own generous timeout instead of relying on the first one
         // to land all three in the same frame.
-        await expect(page.getByText('Name', { exact: true })).toBeVisible({ timeout: 30_000 })
-        await expect(page.getByText('Role', { exact: true })).toBeVisible({ timeout: 15_000 })
-        await expect(page.getByText('Score', { exact: true })).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('Name', { exact: true }).first()).toBeVisible({
+            timeout: 30_000,
+        })
+        await expect(page.getByText('Role', { exact: true }).first()).toBeVisible({
+            timeout: 15_000,
+        })
+        await expect(page.getByText('Score', { exact: true }).first()).toBeVisible({
+            timeout: 15_000,
+        })
 
         await expect(page.getByText('Alice', { exact: true })).toBeVisible()
         await expect(page.getByText('Engineer', { exact: true })).toBeVisible()
