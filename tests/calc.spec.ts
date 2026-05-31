@@ -13,12 +13,33 @@ test.describe('Calc', () => {
         // The seeded Team Scorecard.xlsx no longer appears on calc's index
         // (which is now a panel with three CTAs, not a recent-files list).
         // Browse to drive's recent view to find it and click through.
+        // Drive rows on the recent view open a preview pane on single
+        // click rather than navigating to the package editor. Use the
+        // row's context menu's "Open in Calc" action to bypass the
+        // preview and land directly in the calc editor.
         await page.goto(`/a/${ORG_SLUG}/drive/recent`)
-        await page.getByText('Team Scorecard.xlsx').click()
+        await page.getByText('Team Scorecard.xlsx').click({ button: 'right' })
+        await page.getByRole('menuitem', { name: 'Open in Calc' }).click()
+        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 30_000 })
 
-        await expect(page.getByText('Name', { exact: true })).toBeVisible()
-        await expect(page.getByText('Role', { exact: true })).toBeVisible()
-        await expect(page.getByText('Score', { exact: true })).toBeVisible()
+        // Header row mounts as the xlsx parse + grid hydration completes.
+        // Header cells appear one-by-one as the xlsx parser yields each
+        // column to the renderer; on CI under parallel load the gap
+        // between cells can exceed the default 5s, so each header gets
+        // its own generous timeout instead of relying on the first one
+        // to land all three in the same frame.
+        // Cell A1 / B1 / C1 are uniquely labelled by aria-label rather
+        // than relying on the inner text — text 'Name' also matches the
+        // virtualized recent-files "Sort by Name" muted-text header.
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Name', {
+            timeout: 30_000,
+        })
+        await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Role', {
+            timeout: 15_000,
+        })
+        await expect(page.getByLabel('Cell C1', { exact: true })).toHaveText('Score', {
+            timeout: 15_000,
+        })
 
         await expect(page.getByText('Alice', { exact: true })).toBeVisible()
         await expect(page.getByText('Engineer', { exact: true })).toBeVisible()
@@ -27,23 +48,19 @@ test.describe('Calc', () => {
         await expect(page.getByText('Carol', { exact: true })).toBeVisible()
         await expect(page.getByText('Manager', { exact: true })).toBeVisible()
 
-        // Verify columns are correctly aligned by reading the DOM. A1
-        // (Name) and B1 (Role) should be at viewport-x positions exactly
-        // CELL_WIDTH (96px) apart.
+        // Verify columns are correctly aligned by reading the DOM
+        // through the stable Cell-A1/B1/C1 aria-labels (not text content,
+        // which also matches the recent-view "Sort by Name" header
+        // outside the grid). A1 and B1 should be at viewport-x
+        // positions exactly CELL_WIDTH (96px) apart.
         const positions = await page.evaluate(() => {
-            const find = (text: string) => {
-                for (const el of Array.from(document.querySelectorAll('div'))) {
-                    if (el.textContent === text && el.children.length === 0) {
-                        const cell = el.parentElement
-                        if (cell) {
-                            const rect = cell.getBoundingClientRect()
-                            return { left: rect.left, width: rect.width }
-                        }
-                    }
-                }
-                return null
+            const find = (label: string) => {
+                const el = document.querySelector(`[aria-label="${label}"]`) as HTMLElement | null
+                if (!el) return null
+                const rect = el.getBoundingClientRect()
+                return { left: rect.left, width: rect.width }
             }
-            return { name: find('Name'), role: find('Role'), score: find('Score') }
+            return { name: find('Cell A1'), role: find('Cell B1'), score: find('Cell C1') }
         })
         expect(positions.name).not.toBeNull()
         expect(positions.role).not.toBeNull()
@@ -1682,13 +1699,17 @@ test.describe('Calc CSV import/export', () => {
 
     test('Import CSV creates a new spreadsheet from the file picker', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible({
+        // The calc index now renders the shared NoFilePanel; CSV import
+        // happens via the unified "Upload files" card which accepts
+        // .xlsx and .csv. The file-picker click triggers the same
+        // CsvImportDialog as the old standalone "Import CSV" button.
+        await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
             timeout: 30_000,
         })
 
         const csv = 'Title,Count\r\nApples,12\r\nOranges,7'
         const fileChooserPromise = page.waitForEvent('filechooser')
-        await page.getByRole('button', { name: 'Import CSV' }).click()
+        await page.getByText('Upload files', { exact: true }).click()
         const chooser = await fileChooserPromise
         await chooser.setFiles({
             name: 'fruit.csv',
