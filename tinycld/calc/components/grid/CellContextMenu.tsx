@@ -11,6 +11,7 @@ import { useYSheets } from '../../hooks/use-y-sheets'
 import { rangeToSheetRelativeA1 } from '../../lib/conditional-format/a1'
 import { anyRuleOverlapsRect } from '../../lib/conditional-format/range-index'
 import { applyValuesFilterFromSelection, clearFilter } from '../../lib/filter'
+import { encodeSheetName } from '../../lib/named-ranges/sheet-prefix'
 import { pluralize } from '../../lib/pluralize'
 import {
     allRanges,
@@ -20,6 +21,7 @@ import {
 } from '../../lib/selection-range'
 import { detectHeaderRow, sortRange } from '../../lib/sort'
 import { useConditionalFormatPanelStore } from '../../lib/stores/conditional-format-panel-store'
+import { useNamedRangesDialogStore } from '../../lib/stores/named-ranges-dialog-store'
 import { columnLabel } from '../../lib/workbook-types'
 import { MIN_COLS, MIN_ROWS } from './constants'
 
@@ -226,6 +228,27 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
         onClose()
     }, [selection, sheetId, onClose])
 
+    const activeSheetName = sheet?.name ?? null
+    const onDefineNameFromSelection = useCallback(() => {
+        if (range == null || activeSheetName == null) {
+            useNamedRangesDialogStore.getState().openCreate()
+            onClose()
+            return
+        }
+        const sheetPrefix = encodeSheetName(activeSheetName)
+        const sameCell = range.startRow === range.endRow && range.startCol === range.endCol
+        const expression = sameCell
+            ? `=${sheetPrefix}!$${columnLabel(range.startCol)}$${range.startRow}`
+            : `=${sheetPrefix}!$${columnLabel(range.startCol)}$${range.startRow}:$${columnLabel(range.endCol)}$${range.endRow}`
+        useNamedRangesDialogStore.getState().openCreate({ expression, scope: null })
+        onClose()
+    }, [range, activeSheetName, onClose])
+
+    const onManageNamedRanges = useCallback(() => {
+        useNamedRangesDialogStore.getState().openList()
+        onClose()
+    }, [onClose])
+
     return (
         <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
             <Menu.Portal>
@@ -382,6 +405,13 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
                                 ? 'Edit conditional formatting…'
                                 : 'Conditional formatting…'}
                         </Menu.ItemTitle>
+                    </Menu.Item>
+                    <Separator className="my-1 mx-2" />
+                    <Menu.Item onPress={onDefineNameFromSelection}>
+                        <Menu.ItemTitle>Define name from selection…</Menu.ItemTitle>
+                    </Menu.Item>
+                    <Menu.Item onPress={onManageNamedRanges}>
+                        <Menu.ItemTitle>Manage named ranges…</Menu.ItemTitle>
                     </Menu.Item>
                 </Menu.Content>
             </Menu.Portal>

@@ -85,6 +85,52 @@ export function filterFunctions(names: readonly string[], prefix: string, limit 
     return matches.slice(0, limit)
 }
 
+// SuggestionItem is the tagged-union shape the autocomplete dropdown
+// renders: a function name (insert with `(`) or a named range (insert
+// plain). Producers populate the list with both kinds and the consumer
+// dispatches insertion differently per kind.
+export type SuggestionItem = { kind: 'function'; name: string } | { kind: 'name'; name: string }
+
+// filterSuggestions returns up to `limit` items matching the prefix
+// across functions AND named ranges. Names sort ahead of functions
+// when both share a prefix (user-defined names usually feel more
+// relevant than built-ins). Within each group, results sort
+// alphabetically.
+//
+// Both loops early-break at limit*4 matches — the slice at the end
+// trims to `limit` and the surplus is just there to give sort()
+// something to work with so the alphabetically-first matches win.
+// Without the break, a workbook with thousands of named ranges
+// (or HF's ~500 function names) would scan the full list on every
+// keystroke.
+export function filterSuggestions(
+    functions: readonly string[],
+    names: readonly string[],
+    prefix: string,
+    limit = 8
+): SuggestionItem[] {
+    if (prefix === '') return []
+    const upper = prefix.toUpperCase()
+    const cap = limit * 4
+    const nameMatches: string[] = []
+    for (const n of names) {
+        if (n.toUpperCase().startsWith(upper)) nameMatches.push(n)
+        if (nameMatches.length >= cap) break
+    }
+    const fnMatches: string[] = []
+    for (const f of functions) {
+        if (f.toUpperCase().startsWith(upper)) fnMatches.push(f)
+        if (nameMatches.length + fnMatches.length >= cap) break
+    }
+    nameMatches.sort((a, b) => a.localeCompare(b))
+    fnMatches.sort()
+    const merged: SuggestionItem[] = [
+        ...nameMatches.map<SuggestionItem>(n => ({ kind: 'name', name: n })),
+        ...fnMatches.map<SuggestionItem>(n => ({ kind: 'function', name: n })),
+    ]
+    return merged.slice(0, limit)
+}
+
 // applyFunctionInsertion replaces the partial token at [tokenStart,
 // tokenEnd) with `${fnName}(` and places the cursor just after the
 // open paren. Mirrors what Excel/Sheets do — the user typed the
@@ -99,5 +145,21 @@ export function applyFunctionInsertion(
     const insertion = `${fnName}(`
     const nextDraft = `${before}${insertion}${after}`
     const cursor = before.length + insertion.length
+    return { draft: nextDraft, selection: { start: cursor, end: cursor } }
+}
+
+// applyNameInsertion replaces the partial token with the named-range
+// identifier (no parens — names are values, not callables). Cursor
+// lands at the end of the inserted name so the user can keep typing
+// (e.g. `=Tax * Subtotal` after inserting `Tax`).
+export function applyNameInsertion(
+    draft: string,
+    token: FunctionToken,
+    name: string
+): { draft: string; selection: DraftSelection } {
+    const before = draft.slice(0, token.tokenStart)
+    const after = draft.slice(token.tokenEnd)
+    const nextDraft = `${before}${name}${after}`
+    const cursor = before.length + name.length
     return { draft: nextDraft, selection: { start: cursor, end: cursor } }
 }

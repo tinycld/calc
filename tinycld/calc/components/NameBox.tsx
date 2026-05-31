@@ -1,0 +1,430 @@
+import { useCallback, useMemo, useState } from 'react'
+import { Pressable, Text, TextInput, View } from 'react-native'
+import type * as Y from 'yjs'
+import { useGridStore, useGridStoreApi } from '../hooks/use-grid-store'
+import { useNamedRanges, useScopedNamedRanges } from '../hooks/use-named-ranges'
+import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
+import { encodeSheetName } from '../lib/named-ranges/sheet-prefix'
+import { normalizeExpression, validateName } from '../lib/named-ranges/y-binding'
+import { parseA1Range } from '../lib/pivot/range-parse'
+import { primaryAnchor, type Selection } from '../lib/selection-range'
+import { useNamedRangesDialogStore } from '../lib/stores/named-ranges-dialog-store'
+import { usePendingSheetSelectionStore } from '../lib/stores/pending-sheet-selection-store'
+import { columnLabel } from '../lib/workbook-types'
+
+export interface NameBoxProps {
+    doc: Y.Doc | null
+    sheetId: string
+    // Switch to a different sheet — wired to the same router.setParams
+    // callback that the sheet tabs and pivot insert use. NameBox calls
+    // this when the user navigates (via typed address or name-menu
+    // pick) to a target that lives on another sheet; the new sheet's
+    // grid effect picks the pending selection out of
+    // usePendingSheetSelectionStore on mount.
+    onActivateSheet: (sheetId: string) => void
+}
+
+// NameBox sits to the left of the formula bar (the small monospace
+// chip that used to render `B7`). It now does triple duty:
+//
+//   1. Display: shows the current selection's address. A single cell
+//      → `B7`. A range → `B7:D12`. If the current selection matches
+//      a defined name exactly (case-insensitive expression compare),
+//      shows the name instead of the address.
+//   2. Dropdown: a chevron opens a menu listing defined names in
+//      scope (global + this sheet). Clicking one jumps the selection
+//      to its range.
+//   3. Typing: focusing the input lets the user type either an A1
+//      address (`B7:D12` or `Sheet2!A1:C10`) to jump selection, or
+//      a new identifier to open the Name Manager pre-filled with the
+//      current selection as the expression.
+export function NameBox({ doc, sheetId, onActivateSheet }: NameBoxProps) {
+    const store = useGridStoreApi()
+    const selection = useGridStore(s => s.selection)
+    const sheets = useAllYSheets(doc)
+    const visibleSheets = useYSheets(doc)
+    const ranges = useNamedRanges(doc)
+    const scoped = useScopedNamedRanges(ranges, sheetId)
+    const openDialog = useNamedRangesDialogStore(s => s.openCreate)
+    const openList = useNamedRangesDialogStore(s => s.openList)
+
+    const [editing, setEditing] = useState<string | null>(null)
+    const [menuOpen, setMenuOpen] = useState(false)
+
+    const activeSheetName = useMemo(
+        () => sheets.find(s => s.id === sheetId)?.name ?? null,
+        [sheets, sheetId]
+    )
+
+    const currentSelectionExpression = useMemo(() => {
+        if (activeSheetName == null) return null
+        return selectionToExpression(selection, activeSheetName)
+    }, [selection, activeSheetName])
+
+    // Display: name match (preferred) or address. O(1) lookup against
+    // the precomputed map — runs on every cursor move so anything more
+    // than a single normalize + map.get would land on the hot path.
+    const displayLabel = useMemo(() => {
+        const addr = selectionAddressLabel(selection)
+        if (currentSelectionExpression == null) return addr
+        const match = scoped.byNormalizedExpression.get(
+            normalizeExpression(currentSelectionExpression)
+        )
+        return match != null ? match.range.name : addr
+    }, [selection, currentSelectionExpression, scoped])
+
+    const onCommit = useCallback(() => {
+        const raw = (editing ?? '').trim()
+        setEditing(null)
+        if (raw === '') return
+
+        // 1. Try name match (case-insensitive) against in-scope entries
+        //    only. Sheet-local shadows global, matching HF's evaluation
+        //    precedence (scoped.list is sorted locals-first).
+        const lowered = raw.toLowerCase()
+        const matchedName = scoped.list.find(r => r.key === lowered)
+        if (matchedName != null) {
+            jumpToExpression(
+                store,
+                visibleSheets,
+                sheetId,
+                matchedName.range.expression,
+                onActivateSheet
+            )
+            return
+        }
+
+        // 2. Try absolute A1 address (sheet-qualified or current sheet).
+        const jumped = tryJumpToAddress(store, visibleSheets, sheetId, raw, onActivateSheet)
+        if (jumped) return
+
+        // 3. Treat as a new identifier: open the manager pre-filled
+        //    with the current selection's absolute expression.
+        const nameCheck = validateName(raw)
+        if (!nameCheck.ok) return
+        openDialog({
+            name: raw,
+            expression: currentSelectionExpression ?? undefined,
+            scope: null,
+        })
+    }, [
+        editing,
+        scoped,
+        store,
+        visibleSheets,
+        sheetId,
+        currentSelectionExpression,
+        openDialog,
+        onActivateSheet,
+    ])
+
+    const onPickName = useCallback(
+        (expression: string) => {
+            setMenuOpen(false)
+            jumpToExpression(store, visibleSheets, sheetId, expression, onActivateSheet)
+        },
+        [store, visibleSheets, sheetId, onActivateSheet]
+    )
+
+    return (
+        <View
+            className="bg-surface-secondary border border-border rounded flex-row items-center"
+            style={{ width: 130, height: 22, marginRight: 6 }}
+        >
+            <TextInput
+                value={editing ?? displayLabel}
+                onFocus={() => setEditing(displayLabel)}
+                onChangeText={setEditing}
+                onSubmitEditing={onCommit}
+                onBlur={onCommit}
+                placeholder=""
+                accessibilityLabel="Name box"
+                style={{ flex: 1, height: 22, fontSize: 12, paddingHorizontal: 4 }}
+                className="text-foreground"
+            />
+            <Pressable
+                onPress={() => setMenuOpen(o => !o)}
+                accessibilityRole="button"
+                accessibilityLabel="Name box menu"
+                className="px-1"
+            >
+                <Text className="text-xs text-muted-foreground">▾</Text>
+            </Pressable>
+            {menuOpen ? (
+                <NameMenu
+                    ranges={scoped.list}
+                    activeSheetId={sheetId}
+                    onPickName={onPickName}
+                    onClose={() => setMenuOpen(false)}
+                    onManage={() => {
+                        setMenuOpen(false)
+                        openList()
+                    }}
+                />
+            ) : null}
+        </View>
+    )
+}
+
+interface NameMenuProps {
+    ranges: ReturnType<typeof useNamedRanges>
+    activeSheetId: string
+    onPickName: (expression: string) => void
+    onClose: () => void
+    onManage: () => void
+}
+
+function NameMenu({ ranges, activeSheetId, onPickName, onClose, onManage }: NameMenuProps) {
+    const globals = ranges.filter(r => r.range.scope == null)
+    const locals = ranges.filter(r => r.range.scope === activeSheetId)
+    return (
+        <View
+            className="absolute bg-background border border-border rounded shadow"
+            style={{ top: 24, left: 0, minWidth: 200, paddingVertical: 4, zIndex: 1000 }}
+        >
+            {globals.length === 0 && locals.length === 0 ? (
+                <View className="px-3 py-2">
+                    <Text className="text-xs text-muted-foreground">No names yet</Text>
+                </View>
+            ) : null}
+            {globals.length > 0 ? (
+                <View>
+                    <Text className="px-3 py-1 text-[10px] text-muted-foreground uppercase">
+                        Workbook
+                    </Text>
+                    {globals.map(r => (
+                        <Pressable
+                            key={r.key}
+                            onPress={() => onPickName(r.range.expression)}
+                            className="px-3 py-1"
+                            accessibilityLabel={`Go to ${r.range.name}`}
+                        >
+                            <Text className="text-xs text-foreground">{r.range.name}</Text>
+                        </Pressable>
+                    ))}
+                </View>
+            ) : null}
+            {locals.length > 0 ? (
+                <View>
+                    <Text className="px-3 py-1 text-[10px] text-muted-foreground uppercase">
+                        This sheet
+                    </Text>
+                    {locals.map(r => (
+                        <Pressable
+                            key={r.key}
+                            onPress={() => onPickName(r.range.expression)}
+                            className="px-3 py-1"
+                            accessibilityLabel={`Go to ${r.range.name}`}
+                        >
+                            <Text className="text-xs text-foreground">{r.range.name}</Text>
+                        </Pressable>
+                    ))}
+                </View>
+            ) : null}
+            <View className="border-t border-border mt-1 pt-1">
+                <Pressable onPress={onManage} className="px-3 py-1">
+                    <Text className="text-xs text-foreground">Manage names…</Text>
+                </Pressable>
+                <Pressable onPress={onClose} className="px-3 py-1">
+                    <Text className="text-xs text-muted-foreground">Close</Text>
+                </Pressable>
+            </View>
+        </View>
+    )
+}
+
+// selectionAddressLabel formats the current selection as A1 text for
+// the display chip. Single cell → `B7`. Single rectangular range →
+// `B7:D12`. Disjoint or empty selection collapses to the active anchor
+// (the formula-bar chip already did the empty-case fallback before).
+function selectionAddressLabel(selection: Selection): string {
+    const anchor = primaryAnchor(selection)
+    if (anchor == null) return ''
+    const range = selection?.ranges[selection.ranges.length - 1]?.range
+    if (range == null) return `${columnLabel(anchor.col)}${anchor.row}`
+    if (range.startRow === range.endRow && range.startCol === range.endCol) {
+        return `${columnLabel(range.startCol)}${range.startRow}`
+    }
+    return `${columnLabel(range.startCol)}${range.startRow}:${columnLabel(range.endCol)}${range.endRow}`
+}
+
+// selectionToExpression encodes the current selection as a sheet-
+// qualified absolute A1 reference suitable for use as a named-range
+// expression. Single cell → `=Sheet1!$B$7`, range → `=Sheet1!$B$7:$D$12`.
+// Returns null when the selection has no anchor.
+function selectionToExpression(selection: Selection, activeSheetName: string): string | null {
+    const anchor = primaryAnchor(selection)
+    if (anchor == null) return null
+    const range = selection?.ranges[selection.ranges.length - 1]?.range
+    const sheet = encodeSheetName(activeSheetName)
+    if (range == null) {
+        return `=${sheet}!$${columnLabel(anchor.col)}$${anchor.row}`
+    }
+    if (range.startRow === range.endRow && range.startCol === range.endCol) {
+        return `=${sheet}!$${columnLabel(range.startCol)}$${range.startRow}`
+    }
+    return `=${sheet}!$${columnLabel(range.startCol)}$${range.startRow}:$${columnLabel(
+        range.endCol
+    )}$${range.endRow}`
+}
+
+// tryJumpToAddress accepts user-typed A1 text and, when it parses as a
+// valid cell or range (optionally sheet-qualified), updates the
+// selection. Returns true on success, false when the input wasn't an
+// address (so the caller can fall through to the "open Name Manager"
+// path).
+//
+// Sheet-qualified addresses targeting a different sheet stage the
+// selection in the pending store and call onActivateSheet — the new
+// sheet's grid effect consumes it on mount.
+function tryJumpToAddress(
+    store: ReturnType<typeof useGridStoreApi>,
+    sheets: ReturnType<typeof useYSheets>,
+    currentSheetId: string,
+    raw: string,
+    onActivateSheet: (sheetId: string) => void
+): boolean {
+    // Sheet-qualified range like `Sheet2!A1:C10`.
+    if (raw.includes('!')) {
+        const result = parseA1Range(raw)
+        if (!result.ok) return false
+        const target = sheets.find(s => s.name === result.sheetName)
+        if (target == null) return false
+        applyJump({
+            store,
+            currentSheetId,
+            targetSheetId: target.id,
+            cell: { row: result.startRow, col: result.startCol },
+            range: rangeOrNull(result),
+            onActivateSheet,
+        })
+        return true
+    }
+    // Unqualified `B7` or `B7:D12` — current sheet.
+    const colon = raw.indexOf(':')
+    if (colon < 0) {
+        const cell = parseCellLabel(raw)
+        if (cell == null) return false
+        store.getState().selectCell(cell)
+        return true
+    }
+    const startCell = parseCellLabel(raw.slice(0, colon))
+    const endCell = parseCellLabel(raw.slice(colon + 1))
+    if (startCell == null || endCell == null) return false
+    store.getState().selectCell(startCell)
+    store.getState().extendActiveRangeTo(endCell)
+    return true
+}
+
+const CELL_RE = /^\$?([A-Z]+)\$?(\d+)$/i
+
+function parseCellLabel(s: string): { row: number; col: number } | null {
+    const m = CELL_RE.exec(s.trim())
+    if (m == null) return null
+    let col = 0
+    const letters = m[1].toUpperCase()
+    for (let i = 0; i < letters.length; i++) {
+        col = col * 26 + (letters.charCodeAt(i) - 64)
+    }
+    const row = Number(m[2])
+    if (!Number.isFinite(row) || row < 1 || col < 1) return null
+    return { row, col }
+}
+
+// jumpToExpression evaluates a named-range expression and (when it
+// resolves to a cell or range) updates the selection — switching sheets
+// first if the expression targets a different one. Constants /
+// non-range expressions silently no-op — the name box can't navigate
+// to those.
+function jumpToExpression(
+    store: ReturnType<typeof useGridStoreApi>,
+    sheets: ReturnType<typeof useYSheets>,
+    currentSheetId: string,
+    expression: string,
+    onActivateSheet: (sheetId: string) => void
+): void {
+    const trimmed = expression.replace(/^=/, '').trim()
+    if (trimmed === '') return
+    // Try the sheet-qualified parser first.
+    if (trimmed.includes('!')) {
+        const result = parseA1Range(trimmed.includes(':') ? trimmed : `${trimmed}:${trimmed}`)
+        if (result.ok) {
+            const target = sheets.find(s => s.name === result.sheetName)
+            if (target == null) return
+            applyJump({
+                store,
+                currentSheetId,
+                targetSheetId: target.id,
+                cell: { row: result.startRow, col: result.startCol },
+                range: rangeOrNull(result),
+                onActivateSheet,
+            })
+            return
+        }
+    }
+    // Bare A1 — assume current sheet.
+    const colon = trimmed.indexOf(':')
+    if (colon < 0) {
+        const cell = parseCellLabel(trimmed)
+        if (cell == null) return
+        store.getState().selectCell(cell)
+        return
+    }
+    const start = parseCellLabel(trimmed.slice(0, colon))
+    const end = parseCellLabel(trimmed.slice(colon + 1))
+    if (start == null || end == null) return
+    store.getState().selectCell(start)
+    store.getState().extendActiveRangeTo(end)
+}
+
+interface ApplyJumpArgs {
+    store: ReturnType<typeof useGridStoreApi>
+    currentSheetId: string
+    targetSheetId: string
+    cell: { row: number; col: number }
+    range: { startRow: number; startCol: number; endRow: number; endCol: number } | null
+    onActivateSheet: (sheetId: string) => void
+}
+
+// applyJump applies a parsed cell/range jump. When the target sheet
+// differs from the current one it stages the selection in the pending
+// store and calls onActivateSheet — the new sheet's grid effect picks
+// the selection up on mount. Same-sheet jumps call selectCell /
+// extendActiveRangeTo directly.
+function applyJump({
+    store,
+    currentSheetId,
+    targetSheetId,
+    cell,
+    range,
+    onActivateSheet,
+}: ApplyJumpArgs): void {
+    if (targetSheetId !== currentSheetId) {
+        usePendingSheetSelectionStore.getState().set({
+            targetSheetId,
+            cell,
+            range: range ?? undefined,
+        })
+        onActivateSheet(targetSheetId)
+        return
+    }
+    store.getState().selectCell(cell)
+    if (range != null) {
+        store.getState().extendActiveRangeTo({ row: range.endRow, col: range.endCol })
+    }
+}
+
+function rangeOrNull(result: {
+    startRow: number
+    startCol: number
+    endRow: number
+    endCol: number
+}): { startRow: number; startCol: number; endRow: number; endCol: number } | null {
+    if (result.startRow === result.endRow && result.startCol === result.endCol) return null
+    return {
+        startRow: result.startRow,
+        startCol: result.startCol,
+        endRow: result.endRow,
+        endCol: result.endCol,
+    }
+}

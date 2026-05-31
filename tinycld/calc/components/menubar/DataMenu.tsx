@@ -1,4 +1,4 @@
-import { Menu, MenuBarMenu } from '@tinycld/core/ui/menubar'
+import { Menu, MenuBarMenu, Separator } from '@tinycld/core/ui/menubar'
 import type { MenuBarProps } from './MenuBar'
 
 export function DataMenu(props: MenuBarProps) {
@@ -11,6 +11,10 @@ export function DataMenu(props: MenuBarProps) {
                 <Menu.ItemTitle>
                     {props.isFilterActive ? 'Remove filter' : 'Create a filter'}
                 </Menu.ItemTitle>
+            </Menu.Item>
+            <Separator className="my-1 mx-2" />
+            <Menu.Item onPress={props.onOpenNamedRanges}>
+                <Menu.ItemTitle>Named ranges…</Menu.ItemTitle>
             </Menu.Item>
         </MenuBarMenu>
     )

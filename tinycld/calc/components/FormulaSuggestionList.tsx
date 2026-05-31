@@ -1,13 +1,14 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
+import type { SuggestionItem } from '../lib/formula/autocomplete'
 
 interface FormulaSuggestionListProps {
-    items: readonly string[]
+    items: readonly SuggestionItem[]
     selectedIndex: number
     // Position relative to the Grid root. width is optional — the
     // dropdown sizes to its content if omitted.
     anchor: { left: number; top: number; width?: number } | null
-    onSelect: (item: string) => void
+    onSelect: (item: SuggestionItem) => void
     onHover: (index: number) => void
 }
 
@@ -62,12 +63,15 @@ export function FormulaSuggestionList({
                     const isSelected = index === selectedIndex
                     return (
                         <Pressable
-                            key={item}
+                            key={`${item.kind}:${item.name}`}
                             onPress={() => onSelect(item)}
                             onHoverIn={Platform.OS === 'web' ? () => onHover(index) : undefined}
                             style={({ pressed }) => ({
                                 paddingHorizontal: 10,
                                 paddingVertical: 5,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
                                 backgroundColor: isSelected
                                     ? accentColor
                                     : pressed
@@ -82,8 +86,20 @@ export function FormulaSuggestionList({
                                     color: isSelected ? accentForegroundColor : foregroundColor,
                                 }}
                             >
-                                {item}
+                                {item.name}
                             </Text>
+                            {item.kind === 'name' ? (
+                                <Text
+                                    style={{
+                                        fontSize: 10,
+                                        marginLeft: 8,
+                                        color: isSelected ? accentForegroundColor : foregroundColor,
+                                        opacity: 0.7,
+                                    }}
+                                >
+                                    Name
+                                </Text>
+                            ) : null}
                         </Pressable>
                     )
                 })}

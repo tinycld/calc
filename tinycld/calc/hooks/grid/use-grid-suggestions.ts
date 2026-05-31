@@ -2,10 +2,15 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type * as Y from 'yjs'
 import type { FormulaSpecialKey } from '../../components/FormulaBar'
 import { HEADER_HEIGHT, ROW_HEADER_WIDTH } from '../../components/grid/constants'
-import { filterFunctions, parseFunctionToken } from '../../lib/formula/autocomplete'
+import {
+    filterSuggestions,
+    parseFunctionToken,
+    type SuggestionItem,
+} from '../../lib/formula/autocomplete'
 import { useSheetMerges } from '../use-cell-merge'
 import { useFormulaFunctionNames } from '../use-formula-function-names'
 import { useGridStore, useGridStoreApi } from '../use-grid-store'
+import { useNamedRanges, useScopedNamedRanges } from '../use-named-ranges'
 
 export interface SuggestionAnchor {
     left: number
@@ -14,10 +19,10 @@ export interface SuggestionAnchor {
 }
 
 export interface GridSuggestions {
-    items: string[]
+    items: SuggestionItem[]
     selectedIndex: number
     anchor: SuggestionAnchor | null
-    onSelect: (item: string) => void
+    onSelect: (item: SuggestionItem) => void
     onHover: (index: number) => void
     // onSpecialKey is consumed by the FormulaBar AND the in-cell
     // editor (forwarded down through Body → Cell). It must be a
@@ -63,14 +68,24 @@ export function useGridSuggestions({
     const bodyTop = useGridStore(s => s.bodyTop)
 
     const functionNames = useFormulaFunctionNames()
+    const namedRanges = useNamedRanges(doc)
+    const scopedNames = useScopedNamedRanges(namedRanges, sheetId)
 
-    const items = useMemo<string[]>(() => {
+    // Named-range names in scope for the active sheet (globals +
+    // this-sheet locals). Suggestions filter the merged list and
+    // sort names ahead of functions in filterSuggestions.
+    const namedRangeNames = useMemo<string[]>(
+        () => scopedNames.list.map(r => r.range.name),
+        [scopedNames]
+    )
+
+    const items = useMemo<SuggestionItem[]>(() => {
         if (editSession == null) return []
-        if (functionNames.length === 0) return []
+        if (functionNames.length === 0 && namedRangeNames.length === 0) return []
         const t = parseFunctionToken(editSession.draft, store.refs.editCursor.current.end)
         if (t == null) return []
-        return filterFunctions(functionNames, t.token)
-    }, [editSession, functionNames, store])
+        return filterSuggestions(functionNames, namedRangeNames, t.token)
+    }, [editSession, functionNames, namedRangeNames, store])
 
     // Reset suggestionIndex whenever the items list identity changes
     // — the user is now looking at a different list and starting from
@@ -110,7 +125,10 @@ export function useGridSuggestions({
                 return true
             }
             if (key === 'Tab' || key === 'Enter') {
-                state.insertFunction(list[state.suggestionIndex])
+                const item = list[state.suggestionIndex]
+                if (item == null) return false
+                if (item.kind === 'name') state.insertName(item.name)
+                else state.insertFunction(item.name)
                 return true
             }
             if (key === 'Escape') {
@@ -122,7 +140,14 @@ export function useGridSuggestions({
         [store]
     )
 
-    const onSelect = useCallback((item: string) => store.getState().insertFunction(item), [store])
+    const onSelect = useCallback(
+        (item: SuggestionItem) => {
+            const state = store.getState()
+            if (item.kind === 'name') state.insertName(item.name)
+            else state.insertFunction(item.name)
+        },
+        [store]
+    )
 
     const onHover = useCallback(
         (index: number) => store.getState().setSuggestionIndex(index),

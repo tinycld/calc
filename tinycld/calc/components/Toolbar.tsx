@@ -82,6 +82,11 @@ export interface ToolbarProps {
     onToggleFilter: () => void
     isFilterActive: boolean
 
+    // Opens the Name Manager dialog in list mode. Lives on ToolbarProps
+    // (and through it MenuBarProps) so the Data menu entry can dispatch
+    // without each menu file needing a Y.Doc handle.
+    onOpenNamedRanges: () => void
+
     onMergeAll: () => void
     onMergeHorizontal: () => void
     onMergeVertical: () => void

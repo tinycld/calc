@@ -1,9 +1,8 @@
-import { forwardRef, useCallback } from 'react'
+import { forwardRef, type ReactNode, useCallback } from 'react'
 import {
     type LayoutChangeEvent,
     type NativeSyntheticEvent,
     Platform,
-    Text,
     TextInput,
     type TextInputSelectionChangeEventData,
     View,
@@ -17,7 +16,10 @@ import { FORMULA_BAR_ACCESSORY_ID } from './formula-accessory-id'
 export type FormulaSpecialKey = 'ArrowUp' | 'ArrowDown' | 'Tab' | 'Enter' | 'Escape'
 
 interface FormulaBarProps {
-    cellLabel: string | null
+    // Left chip — a fully composed slot (currently always NameBox).
+    // The chip is the formula bar's leftmost element; passing leftSlot
+    // lets callers mount a richer UI without FormulaBar knowing about it.
+    leftSlot: ReactNode
     value: string
     selection: { start: number; end: number } | undefined
     disabled: boolean
@@ -40,7 +42,7 @@ interface FormulaBarProps {
 // bar, so it behaves the same way Excel/Sheets do.
 export const FormulaBar = forwardRef<TextInput, FormulaBarProps>(function FormulaBar(
     {
-        cellLabel,
+        leftSlot,
         value,
         selection,
         disabled,
@@ -95,14 +97,7 @@ export const FormulaBar = forwardRef<TextInput, FormulaBarProps>(function Formul
             className="flex-row items-center bg-background border-b border-border"
             style={{ height: 28, paddingHorizontal: 4 }}
         >
-            <View
-                className="bg-surface-secondary border border-border items-center justify-center rounded"
-                style={{ width: 56, height: 22, marginRight: 6 }}
-            >
-                <Text className="text-xs text-muted-foreground" style={{ fontFamily: 'monospace' }}>
-                    {cellLabel ?? ''}
-                </Text>
-            </View>
+            {leftSlot}
             <TextInput
                 ref={ref}
                 value={value}

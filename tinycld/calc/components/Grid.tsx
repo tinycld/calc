@@ -42,6 +42,7 @@ import {
     unionBoundingBox,
 } from '../lib/selection-range'
 import { useConditionalFormatPanelStore } from '../lib/stores/conditional-format-panel-store'
+import { useNamedRangesDialogStore } from '../lib/stores/named-ranges-dialog-store'
 import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
 import { CalcCommentDrawer } from './comments/CalcCommentDrawer'
 import { ConditionalFormatPanel } from './conditional-format/ConditionalFormatPanel'
@@ -62,6 +63,8 @@ import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-acti
 import { SortDialog } from './grid/SortDialog'
 import { KeyboardAccessoryHost } from './KeyboardAccessoryHost'
 import { MenuBar } from './menubar/MenuBar'
+import { NameBox } from './NameBox'
+import { NamedRangesDialog } from './named-ranges/NamedRangesDialog'
 import { PrintDialog } from './PrintDialog'
 import { defaultTargetSheetName } from './pivot/new-pivot-dialog-helpers'
 import { PivotGrid } from './pivot/PivotGrid'
@@ -461,6 +464,12 @@ function GridInner({
         useConditionalFormatPanelStore.getState().open(sheetId, { defaultRanges })
     }, [instance.store, sheetId])
 
+    // Opens the Name Manager dialog in list mode. Stable identity so
+    // the memoized Toolbar / MenuBar don't churn on Grid re-renders.
+    const onOpenNamedRanges = useCallback(() => {
+        useNamedRangesDialogStore.getState().openList()
+    }, [])
+
     // Pre-fill the pivot-insert dialog from the current selection's
     // bounding box (Excel/Sheets convention). Subscribing to four
     // primitives keeps the memo'd Toolbar from re-rendering on
@@ -522,6 +531,7 @@ function GridInner({
         onMergeHorizontal: toolbarActions.mergeHorizontal,
         onMergeVertical: toolbarActions.mergeVertical,
         onUnmerge: toolbarActions.unmerge,
+        onOpenNamedRanges,
         frozenRows,
         frozenCols,
         selectionBottomRow: freeze.selectionBottomRow,
@@ -578,7 +588,7 @@ function GridInner({
             <SelectionStatusBanner />
             <FormulaBar
                 ref={instance.formulaBarInputRef}
-                cellLabel={formulaBar.cellLabel}
+                leftSlot={<NameBox doc={doc} sheetId={sheetId} onActivateSheet={onActivateSheet} />}
                 value={formulaBar.value}
                 selection={formulaBar.selection}
                 disabled={readOnly || !toolbar.hasSelection}
@@ -681,6 +691,7 @@ function GridInner({
             />
             <FindReplaceDialogGate actions={findActions} />
             <ConditionalFormatPanel doc={doc} sheetId={sheetId} readOnly={readOnly} />
+            <NamedRangesDialog doc={doc} />
             <KeyboardAccessoryHost
                 onSpecialKey={suggestions.onSpecialKey}
                 onCancel={formulaBar.onCancel}
