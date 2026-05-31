@@ -484,14 +484,18 @@ async function seedTwoRegionsTwoRows(
     await typeIntoCell(page, formulaBar, 'B3', '20')
 }
 
-// Click "New spreadsheet" on the calc index and wait for the workbook
-// detail screen to mount. Mirrors the helper in calc.spec.ts — kept
-// inline so this spec is self-contained.
+// Click "New sheet" on the calc index No-File panel and wait for the
+// workbook detail screen to mount. Mirrors the helper in calc.spec.ts
+// — kept inline so this spec is self-contained.
 async function openNewSpreadsheet(page: Page): Promise<void> {
-    await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible({
+    // Wait for the No-File panel's headline to render before clicking
+    // the create button — handleCreateNew needs useOrgInfo /
+    // useCurrentUserOrg to resolve first, and if the click races that
+    // the create silently no-ops and waitForURL hangs.
+    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
         timeout: 30_000,
     })
-    await page.getByRole('button', { name: 'New spreadsheet' }).click()
+    await page.getByRole('button', { name: 'New sheet' }).click()
     await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
     await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 75_000 })
 }
