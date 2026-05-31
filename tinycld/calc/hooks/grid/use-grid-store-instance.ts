@@ -11,6 +11,7 @@ import {
     snapPointToMerge,
     unmergeCells,
 } from '../../lib/merge'
+import { usePendingSheetSelectionStore } from '../../lib/stores/pending-sheet-selection-store'
 import {
     deleteColumns,
     deleteRows,
@@ -151,6 +152,24 @@ export function useGridStoreInstance({
         () => subscribeAwarenessToStore(store, awareness, sheetId),
         [store, awareness, sheetId]
     )
+
+    // Apply a pending cross-sheet selection staged by the NameBox.
+    // The store is recreated on sheetId change, so a NameBox jump from
+    // Sheet1 → Sheet2 lands here on the new sheet's first effect pass.
+    // consume() is a no-op when the staged selection targets a different
+    // sheet (e.g. left over from a stale request).
+    useEffect(() => {
+        const pending = usePendingSheetSelectionStore.getState().consume(sheetId)
+        if (pending == null) return
+        const api = store.getState()
+        api.selectCell(pending.cell)
+        if (pending.range != null) {
+            api.extendActiveRangeTo({
+                row: pending.range.endRow,
+                col: pending.range.endCol,
+            })
+        }
+    }, [store, sheetId])
 
     return { store, formulaBarInputRef, cellEditorInputRef, scrollToCellRef, focusSentinelRef }
 }

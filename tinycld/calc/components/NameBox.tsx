@@ -9,11 +9,19 @@ import { validateName } from '../lib/named-ranges/y-binding'
 import { parseA1Range } from '../lib/pivot/range-parse'
 import { primaryAnchor, type Selection } from '../lib/selection-range'
 import { useNamedRangesDialogStore } from '../lib/stores/named-ranges-dialog-store'
+import { usePendingSheetSelectionStore } from '../lib/stores/pending-sheet-selection-store'
 import { columnLabel } from '../lib/workbook-types'
 
 export interface NameBoxProps {
     doc: Y.Doc | null
     sheetId: string
+    // Switch to a different sheet — wired to the same router.setParams
+    // callback that the sheet tabs and pivot insert use. NameBox calls
+    // this when the user navigates (via typed address or name-menu
+    // pick) to a target that lives on another sheet; the new sheet's
+    // grid effect picks the pending selection out of
+    // usePendingSheetSelectionStore on mount.
+    onActivateSheet: (sheetId: string) => void
 }
 
 // NameBox sits to the left of the formula bar (the small monospace
@@ -30,7 +38,7 @@ export interface NameBoxProps {
 //      address (`B7:D12` or `Sheet2!A1:C10`) to jump selection, or
 //      a new identifier to open the Name Manager pre-filled with the
 //      current selection as the expression.
-export function NameBox({ doc, sheetId }: NameBoxProps) {
+export function NameBox({ doc, sheetId, onActivateSheet }: NameBoxProps) {
     const store = useGridStoreApi()
     const selection = useGridStore(s => s.selection)
     const sheets = useAllYSheets(doc)
@@ -84,13 +92,13 @@ export function NameBox({ doc, sheetId }: NameBoxProps) {
                 visibleSheets,
                 sheetId,
                 matchedName.range.expression,
-                activeSheetName
+                onActivateSheet
             )
             return
         }
 
         // 2. Try absolute A1 address (sheet-qualified or current sheet).
-        const jumped = tryJumpToAddress(store, visibleSheets, sheetId, raw)
+        const jumped = tryJumpToAddress(store, visibleSheets, sheetId, raw, onActivateSheet)
         if (jumped) return
 
         // 3. Treat as a new identifier: open the manager pre-filled
@@ -108,17 +116,17 @@ export function NameBox({ doc, sheetId }: NameBoxProps) {
         store,
         visibleSheets,
         sheetId,
-        activeSheetName,
         currentSelectionExpression,
         openDialog,
+        onActivateSheet,
     ])
 
     const onPickName = useCallback(
         (expression: string) => {
             setMenuOpen(false)
-            jumpToExpression(store, visibleSheets, sheetId, expression, activeSheetName)
+            jumpToExpression(store, visibleSheets, sheetId, expression, onActivateSheet)
         },
-        [store, visibleSheets, sheetId, activeSheetName]
+        [store, visibleSheets, sheetId, onActivateSheet]
     )
 
     const inScope = useMemo(
@@ -282,11 +290,16 @@ function normalizeExpression(expr: string): string {
 // selection. Returns true on success, false when the input wasn't an
 // address (so the caller can fall through to the "open Name Manager"
 // path).
+//
+// Sheet-qualified addresses targeting a different sheet stage the
+// selection in the pending store and call onActivateSheet — the new
+// sheet's grid effect consumes it on mount.
 function tryJumpToAddress(
     store: ReturnType<typeof useGridStoreApi>,
     sheets: ReturnType<typeof useYSheets>,
     currentSheetId: string,
-    raw: string
+    raw: string,
+    onActivateSheet: (sheetId: string) => void
 ): boolean {
     // Sheet-qualified range like `Sheet2!A1:C10`.
     if (raw.includes('!')) {
@@ -294,14 +307,14 @@ function tryJumpToAddress(
         if (!result.ok) return false
         const target = sheets.find(s => s.name === result.sheetName)
         if (target == null) return false
-        // NameBox doesn't switch sheets; jump only when the prefix
-        // matches the active sheet. (Cross-sheet navigation would need
-        // to call back into the URL-as-truth path.)
-        if (target.id !== currentSheetId) return false
-        store.getState().selectCell({ row: result.startRow, col: result.startCol })
-        if (result.startRow !== result.endRow || result.startCol !== result.endCol) {
-            store.getState().extendActiveRangeTo({ row: result.endRow, col: result.endCol })
-        }
+        applyJump({
+            store,
+            currentSheetId,
+            targetSheetId: target.id,
+            cell: { row: result.startRow, col: result.startCol },
+            range: rangeOrNull(result),
+            onActivateSheet,
+        })
         return true
     }
     // Unqualified `B7` or `B7:D12` — current sheet.
@@ -336,15 +349,16 @@ function parseCellLabel(s: string): { row: number; col: number } | null {
 }
 
 // jumpToExpression evaluates a named-range expression and (when it
-// resolves to a cell or range on the current sheet) updates the
-// selection. Constants / cross-sheet refs / non-range expressions
-// silently no-op — the name box can't navigate to those.
+// resolves to a cell or range) updates the selection — switching sheets
+// first if the expression targets a different one. Constants /
+// non-range expressions silently no-op — the name box can't navigate
+// to those.
 function jumpToExpression(
     store: ReturnType<typeof useGridStoreApi>,
     sheets: ReturnType<typeof useYSheets>,
     currentSheetId: string,
     expression: string,
-    activeSheetName: string | null
+    onActivateSheet: (sheetId: string) => void
 ): void {
     const trimmed = expression.replace(/^=/, '').trim()
     if (trimmed === '') return
@@ -353,26 +367,81 @@ function jumpToExpression(
         const result = parseA1Range(trimmed.includes(':') ? trimmed : `${trimmed}:${trimmed}`)
         if (result.ok) {
             const target = sheets.find(s => s.name === result.sheetName)
-            if (target == null || target.id !== currentSheetId) return
-            store.getState().selectCell({ row: result.startRow, col: result.startCol })
-            if (result.startRow !== result.endRow || result.startCol !== result.endCol) {
-                store.getState().extendActiveRangeTo({ row: result.endRow, col: result.endCol })
-            }
+            if (target == null) return
+            applyJump({
+                store,
+                currentSheetId,
+                targetSheetId: target.id,
+                cell: { row: result.startRow, col: result.startCol },
+                range: rangeOrNull(result),
+                onActivateSheet,
+            })
             return
         }
     }
     // Bare A1 — assume current sheet.
-    const noSheet = activeSheetName == null ? trimmed : trimmed
-    const colon = noSheet.indexOf(':')
+    const colon = trimmed.indexOf(':')
     if (colon < 0) {
-        const cell = parseCellLabel(noSheet)
+        const cell = parseCellLabel(trimmed)
         if (cell == null) return
         store.getState().selectCell(cell)
         return
     }
-    const start = parseCellLabel(noSheet.slice(0, colon))
-    const end = parseCellLabel(noSheet.slice(colon + 1))
+    const start = parseCellLabel(trimmed.slice(0, colon))
+    const end = parseCellLabel(trimmed.slice(colon + 1))
     if (start == null || end == null) return
     store.getState().selectCell(start)
     store.getState().extendActiveRangeTo(end)
+}
+
+interface ApplyJumpArgs {
+    store: ReturnType<typeof useGridStoreApi>
+    currentSheetId: string
+    targetSheetId: string
+    cell: { row: number; col: number }
+    range: { startRow: number; startCol: number; endRow: number; endCol: number } | null
+    onActivateSheet: (sheetId: string) => void
+}
+
+// applyJump applies a parsed cell/range jump. When the target sheet
+// differs from the current one it stages the selection in the pending
+// store and calls onActivateSheet — the new sheet's grid effect picks
+// the selection up on mount. Same-sheet jumps call selectCell /
+// extendActiveRangeTo directly.
+function applyJump({
+    store,
+    currentSheetId,
+    targetSheetId,
+    cell,
+    range,
+    onActivateSheet,
+}: ApplyJumpArgs): void {
+    if (targetSheetId !== currentSheetId) {
+        usePendingSheetSelectionStore.getState().set({
+            targetSheetId,
+            cell,
+            range: range ?? undefined,
+        })
+        onActivateSheet(targetSheetId)
+        return
+    }
+    store.getState().selectCell(cell)
+    if (range != null) {
+        store.getState().extendActiveRangeTo({ row: range.endRow, col: range.endCol })
+    }
+}
+
+function rangeOrNull(result: {
+    startRow: number
+    startCol: number
+    endRow: number
+    endCol: number
+}): { startRow: number; startCol: number; endRow: number; endCol: number } | null {
+    if (result.startRow === result.endRow && result.startCol === result.endCol) return null
+    return {
+        startRow: result.startRow,
+        startCol: result.startCol,
+        endRow: result.endRow,
+        endCol: result.endCol,
+    }
 }

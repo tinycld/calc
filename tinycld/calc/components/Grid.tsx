@@ -589,7 +589,7 @@ function GridInner({
             <FormulaBar
                 ref={instance.formulaBarInputRef}
                 cellLabel={formulaBar.cellLabel}
-                leftSlot={<NameBox doc={doc} sheetId={sheetId} />}
+                leftSlot={<NameBox doc={doc} sheetId={sheetId} onActivateSheet={onActivateSheet} />}
                 value={formulaBar.value}
                 selection={formulaBar.selection}
                 disabled={readOnly || !toolbar.hasSelection}
