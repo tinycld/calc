@@ -75,6 +75,11 @@ jobs:
       - name: Install (workspace root)
         working-directory: ws
         run: npm install
+      # Installs watchman so Metro's file watcher doesn't fall back to
+      # polling — see tinycld/app#21 for the trace evidence and the
+      # blank-page-after-reload flake it fixed.
+      - name: Configure test env
+        uses: tinycld/app/.github/actions/configure-test-env@main
       - name: Install Playwright browsers
         working-directory: ws/app
         run: npx playwright install --with-deps chromium
