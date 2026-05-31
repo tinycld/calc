@@ -96,6 +96,13 @@ export type SuggestionItem = { kind: 'function'; name: string } | { kind: 'name'
 // when both share a prefix (user-defined names usually feel more
 // relevant than built-ins). Within each group, results sort
 // alphabetically.
+//
+// Both loops early-break at limit*4 matches — the slice at the end
+// trims to `limit` and the surplus is just there to give sort()
+// something to work with so the alphabetically-first matches win.
+// Without the break, a workbook with thousands of named ranges
+// (or HF's ~500 function names) would scan the full list on every
+// keystroke.
 export function filterSuggestions(
     functions: readonly string[],
     names: readonly string[],
@@ -104,14 +111,16 @@ export function filterSuggestions(
 ): SuggestionItem[] {
     if (prefix === '') return []
     const upper = prefix.toUpperCase()
+    const cap = limit * 4
     const nameMatches: string[] = []
-    const fnMatches: string[] = []
     for (const n of names) {
         if (n.toUpperCase().startsWith(upper)) nameMatches.push(n)
+        if (nameMatches.length >= cap) break
     }
+    const fnMatches: string[] = []
     for (const f of functions) {
         if (f.toUpperCase().startsWith(upper)) fnMatches.push(f)
-        if (nameMatches.length + fnMatches.length >= limit * 4) break
+        if (nameMatches.length + fnMatches.length >= cap) break
     }
     nameMatches.sort((a, b) => a.localeCompare(b))
     fnMatches.sort()

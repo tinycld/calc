@@ -4,8 +4,8 @@ import type * as Y from 'yjs'
 import { getFormulaBridge } from '../lib/formula/bridge'
 import type { NamedRange, NamedRangeKey } from '../lib/named-ranges/types'
 import {
-    findExistingKey,
     listNamedRanges,
+    normalizeExpression,
     normalizeName,
     readNamedRange,
     removeNamedRangeByKey,
@@ -15,14 +15,24 @@ import {
 } from '../lib/named-ranges/y-binding'
 import { NAMED_RANGES_MAP } from '../lib/y-doc-bootstrap'
 
-// Sentinel returned by useNamedRangePreview's getSnapshot when the
-// bridge isn't ready yet. Identity-stable so useSyncExternalStore
-// doesn't loop on `undefined`.
-const PREVIEW_UNREADY: { value: unknown } = { value: undefined }
-
 export interface NamedRangeEntry {
     key: NamedRangeKey
     range: NamedRange
+}
+
+// ScopedNamedRanges is the per-sheet view of the workbook's named
+// ranges: workbook-global entries plus the active sheet's locals,
+// with a precomputed normalized-expression index for fast "does this
+// selection match a defined name?" lookups. NameBox uses both fields;
+// useGridSuggestions only needs `list`.
+export interface ScopedNamedRanges {
+    list: NamedRangeEntry[]
+    // Keyed by normalizeExpression(entry.range.expression). When a
+    // sheet-local and a global name share the same expression the
+    // local shadows (matches HF's evaluation precedence), which is why
+    // we walk `list` (sheet-locals first via `scope === sheetId` test)
+    // and skip already-keyed entries.
+    byNormalizedExpression: ReadonlyMap<string, NamedRangeEntry>
 }
 
 // useNamedRanges returns the live, sorted list of named ranges in the
@@ -53,6 +63,46 @@ export function useNamedRanges(doc: Y.Doc | null): NamedRangeEntry[] {
     }, [doc])
 
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+// deriveScopedNamedRanges is the pure work behind useScopedNamedRanges.
+// Extracted so tests can exercise the ordering + lookup-map logic
+// without spinning up a renderer.
+//
+// Sheet-locals take precedence over globals when expressions collide:
+// the map is populated locals-first so a later global doesn't overwrite
+// a local entry.
+export function deriveScopedNamedRanges(
+    ranges: readonly NamedRangeEntry[],
+    sheetId: string
+): ScopedNamedRanges {
+    const locals: NamedRangeEntry[] = []
+    const globals: NamedRangeEntry[] = []
+    for (const entry of ranges) {
+        if (entry.range.scope === sheetId) locals.push(entry)
+        else if (entry.range.scope == null) globals.push(entry)
+    }
+    const list = locals.concat(globals)
+    const byNormalizedExpression = new Map<string, NamedRangeEntry>()
+    for (const entry of list) {
+        const key = normalizeExpression(entry.range.expression)
+        if (!byNormalizedExpression.has(key)) {
+            byNormalizedExpression.set(key, entry)
+        }
+    }
+    return { list, byNormalizedExpression }
+}
+
+// useScopedNamedRanges narrows useNamedRanges to the entries in scope
+// for the active sheet AND builds the normalized-expression lookup
+// map used by NameBox's display-label match. Centralizes the scope
+// filter so callers don't each re-derive it (and share the array
+// identity, which matters for downstream memoization).
+export function useScopedNamedRanges(
+    ranges: NamedRangeEntry[],
+    sheetId: string
+): ScopedNamedRanges {
+    return useMemo(() => deriveScopedNamedRanges(ranges, sheetId), [ranges, sheetId])
 }
 
 // useNamedRangePreview returns the live evaluated value of a named
@@ -87,10 +137,10 @@ export function useNamedRangePreview(
     const getSnapshot = useCallback((): unknown => {
         if (doc == null) return undefined
         const bridge = getFormulaBridge(doc)
-        if (bridge == null) return PREVIEW_UNREADY.value
+        if (bridge == null) return undefined
         const next = bridge.getNamedExpressionValue(name, scope)
         const prev = snapshotRef.current
-        if (prev.name === name && prev.scope === scope && Object.is(prev.value, next)) {
+        if (prev.name === name && prev.scope === scope && samePreviewValue(prev.value, next)) {
             return prev.value
         }
         snapshotRef.current = { name, scope, value: next }
@@ -98,6 +148,24 @@ export function useNamedRangePreview(
     }, [doc, name, scope])
 
     return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+// samePreviewValue treats two HF preview values as equal. For scalars
+// it's Object.is; for HF's DetailedCellError shape it compares by the
+// stable error-code string (`.value` like `#NAME?` / `#REF!`) — HF
+// returns a fresh DetailedCellError instance per evaluation, so
+// Object.is would always fail and force a re-render even when the
+// underlying error is unchanged.
+function samePreviewValue(a: unknown, b: unknown): boolean {
+    if (Object.is(a, b)) return true
+    if (isDetailedCellError(a) && isDetailedCellError(b)) {
+        return a.value === b.value
+    }
+    return false
+}
+
+function isDetailedCellError(v: unknown): v is { value: string } {
+    return typeof v === 'object' && v !== null && 'value' in v && typeof v.value === 'string'
 }
 
 export interface NamedRangeMutations {
@@ -201,6 +269,9 @@ export function useNamedRangeMutations(doc: Y.Doc | null): NamedRangeMutations {
 // taken within the same scope. Workbook-global and sheet-local scopes
 // are independent — a local name and a global name can share the same
 // identifier.
+//
+// Single normalize + single map lookup; no separate findExistingKey
+// pass.
 function isDuplicateName(
     doc: Y.Doc,
     name: string,
@@ -208,19 +279,9 @@ function isDuplicateName(
     exceptKey: NamedRangeKey | null
 ): boolean {
     const key = normalizeName(name)
-    if (exceptKey != null && key === exceptKey) {
-        // Same casing — even if a different entry has this key, it's
-        // the one we're updating. (Can't happen given map uniqueness,
-        // but defensive.)
-        return false
-    }
-    const existingKey = findExistingKey(doc, name)
-    if (existingKey == null) return false
-    if (existingKey === exceptKey) return false
-    // Same key exists, but only counts as a collision when in the same
-    // scope. Look up the existing entry's scope.
+    if (key === exceptKey) return false
     const map = doc.getMap<Y.Map<unknown>>(NAMED_RANGES_MAP)
-    const existing = readNamedRange(map.get(existingKey))
+    const existing = readNamedRange(map.get(key))
     if (existing == null) return false
     return existing.scope === scope
 }

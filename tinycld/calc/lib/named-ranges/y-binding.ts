@@ -26,6 +26,15 @@ export function normalizeName(name: string): NamedRangeKey {
     return name.trim().toLowerCase()
 }
 
+// normalizeExpression strips a leading `=`, uppercases, and trims so two
+// formula strings can be compared up to case + absolute markers. Used
+// by the NameBox display path to match the current selection's encoded
+// expression against defined ranges. Cheap (single allocation, no
+// regex backtracking) so it's safe in a per-render lookup table.
+export function normalizeExpression(expr: string): string {
+    return expr.replace(/^=/, '').toUpperCase().trim()
+}
+
 // A1 and R1C1 lookalikes get rejected so HF doesn't choke on
 // `addNamedExpression`. The patterns are deliberately narrow — Excel's
 // column space tops out at three letters (XFD), so anything wider

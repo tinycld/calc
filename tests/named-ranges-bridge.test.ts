@@ -212,6 +212,46 @@ describe('FormulaBridge named ranges', () => {
         }
     })
 
+    it('rewrites every cross-sheet reference when many named ranges target the renamed sheet', () => {
+        // Bulk-rename regression guard. The lifecycle scanner runs
+        // per-character with charcode checks; this exercises it across
+        // many entries with mixed forms to catch regressions in the
+        // optimized path.
+        const doc = new Y.Doc()
+        bootstrapYDocFromWorkbook(doc, twoSheets())
+        doc.transact(() => {
+            for (let i = 1; i <= 50; i++) {
+                writeNamedRange(doc, {
+                    name: `Range${i}`,
+                    expression: `=Sheet1!$A$${i}:$B$${i}`,
+                    scope: null,
+                })
+            }
+            writeNamedRange(doc, {
+                name: 'Constant',
+                expression: '=0.085',
+                scope: null,
+            })
+            writeNamedRange(doc, {
+                name: 'CrossRef',
+                expression: '=Sheet2!$A$1',
+                scope: null,
+            })
+        }, LOCAL_ORIGIN)
+        doc.transact(() => {
+            propagateNamedRangeSheetRename(doc, 'Sheet1', 'Top Line')
+        }, LOCAL_ORIGIN)
+        const list = listNamedRanges(doc)
+        for (let i = 1; i <= 50; i++) {
+            const entry = list.find(e => e.range.name === `Range${i}`)
+            expect(entry?.range.expression).toBe(`='Top Line'!$A$${i}:$B$${i}`)
+        }
+        // Constant stays untouched (no sheet prefix to rewrite).
+        expect(list.find(e => e.range.name === 'Constant')?.range.expression).toBe('=0.085')
+        // Sheet2-targeted entry stays untouched (different sheet).
+        expect(list.find(e => e.range.name === 'CrossRef')?.range.expression).toBe('=Sheet2!$A$1')
+    })
+
     it('drops sheet-scoped named ranges when the scope sheet is deleted', () => {
         const doc = new Y.Doc()
         bootstrapYDocFromWorkbook(doc, twoSheets())

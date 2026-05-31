@@ -10,7 +10,7 @@ import {
 import { useSheetMerges } from '../use-cell-merge'
 import { useFormulaFunctionNames } from '../use-formula-function-names'
 import { useGridStore, useGridStoreApi } from '../use-grid-store'
-import { useNamedRanges } from '../use-named-ranges'
+import { useNamedRanges, useScopedNamedRanges } from '../use-named-ranges'
 
 export interface SuggestionAnchor {
     left: number
@@ -69,16 +69,14 @@ export function useGridSuggestions({
 
     const functionNames = useFormulaFunctionNames()
     const namedRanges = useNamedRanges(doc)
+    const scopedNames = useScopedNamedRanges(namedRanges, sheetId)
 
     // Named-range names in scope for the active sheet (globals +
     // this-sheet locals). Suggestions filter the merged list and
     // sort names ahead of functions in filterSuggestions.
     const namedRangeNames = useMemo<string[]>(
-        () =>
-            namedRanges
-                .filter(r => r.range.scope == null || r.range.scope === sheetId)
-                .map(r => r.range.name),
-        [namedRanges, sheetId]
+        () => scopedNames.list.map(r => r.range.name),
+        [scopedNames]
     )
 
     const items = useMemo<SuggestionItem[]>(() => {

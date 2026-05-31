@@ -1,6 +1,5 @@
 import { useCallback } from 'react'
 import { computeFormulaBarValue } from '../../components/grid/style-helpers'
-import { columnLabel } from '../../lib/workbook-types'
 import { useGridStore, useGridStoreApi } from '../use-grid-store'
 import type { useYCell } from '../use-y-cell'
 
@@ -13,7 +12,6 @@ interface UseGridFormulaBarArgs {
 }
 
 export interface GridFormulaBarBindings {
-    cellLabel: string | null
     value: string
     selection: { start: number; end: number } | undefined
     onChange: (next: string) => void
@@ -41,10 +39,6 @@ export function useGridFormulaBar({
     )
 
     const value = computeFormulaBarValue(editSession, selectedCellValue, hasSelection)
-    const cellLabel =
-        selectedRow != null && selectedCol != null
-            ? `${columnLabel(selectedCol)}${selectedRow}`
-            : null
 
     const onChange = useCallback(
         (next: string) => {
@@ -85,7 +79,6 @@ export function useGridFormulaBar({
     )
 
     return {
-        cellLabel,
         value,
         selection,
         onChange,

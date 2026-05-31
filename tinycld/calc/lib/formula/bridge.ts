@@ -5,6 +5,7 @@ import type {
     RawCellContent,
     SimpleCellAddress,
 } from 'hyperformula'
+import { NamedExpressionDoesNotExistError } from 'hyperformula'
 import * as Y from 'yjs'
 import { setYCellFormulaResult } from '../../hooks/use-y-cell'
 import { rewriteFormula } from '../clipboard/rewrite-formula'
@@ -549,21 +550,20 @@ export class FormulaBridge {
     }
 }
 
-// tryRemoveNamedExpression wraps hf.removeNamedExpression with a
-// captureException for unexpected throws. A throw means HF doesn't
-// have the entry — this happens legitimately when a scope sheet was
-// just deleted, when the bridge is reconciling after a remote-peer
-// merge, etc. Routine "already absent" cases throw cheap errors that
-// we'd rather not page on, so we filter on the message.
+// tryRemoveNamedExpression wraps hf.removeNamedExpression with an
+// instanceof check on NamedExpressionDoesNotExistError so the routine
+// "already absent" cases (scope sheet deleted, reconciling after a
+// remote-peer merge) stay silent. Anything else flows through to
+// captureException.
 function tryRemoveNamedExpression(hf: HyperFormula, name: string, scope: number | undefined): void {
     try {
         hf.removeNamedExpression(name, scope)
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        // HF throws NamedExpressionDoesNotExistError for the no-op case.
-        // The class name shows up in the message — gate on it so genuine
-        // failures still surface.
-        if (/NamedExpressionDoesNotExist|does not exist/i.test(message)) return
+        // HF throws NamedExpressionDoesNotExistError for the routine
+        // "already absent" case (e.g. scope sheet was just deleted,
+        // reconciling after a remote-peer merge). Silently skip those;
+        // surface anything else through Sentry.
+        if (err instanceof NamedExpressionDoesNotExistError) return
         captureException('calc.namedRanges.remove', err, { name, scope })
     }
 }

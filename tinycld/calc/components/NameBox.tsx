@@ -2,10 +2,10 @@ import { useCallback, useMemo, useState } from 'react'
 import { Pressable, Text, TextInput, View } from 'react-native'
 import type * as Y from 'yjs'
 import { useGridStore, useGridStoreApi } from '../hooks/use-grid-store'
-import { useNamedRanges } from '../hooks/use-named-ranges'
+import { useNamedRanges, useScopedNamedRanges } from '../hooks/use-named-ranges'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { encodeSheetName } from '../lib/named-ranges/sheet-prefix'
-import { validateName } from '../lib/named-ranges/y-binding'
+import { normalizeExpression, validateName } from '../lib/named-ranges/y-binding'
 import { parseA1Range } from '../lib/pivot/range-parse'
 import { primaryAnchor, type Selection } from '../lib/selection-range'
 import { useNamedRangesDialogStore } from '../lib/stores/named-ranges-dialog-store'
@@ -44,6 +44,7 @@ export function NameBox({ doc, sheetId, onActivateSheet }: NameBoxProps) {
     const sheets = useAllYSheets(doc)
     const visibleSheets = useYSheets(doc)
     const ranges = useNamedRanges(doc)
+    const scoped = useScopedNamedRanges(ranges, sheetId)
     const openDialog = useNamedRangesDialogStore(s => s.openCreate)
     const openList = useNamedRangesDialogStore(s => s.openList)
 
@@ -60,32 +61,28 @@ export function NameBox({ doc, sheetId, onActivateSheet }: NameBoxProps) {
         return selectionToExpression(selection, activeSheetName)
     }, [selection, activeSheetName])
 
-    // Display: name match (preferred) or address.
+    // Display: name match (preferred) or address. O(1) lookup against
+    // the precomputed map — runs on every cursor move so anything more
+    // than a single normalize + map.get would land on the hot path.
     const displayLabel = useMemo(() => {
         const addr = selectionAddressLabel(selection)
-        if (currentSelectionExpression != null) {
-            const match = ranges.find(
-                r =>
-                    (r.range.scope == null || r.range.scope === sheetId) &&
-                    normalizeExpression(r.range.expression) ===
-                        normalizeExpression(currentSelectionExpression)
-            )
-            if (match != null) return match.range.name
-        }
-        return addr
-    }, [selection, currentSelectionExpression, ranges, sheetId])
+        if (currentSelectionExpression == null) return addr
+        const match = scoped.byNormalizedExpression.get(
+            normalizeExpression(currentSelectionExpression)
+        )
+        return match != null ? match.range.name : addr
+    }, [selection, currentSelectionExpression, scoped])
 
     const onCommit = useCallback(() => {
         const raw = (editing ?? '').trim()
         setEditing(null)
         if (raw === '') return
 
-        // 1. Try name match (case-insensitive). Names in scope are
-        //    the workbook globals + this sheet's locals.
+        // 1. Try name match (case-insensitive) against in-scope entries
+        //    only. Sheet-local shadows global, matching HF's evaluation
+        //    precedence (scoped.list is sorted locals-first).
         const lowered = raw.toLowerCase()
-        const matchedName = ranges.find(
-            r => (r.range.scope == null || r.range.scope === sheetId) && r.key === lowered
-        )
+        const matchedName = scoped.list.find(r => r.key === lowered)
         if (matchedName != null) {
             jumpToExpression(
                 store,
@@ -112,7 +109,7 @@ export function NameBox({ doc, sheetId, onActivateSheet }: NameBoxProps) {
         })
     }, [
         editing,
-        ranges,
+        scoped,
         store,
         visibleSheets,
         sheetId,
@@ -127,11 +124,6 @@ export function NameBox({ doc, sheetId, onActivateSheet }: NameBoxProps) {
             jumpToExpression(store, visibleSheets, sheetId, expression, onActivateSheet)
         },
         [store, visibleSheets, sheetId, onActivateSheet]
-    )
-
-    const inScope = useMemo(
-        () => ranges.filter(r => r.range.scope == null || r.range.scope === sheetId),
-        [ranges, sheetId]
     )
 
     return (
@@ -160,7 +152,7 @@ export function NameBox({ doc, sheetId, onActivateSheet }: NameBoxProps) {
             </Pressable>
             {menuOpen ? (
                 <NameMenu
-                    ranges={inScope}
+                    ranges={scoped.list}
                     activeSheetId={sheetId}
                     onPickName={onPickName}
                     onClose={() => setMenuOpen(false)}
@@ -274,15 +266,6 @@ function selectionToExpression(selection: Selection, activeSheetName: string): s
     return `=${sheet}!$${columnLabel(range.startCol)}$${range.startRow}:$${columnLabel(
         range.endCol
     )}$${range.endRow}`
-}
-
-// normalizeExpression compares two A1 reference strings up to absolute
-// vs relative markers and trailing equals. Lets the display logic
-// detect that the current selection matches a defined name even when
-// the name was stored as `=Sheet1!$A$1:$A$10` and the selection
-// formats as `=Sheet1!$A$1:$A$10` too — same string after trim.
-function normalizeExpression(expr: string): string {
-    return expr.replace(/^=/, '').toUpperCase().trim()
 }
 
 // tryJumpToAddress accepts user-typed A1 text and, when it parses as a
