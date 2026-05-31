@@ -14,11 +14,11 @@ test.describe('Calc', () => {
         // (which is now a panel with three CTAs, not a recent-files list).
         // Browse to drive's recent view to find it and click through.
         await page.goto(`/a/${ORG_SLUG}/drive/recent`)
-        // Click the row button (not the inner text — that just selects).
+        // Drive rows: single click selects, double click opens.
         // getByRole anchors on the accessible name which includes the
         // file's "me May 31, 2026" suffix; the regex matches the
         // filename prefix.
-        await page.getByRole('button', { name: /Team Scorecard\.xlsx/ }).click()
+        await page.getByRole('button', { name: /Team Scorecard\.xlsx/ }).dblclick()
 
         // Gate on the URL changing to /calc/<id> first — without it,
         // getByText('Name') below would erroneously match the drive
