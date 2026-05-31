@@ -12,6 +12,7 @@ export interface ViewportSnapshot {
     width: number
     height: number
 }
+
 import { OVERSCAN } from '../../components/grid/constants'
 import {
     firstColAtOffset,

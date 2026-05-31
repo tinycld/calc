@@ -481,8 +481,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 // Snap to the merge anchor when the click landed on a
                 // covered cell.
                 const prev = get()
-                const wasEditingCell =
-                    prev.editSession != null && prev.activeSurface === 'cell'
+                const wasEditingCell = prev.editSession != null && prev.activeSurface === 'cell'
                 const snapped = deps.resolveMergeAnchor(cell.row, cell.col)
                 const target: SelectedCell = { row: snapped.row, col: snapped.col }
                 commitInflight(target)

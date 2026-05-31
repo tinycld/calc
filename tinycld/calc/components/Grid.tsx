@@ -31,11 +31,16 @@ import type { UndoManagerState } from '../hooks/use-undo-manager'
 import { useWorkbook } from '../hooks/use-workbook-context'
 import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
-import { rangeToSheetRelativeA1 } from '../lib/conditional-format/a1'
 import { classifyCellKey } from '../lib/cell-key-action'
+import { rangeToSheetRelativeA1 } from '../lib/conditional-format/a1'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { buildA1Range } from '../lib/pivot/range-parse'
-import { allRanges, computeShiftArrowTarget, primaryAnchor, unionBoundingBox } from '../lib/selection-range'
+import {
+    allRanges,
+    computeShiftArrowTarget,
+    primaryAnchor,
+    unionBoundingBox,
+} from '../lib/selection-range'
 import { useConditionalFormatPanelStore } from '../lib/stores/conditional-format-panel-store'
 import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
 import { CalcCommentDrawer } from './comments/CalcCommentDrawer'
@@ -530,26 +535,26 @@ function GridInner({
         onPivotSheetActivated: onActivateSheet,
     }
 
+    // tabIndex + onKeyDown are web-only DOM props that React Native's <View>
+    // accepts when rendered on web but doesn't surface in its typed prop set.
+    const sentinelWebProps = {
+        tabIndex: -1,
+        onKeyDown: onSentinelKeyDown,
+        style: {
+            position: 'absolute',
+            width: 0,
+            height: 0,
+            overflow: 'hidden',
+            outline: 'none',
+        },
+    }
+
     return (
         <View className="flex-1 bg-background web:select-none">
             {/* Focus sentinel: zero-size focusable element that holds keyboard
                 focus between edit sessions so arrow keys / typing work without
                 requiring a double-click to re-activate the grid. */}
-            {/* biome-ignore lint/suspicious/noExplicitAny: tabIndex + onKeyDown are web-only props */}
-            <View
-                ref={sentinelRef}
-                {...({
-                    tabIndex: -1,
-                    onKeyDown: onSentinelKeyDown,
-                    style: {
-                        position: 'absolute',
-                        width: 0,
-                        height: 0,
-                        overflow: 'hidden',
-                        outline: 'none',
-                    },
-                } as any)}
-            />
+            <View ref={sentinelRef} {...(sentinelWebProps as Record<string, unknown>)} />
             <MenuBar
                 {...toolbarPropsBundle}
                 workbookId={driveItemId}
