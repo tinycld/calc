@@ -1689,9 +1689,7 @@ test.describe('Calc CSV import/export', () => {
         // Wait for the No-File panel headline — the calc index renders it
         // (with 'A fresh sheet.') as the entry point that hosts the
         // Import CSV button.
-        await expect(
-            page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })
-        ).toBeVisible({
+        await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
             timeout: 30_000,
         })
 
