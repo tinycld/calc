@@ -31,6 +31,7 @@ import { createStore as createVanillaStore, type StoreApi } from 'zustand/vanill
 import type { ArrowDirection } from '../lib/cell-key-action'
 import {
     applyFunctionInsertion,
+    applyNameInsertion,
     type DraftSelection,
     parseFunctionToken,
 } from '../lib/formula/autocomplete'
@@ -296,6 +297,10 @@ export interface GridActions {
     setSuggestionIndex: (index: number) => void
     dismissSuggestions: () => void
     insertFunction: (name: string) => void
+    // insertName replaces the in-progress identifier token with a
+    // named-range identifier — no trailing `(` because names are
+    // values, not callables. Mirrors insertFunction otherwise.
+    insertName: (name: string) => void
     openCellContextMenu: (row: number, col: number, x: number, y: number) => void
     closeCellContextMenu: () => void
     openCommentPopover: (row: number, col: number, x: number, y: number) => void
@@ -1074,6 +1079,20 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 const t = parseFunctionToken(session.draft, refs.editCursor.current.end)
                 if (t == null) return
                 const result = applyFunctionInsertion(session.draft, t, name)
+                refs.editCursor.current = result.selection
+                refs.lastRefSlice.current = null
+                set({
+                    editSession: { row: session.row, col: session.col, draft: result.draft },
+                    pendingSelection: result.selection,
+                })
+            },
+
+            insertName: name => {
+                const session = get().editSession
+                if (session == null) return
+                const t = parseFunctionToken(session.draft, refs.editCursor.current.end)
+                if (t == null) return
+                const result = applyNameInsertion(session.draft, t, name)
                 refs.editCursor.current = result.selection
                 refs.lastRefSlice.current = null
                 set({

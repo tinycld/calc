@@ -8,8 +8,16 @@ import * as Y from 'yjs'
 import { setYCellFormulaResult } from '../../hooks/use-y-cell'
 import { rewriteFormula } from '../clipboard/rewrite-formula'
 import { bumpConditionalFormatVersion } from '../conditional-format/version-store'
+import { listNamedRanges, readNamedRange } from '../named-ranges/y-binding'
 import { parseYCellKey, yCellKey } from '../y-cell-key'
-import { CELLS_MAP, readYCell, SHEETS_MAP, type YCellValue, ydocSheetIds } from '../y-doc-bootstrap'
+import {
+    CELLS_MAP,
+    NAMED_RANGES_MAP,
+    readYCell,
+    SHEETS_MAP,
+    type YCellValue,
+    ydocSheetIds,
+} from '../y-doc-bootstrap'
 import { HYPERFORMULA_LICENSE_KEY } from './hyperformula-license'
 import { hfInputForCell, normalizeHfValue } from './normalize'
 import { FORMULA_ORIGIN } from './origins'
@@ -32,11 +40,24 @@ export class FormulaBridge {
     // so observers can translate without scanning.
     private readonly sheetIdToHf: Map<string, number> = new Map()
     private readonly hfToSheetId: Map<number, string> = new Map()
+    // Tracks which named ranges are currently mirrored into HF so the
+    // observer can detect rename / scope-change / removal without
+    // querying HF (which doesn't expose per-key scope lookup cheaply).
+    // Keyed by NAMED_RANGES_MAP key (lowercase). Value is the
+    // (expression, scope) tuple last pushed into HF; `scope` is the
+    // Y.Doc sheet id or null for global.
+    private readonly syncedNames: Map<
+        string,
+        { name: string; expression: string; scope: string | null }
+    > = new Map()
     private cellsObserver:
         | ((events: Y.YEvent<Y.AbstractType<unknown>>[], txn: Y.Transaction) => void)
         | null = null
     private sheetsObserver:
         | ((event: Y.YMapEvent<Y.Map<unknown>>, txn: Y.Transaction) => void)
+        | null = null
+    private namedRangesObserver:
+        | ((events: Y.YEvent<Y.AbstractType<unknown>>[], txn: Y.Transaction) => void)
         | null = null
     private valuesUpdatedHandler: ((changes: readonly unknown[]) => void) | null = null
 
@@ -57,6 +78,13 @@ export class FormulaBridge {
         this.bootstrapSheets()
         this.attachValuesUpdatedListener()
         this.bootstrapCells()
+        // Named ranges must be defined in HF AFTER sheets exist (so
+        // sheet-scoped ranges can resolve their scope id) but BEFORE
+        // any further dependent recompute can land — bootstrapCells
+        // already triggered HF's first pass via setSheetContent, and
+        // names that reference cell ranges will pull current values
+        // on first evaluation.
+        this.bootstrapNamedRanges()
         this.attachDocObservers()
     }
 
@@ -68,6 +96,12 @@ export class FormulaBridge {
         if (this.sheetsObserver != null) {
             this.doc.getMap<Y.Map<unknown>>(SHEETS_MAP).unobserve(this.sheetsObserver)
             this.sheetsObserver = null
+        }
+        if (this.namedRangesObserver != null) {
+            this.doc
+                .getMap<Y.Map<unknown>>(NAMED_RANGES_MAP)
+                .unobserveDeep(this.namedRangesObserver)
+            this.namedRangesObserver = null
         }
         if (this.valuesUpdatedHandler != null) {
             // tiny-emitter's off accepts the listener that was registered;
@@ -177,6 +211,69 @@ export class FormulaBridge {
         bumpConditionalFormatVersion()
     }
 
+    // bootstrapNamedRanges walks the doc's NAMED_RANGES_MAP and feeds
+    // each entry into HF via addNamedExpression. Sheet-scoped ranges
+    // translate Y.Doc sheet id ('sheet1') -> HF numeric id via
+    // sheetIdToHf. Entries whose scope id is unknown (e.g. the sheet
+    // was deleted before the bridge started) get skipped — they'd
+    // throw `NoRelativeAddressesAllowed` or similar.
+    private bootstrapNamedRanges(): void {
+        const entries = listNamedRanges(this.doc)
+        for (const { key, range } of entries) {
+            const scope = this.resolveNamedRangeScope(range.scope)
+            if (range.scope != null && scope == null) continue
+            try {
+                this.hf.addNamedExpression(range.name, range.expression, scope ?? undefined)
+                this.syncedNames.set(key, {
+                    name: range.name,
+                    expression: range.expression,
+                    scope: range.scope,
+                })
+            } catch {
+                // HF rejects invalid names / expressions. Skip rather
+                // than crash the bridge — the manager UI surfaces the
+                // problem the next time the user edits the name.
+            }
+        }
+    }
+
+    private resolveNamedRangeScope(yScope: string | null): number | undefined | null {
+        if (yScope == null) return undefined
+        const hfId = this.sheetIdToHf.get(yScope)
+        if (hfId == null) return null
+        return hfId
+    }
+
+    // getNamedExpressionValue returns the current evaluated value of a
+    // named expression, or undefined when HF has no entry. Used by the
+    // Name Manager dialog's value-preview column.
+    getNamedExpressionValue(name: string, scopeSheetId: string | null): unknown {
+        const scope = this.resolveNamedRangeScope(scopeSheetId)
+        if (scopeSheetId != null && scope == null) return undefined
+        try {
+            return this.hf.getNamedExpressionValue(name, scope ?? undefined)
+        } catch {
+            return undefined
+        }
+    }
+
+    // validateFormula returns true when HF's parser accepts the formula
+    // string (which must start with `=`). Returns false on parse error
+    // or empty. Used by the Name Manager form to reject malformed
+    // expressions before they reach the Y.Doc and the bridge observer.
+    //
+    // Constants (e.g. `0.085` or `Quarterly`) and quoted strings are
+    // legal as named-expression values but NOT as formulas — the
+    // dialog accepts them by skipping this check when the user's input
+    // doesn't start with `=`.
+    validateFormula(formula: string): boolean {
+        try {
+            return this.hf.validateFormula(formula)
+        } catch {
+            return false
+        }
+    }
+
     // evaluateFormulaAt computes a formula in the *context* of a
     // specific cell — i.e. its relative refs resolve as if it were
     // entered at (row, col) on the named sheet. Used by the
@@ -268,6 +365,128 @@ export class FormulaBridge {
         }
         this.sheetsObserver = sheetsObserver
         sheetsMap.observe(sheetsObserver)
+
+        // Named-ranges observer: reconcile every touched key by
+        // comparing the doc snapshot against `syncedNames` (HF's
+        // mirror). The Y.Doc is the source of truth — every mutation
+        // path (local form, remote peer, undo/redo) goes through this
+        // observer to push the change into HF. FORMULA_ORIGIN is
+        // filtered defensively (cell-writeback path never touches this
+        // map, but the bridge guards against accidental cross-writes
+        // anyway).
+        const namedRangesMap = this.doc.getMap<Y.Map<unknown>>(NAMED_RANGES_MAP)
+        const namedRangesObserver = (
+            events: Y.YEvent<Y.AbstractType<unknown>>[],
+            txn: Y.Transaction
+        ) => {
+            if (txn.origin === FORMULA_ORIGIN) return
+            const touched: Set<string> = new Set()
+            for (const evt of events) {
+                if (evt.target === namedRangesMap) {
+                    for (const key of (evt as Y.YMapEvent<unknown>).keysChanged) touched.add(key)
+                } else {
+                    const parent = findTopLevelNamedRangeKey(evt, namedRangesMap)
+                    if (parent != null) touched.add(parent)
+                }
+            }
+            for (const key of touched) {
+                this.reconcileNamedRange(key)
+            }
+        }
+        this.namedRangesObserver = namedRangesObserver
+        namedRangesMap.observeDeep(namedRangesObserver)
+    }
+
+    // reconcileNamedRange brings HF's view of a single named-range
+    // entry into agreement with the doc. Used by the namedRanges
+    // observer to translate add / change / remove events into the
+    // matching HF call. Returns silently when HF rejects the change —
+    // the dialog form is expected to validate before writing, but a
+    // race (e.g. concurrent peer edits) could still produce a state
+    // HF won't accept.
+    private reconcileNamedRange(key: string): void {
+        const map = this.doc.getMap<Y.Map<unknown>>(NAMED_RANGES_MAP)
+        const entry = map.get(key)
+        const previous = this.syncedNames.get(key)
+
+        if (entry == null) {
+            // Removed in the doc — drop from HF too.
+            if (previous != null) {
+                try {
+                    this.hf.removeNamedExpression(
+                        previous.name,
+                        this.resolveNamedRangeScope(previous.scope) ?? undefined
+                    )
+                } catch {
+                    // Already absent, or scope sheet was deleted — fine.
+                }
+                this.syncedNames.delete(key)
+            }
+            return
+        }
+
+        const range = readNamedRange(entry)
+        if (range == null) return
+
+        const scopeId = this.resolveNamedRangeScope(range.scope)
+        if (range.scope != null && scopeId == null) {
+            // Scope sheet no longer exists. Drop from HF; the doc
+            // entry survives so the user can re-scope it.
+            if (previous != null) {
+                try {
+                    this.hf.removeNamedExpression(
+                        previous.name,
+                        this.resolveNamedRangeScope(previous.scope) ?? undefined
+                    )
+                } catch {}
+                this.syncedNames.delete(key)
+            }
+            return
+        }
+
+        // If the display name OR scope changed, HF treats this as a
+        // remove + add. If only the expression changed, changeNamedExpression
+        // updates in place.
+        if (previous == null) {
+            try {
+                this.hf.addNamedExpression(range.name, range.expression, scopeId ?? undefined)
+                this.syncedNames.set(key, {
+                    name: range.name,
+                    expression: range.expression,
+                    scope: range.scope,
+                })
+            } catch {}
+            return
+        }
+        const nameChanged = previous.name !== range.name
+        const scopeChanged = previous.scope !== range.scope
+        if (nameChanged || scopeChanged) {
+            try {
+                this.hf.removeNamedExpression(
+                    previous.name,
+                    this.resolveNamedRangeScope(previous.scope) ?? undefined
+                )
+            } catch {}
+            try {
+                this.hf.addNamedExpression(range.name, range.expression, scopeId ?? undefined)
+                this.syncedNames.set(key, {
+                    name: range.name,
+                    expression: range.expression,
+                    scope: range.scope,
+                })
+            } catch {}
+            return
+        }
+        if (previous.expression !== range.expression) {
+            try {
+                this.hf.changeNamedExpression(range.name, range.expression, scopeId ?? undefined)
+                this.syncedNames.set(key, {
+                    name: range.name,
+                    expression: range.expression,
+                    scope: range.scope,
+                })
+            } catch {}
+        }
     }
 
     private forwardCell(key: string): void {
@@ -282,6 +501,24 @@ export class FormulaBridge {
         const address: SimpleCellAddress = { sheet: hfId, row: parsed.row - 1, col: parsed.col - 1 }
         this.hf.setCellContents(address, hfValue)
     }
+}
+
+// findTopLevelNamedRangeKey walks an observeDeep event's path back up
+// to the NAMED_RANGES_MAP key it belongs to. Mirrors the cells
+// findTopLevelCellKey helper but scoped to the named-ranges Y.Map.
+function findTopLevelNamedRangeKey(
+    evt: Y.YEvent<Y.AbstractType<unknown>>,
+    namedRangesMap: Y.Map<Y.Map<unknown>>
+): string | null {
+    if (evt.path.length === 0) return null
+    const head = evt.path[0]
+    if (typeof head !== 'string') return null
+    if (!namedRangesMap.has(head)) {
+        // Removed in the same transaction; forward the key so the
+        // reconcile path sees `entry == null` and clears HF.
+        return head
+    }
+    return head
 }
 
 // findTopLevelCellKey walks an observeDeep event's path back up to the

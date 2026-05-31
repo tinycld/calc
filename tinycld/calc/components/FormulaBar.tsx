@@ -1,4 +1,4 @@
-import { forwardRef, useCallback } from 'react'
+import { forwardRef, type ReactNode, useCallback } from 'react'
 import {
     type LayoutChangeEvent,
     type NativeSyntheticEvent,
@@ -17,7 +17,12 @@ import { FORMULA_BAR_ACCESSORY_ID } from './formula-accessory-id'
 export type FormulaSpecialKey = 'ArrowUp' | 'ArrowDown' | 'Tab' | 'Enter' | 'Escape'
 
 interface FormulaBarProps {
+    // Left chip — either the static text address (legacy callers) or
+    // a fully composed slot (the NameBox component). The chip is the
+    // formula bar's leftmost element; passing `leftSlot` lets callers
+    // mount a richer UI without FormulaBar knowing about it.
     cellLabel: string | null
+    leftSlot?: ReactNode
     value: string
     selection: { start: number; end: number } | undefined
     disabled: boolean
@@ -41,6 +46,7 @@ interface FormulaBarProps {
 export const FormulaBar = forwardRef<TextInput, FormulaBarProps>(function FormulaBar(
     {
         cellLabel,
+        leftSlot,
         value,
         selection,
         disabled,
@@ -95,14 +101,21 @@ export const FormulaBar = forwardRef<TextInput, FormulaBarProps>(function Formul
             className="flex-row items-center bg-background border-b border-border"
             style={{ height: 28, paddingHorizontal: 4 }}
         >
-            <View
-                className="bg-surface-secondary border border-border items-center justify-center rounded"
-                style={{ width: 56, height: 22, marginRight: 6 }}
-            >
-                <Text className="text-xs text-muted-foreground" style={{ fontFamily: 'monospace' }}>
-                    {cellLabel ?? ''}
-                </Text>
-            </View>
+            {leftSlot != null ? (
+                leftSlot
+            ) : (
+                <View
+                    className="bg-surface-secondary border border-border items-center justify-center rounded"
+                    style={{ width: 56, height: 22, marginRight: 6 }}
+                >
+                    <Text
+                        className="text-xs text-muted-foreground"
+                        style={{ fontFamily: 'monospace' }}
+                    >
+                        {cellLabel ?? ''}
+                    </Text>
+                </View>
+            )}
             <TextInput
                 ref={ref}
                 value={value}

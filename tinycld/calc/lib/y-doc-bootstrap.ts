@@ -40,6 +40,25 @@ export const CELLS_MAP = 'cells'
 // is significant — see CellStyle in workbook-types.ts.
 export const STYLE_KEY = 'style'
 
+// NAMED_RANGES_MAP holds workbook-defined names ("named expressions" in
+// HyperFormula's terms). Keyed by the case-insensitive normalized name
+// (lower-cased), each value is a Y.Map with:
+//
+//   name:        string               // original-casing display name
+//   expression:  string               // HF raw-content form, e.g.
+//                                     //   '=Sheet1!$A$1:$A$10'
+//                                     //   '=0.085'
+//                                     //   'Quarterly'  (constant)
+//   scope:       string | null        // Y.Doc sheet id ('sheet1') for
+//                                     //   sheet-local; null for
+//                                     //   workbook-global.
+//   comment?:    string               // optional user description.
+//
+// The bridge mirrors entries into HF via addNamedExpression on bootstrap
+// and on live add/change/remove. Names use case-insensitive uniqueness
+// within a scope, which matches HF and Excel/Sheets.
+export const NAMED_RANGES_MAP = 'namedRanges'
+
 // PIVOTS_MAP / PIVOT_SHEET_KEY are defined in ./pivot/keys.ts to keep
 // y-binding.ts (which depends on them) and this module from forming a
 // require cycle. Re-exported here so existing call sites keep working.
