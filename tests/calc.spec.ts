@@ -16,6 +16,12 @@ test.describe('Calc', () => {
         await page.goto(`/a/${ORG_SLUG}/drive/recent`)
         await page.getByText('Team Scorecard.xlsx').click()
 
+        // Gate on the URL changing to /calc/<id> first — without it,
+        // getByText('Name') below would erroneously match the drive
+        // recent-view 'Sort by Name' column-header button before the
+        // calc-screen navigation lands.
+        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 30_000 })
+
         // Header row mounts as the xlsx parse + grid hydration completes.
         // Header cells appear one-by-one as the xlsx parser yields each
         // column to the renderer; on CI under parallel load the gap
