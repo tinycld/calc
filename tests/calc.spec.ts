@@ -17,12 +17,14 @@ test.describe('Calc', () => {
         await page.getByText('Team Scorecard.xlsx').click()
 
         // Header row mounts as the xlsx parse + grid hydration completes.
-        // First header expectation absorbs the slow path (CI under load
-        // takes longer than the default 5s); subsequent checks default-
-        // timeout once the grid is up.
-        await expect(page.getByText('Name', { exact: true })).toBeVisible({ timeout: 15_000 })
-        await expect(page.getByText('Role', { exact: true })).toBeVisible()
-        await expect(page.getByText('Score', { exact: true })).toBeVisible()
+        // Header cells appear one-by-one as the xlsx parser yields each
+        // column to the renderer; on CI under parallel load the gap
+        // between cells can exceed the default 5s, so each header gets
+        // its own generous timeout instead of relying on the first one
+        // to land all three in the same frame.
+        await expect(page.getByText('Name', { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(page.getByText('Role', { exact: true })).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('Score', { exact: true })).toBeVisible({ timeout: 15_000 })
 
         await expect(page.getByText('Alice', { exact: true })).toBeVisible()
         await expect(page.getByText('Engineer', { exact: true })).toBeVisible()
@@ -1686,16 +1688,17 @@ test.describe('Calc CSV import/export', () => {
 
     test('Import CSV creates a new spreadsheet from the file picker', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        // Wait for the No-File panel headline — the calc index renders it
-        // (with 'A fresh sheet.') as the entry point that hosts the
-        // Import CSV button.
+        // The calc index now renders the shared NoFilePanel; CSV import
+        // happens via the unified "Upload files" card which accepts
+        // .xlsx and .csv. The file-picker click triggers the same
+        // CsvImportDialog as the old standalone "Import CSV" button.
         await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
             timeout: 30_000,
         })
 
         const csv = 'Title,Count\r\nApples,12\r\nOranges,7'
         const fileChooserPromise = page.waitForEvent('filechooser')
-        await page.getByRole('button', { name: 'Import CSV' }).click()
+        await page.getByText('Upload files', { exact: true }).click()
         const chooser = await fileChooserPromise
         await chooser.setFiles({
             name: 'fruit.csv',
