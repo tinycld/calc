@@ -28,6 +28,7 @@
 // extends it. Ctrl-click appends a new entry (Sheets parity). See
 // `lib/selection-range.ts` for the helper layer call sites use.
 import { createStore as createVanillaStore, type StoreApi } from 'zustand/vanilla'
+import type { ArrowDirection } from '../lib/cell-key-action'
 import {
     applyFunctionInsertion,
     type DraftSelection,
@@ -207,6 +208,8 @@ export interface GridStoreDeps {
     readOnly: boolean
     writeCell: (row: number, col: number, value: string) => void
     focusActiveInput: () => void
+    scrollToCell: (row: number, col: number) => void
+    focusSentinel: () => void
     applyStructuralMutation: (op: StructuralOp) => void
     applyFill: (opts: {
         sourceRange: CellRange
@@ -257,6 +260,23 @@ export interface GridActions {
     // onCellKeyDown when an arrow key is pressed on a disjoint
     // selection; focus traversal continues afterward.
     collapseToPrimary: () => void
+    // Keyboard navigation from a focused (non-editing) cell. Moves
+    // the primary anchor by one step in `direction`, clamped to bounds,
+    // then calls deps.scrollToCell to ensure the new cell is visible.
+    navigateSelection: (direction: ArrowDirection, maxRow: number, maxCol: number) => void
+    // Commit the current edit (writing the cell value) then move
+    // the selection one step in `direction`. Used by the in-cell editor
+    // for Enter (down) and arrow keys.
+    commitAndNavigate: (
+        row: number,
+        col: number,
+        draft: string,
+        direction: ArrowDirection,
+        maxRow: number,
+        maxCol: number
+    ) => void
+    // Select every cell in the sheet (Cmd+A / Ctrl+A).
+    selectAll: (rowCount: number, colCount: number) => void
     editCell: (cell: SelectedCell, initialDraft?: string) => void
     setEditDraft: (row: number, col: number, draft: string) => void
     setEditSelection: (row: number, col: number, start: number, end: number) => void
@@ -460,11 +480,14 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             selectCell: cell => {
                 // Snap to the merge anchor when the click landed on a
                 // covered cell.
+                const prev = get()
+                const wasEditingCell =
+                    prev.editSession != null && prev.activeSurface === 'cell'
                 const snapped = deps.resolveMergeAnchor(cell.row, cell.col)
                 const target: SelectedCell = { row: snapped.row, col: snapped.col }
                 commitInflight(target)
                 refs.lastRefSlice.current = null
-                const prevCommentTarget = get().commentTarget
+                const prevCommentTarget = prev.commentTarget
                 const closeComment =
                     prevCommentTarget != null &&
                     (prevCommentTarget.cell.row !== target.row ||
@@ -475,6 +498,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                     pendingSelection: null,
                     commentTarget: closeComment ? null : prevCommentTarget,
                 })
+                if (wasEditingCell) deps.focusSentinel()
             },
 
             selectRow: (row, colCount) => {
@@ -841,6 +865,53 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 })
             },
 
+            navigateSelection: (direction, maxRow, maxCol) => {
+                const anchor = readPrimaryAnchor(get().selection)
+                if (anchor == null) return
+                const newRow =
+                    direction === 'up'
+                        ? Math.max(1, anchor.row - 1)
+                        : direction === 'down'
+                          ? Math.min(maxRow, anchor.row + 1)
+                          : anchor.row
+                const newCol =
+                    direction === 'left'
+                        ? Math.max(1, anchor.col - 1)
+                        : direction === 'right'
+                          ? Math.min(maxCol, anchor.col + 1)
+                          : anchor.col
+                const target: SelectedCell = { row: newRow, col: newCol }
+                set({
+                    selection: singleCellSelection(target),
+                    editSession: null,
+                    pendingSelection: null,
+                })
+                deps.scrollToCell(newRow, newCol)
+                deps.focusSentinel()
+            },
+
+            commitAndNavigate: (row, col, draft, direction, maxRow, maxCol) => {
+                get().commitEdit(row, col, draft)
+                get().navigateSelection(direction, maxRow, maxCol)
+            },
+
+            selectAll: (rowCount, colCount) => {
+                set({
+                    selection: singleRectSelection(
+                        { row: 1, col: 1 },
+                        {
+                            startRow: 1,
+                            endRow: Math.max(1, rowCount),
+                            startCol: 1,
+                            endCol: Math.max(1, colCount),
+                        },
+                        'sheet'
+                    ),
+                    editSession: null,
+                    pendingSelection: null,
+                })
+            },
+
             editCell: (cell, initialDraft = '') => {
                 if (deps.readOnly) return
                 const cursor = initialDraft.length
@@ -886,6 +957,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             cancelEdit: () => {
                 refs.lastRefSlice.current = null
                 set({ editSession: null, pendingSelection: null })
+                deps.focusSentinel()
             },
 
             clearCellAt: (row, col) => {

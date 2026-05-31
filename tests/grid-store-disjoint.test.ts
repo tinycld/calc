@@ -22,6 +22,8 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): GridStoreDeps {
         readOnly: opts.readOnly ?? false,
         writeCell: () => {},
         focusActiveInput: () => {},
+        focusSentinel: () => {},
+        scrollToCell: () => {},
         applyStructuralMutation: () => {},
         applyFill: () => {},
         resolveMergeAnchor: (row, col) => ({ row, col }),

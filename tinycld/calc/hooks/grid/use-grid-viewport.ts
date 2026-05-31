@@ -5,6 +5,13 @@ import type {
     NativeSyntheticEvent,
     ScrollView,
 } from 'react-native'
+
+export interface ViewportSnapshot {
+    scrollX: number
+    scrollY: number
+    width: number
+    height: number
+}
 import { OVERSCAN } from '../../components/grid/constants'
 import {
     firstColAtOffset,
@@ -28,6 +35,10 @@ export interface GridViewport {
     visible: GridVisibleWindow
     scrollX: number
     scrollY: number
+    // Always-current snapshot of scroll position and viewport size.
+    // Read this from imperative callbacks (e.g. scroll-to-ensure-visible)
+    // to avoid stale closure values.
+    snapshotRef: React.MutableRefObject<ViewportSnapshot>
     horizontalRef: React.RefObject<ScrollView | null>
     verticalRef: React.RefObject<ScrollView | null>
     headerScrollRef: React.RefObject<ScrollView | null>
@@ -99,6 +110,7 @@ export function useGridViewport({
     const leftColumnScrollRef = useRef<ScrollView>(null)
     const frozenRowHorizontalRef = useRef<ScrollView>(null)
     const frozenColVerticalRef = useRef<ScrollView>(null)
+    const snapshotRef = useRef<ViewportSnapshot>({ scrollX: 0, scrollY: 0, width: 0, height: 0 })
 
     useImperativeHandle(
         handleRef,
@@ -151,6 +163,7 @@ export function useGridViewport({
 
     const onHorizontalScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const x = e.nativeEvent.contentOffset.x
+        snapshotRef.current = { ...snapshotRef.current, scrollX: x }
         setViewport(v => (v.scrollX === x ? v : { ...v, scrollX: x }))
         // Mirror to the column header so it stays aligned with the body.
         // Using a ref + scrollTo (rather than absolute-positioning the
@@ -164,6 +177,7 @@ export function useGridViewport({
 
     const onVerticalScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const y = e.nativeEvent.contentOffset.y
+        snapshotRef.current = { ...snapshotRef.current, scrollY: y }
         setViewport(v => (v.scrollY === y ? v : { ...v, scrollY: y }))
         leftColumnScrollRef.current?.scrollTo({ y, animated: false })
         // Mirror to the bottom-left quadrant so frozen columns track
@@ -173,6 +187,7 @@ export function useGridViewport({
 
     const onBodyLayout = useCallback((e: LayoutChangeEvent) => {
         const { width, height } = e.nativeEvent.layout
+        snapshotRef.current = { ...snapshotRef.current, width, height }
         setViewport(v => (v.width === width && v.height === height ? v : { ...v, width, height }))
     }, [])
 
@@ -180,6 +195,7 @@ export function useGridViewport({
         visible,
         scrollX: viewport.scrollX,
         scrollY: viewport.scrollY,
+        snapshotRef,
         horizontalRef,
         verticalRef,
         headerScrollRef,

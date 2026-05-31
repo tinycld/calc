@@ -10,6 +10,7 @@ import {
     type TextInputSelectionChangeEventData,
     type View,
 } from 'react-native'
+import type { ArrowDirection } from '../../lib/cell-key-action'
 import { useCellMerge } from '../../hooks/use-cell-merge'
 import { useConditionalStyleForCell } from '../../hooks/use-conditional-style'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
@@ -249,6 +250,8 @@ export const Cell = memo(function Cell({
                 height={renderHeight}
                 row={row}
                 col={col}
+                maxRow={rowOffsets.length - 1}
+                maxCol={colOffsets.length - 1}
                 onSpecialKey={onSpecialKey}
             />
         )
@@ -382,16 +385,16 @@ export const Cell = memo(function Cell({
         if (readOnly) return
         const action = classifyCellKey(e)
         if (action.kind === 'ignore') return
-        if (action.kind === 'arrow') {
-            // Plan §6.c: arrow on a disjoint selection collapses to a
-            // single cell at the primary anchor. The focus traversal
-            // then continues normally so the neighbor cell takes
-            // focus. On a single-rectangle selection collapseToPrimary
-            // is a no-op when already single-cell; on a multi-cell
-            // rectangle it shrinks to the anchor — matches Sheets.
-            store.getState().collapseToPrimary()
-            // Don't preventDefault — the browser still needs to move
-            // focus to the neighbor cell.
+        if (action.kind === 'arrow' || action.kind === 'navigate') {
+            // Cells are absolute-positioned; there is no browser focus
+            // traversal between them. preventDefault to stop the page
+            // from scrolling, then move the selection explicitly.
+            e.preventDefault?.()
+            store.getState().navigateSelection(
+                action.direction,
+                rowOffsets.length - 1,
+                colOffsets.length - 1
+            )
             return
         }
         if (action.kind === 'extend') {
@@ -460,7 +463,7 @@ export const Cell = memo(function Cell({
                 ...rangeTintStyle,
                 ...renderStyle.viewStyle,
             }}
-            className="border-r border-b border-border bg-background justify-center px-1"
+            className="border-r border-b border-border bg-background justify-center px-1 web:outline-none"
             // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
             {...((webContextMenuProp ?? {}) as any)}
             // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
@@ -483,6 +486,8 @@ interface CellEditorProps {
     height: number
     row: number
     col: number
+    maxRow: number
+    maxCol: number
     onSpecialKey: (key: FormulaSpecialKey) => boolean
 }
 
@@ -494,6 +499,8 @@ function CellEditor({
     height,
     row,
     col,
+    maxRow,
+    maxCol,
     onSpecialKey,
 }: CellEditorProps) {
     const store = useGridStoreApi()
@@ -534,13 +541,52 @@ function CellEditor({
                 store.getState().cancelEdit()
                 return
             }
-            if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'Tab' || key === 'Enter') {
+            // Arrow keys: commit and move to adjacent cell.
+            // Up/Down check the suggestion popover first; Left/Right
+            // always navigate (no popover consumes them).
+            if (key === 'ArrowUp' || key === 'ArrowDown') {
                 if (onSpecialKey(key)) {
                     e.preventDefault?.()
+                    return
                 }
+                e.preventDefault?.()
+                const session = store.getState().editSession
+                if (session == null) return
+                const dir: ArrowDirection = key === 'ArrowUp' ? 'up' : 'down'
+                store.getState().commitAndNavigate(row, col, session.draft, dir, maxRow, maxCol)
+                return
+            }
+            if (key === 'ArrowLeft' || key === 'ArrowRight') {
+                e.preventDefault?.()
+                const session = store.getState().editSession
+                if (session == null) return
+                const dir: ArrowDirection = key === 'ArrowLeft' ? 'left' : 'right'
+                store.getState().commitAndNavigate(row, col, session.draft, dir, maxRow, maxCol)
+                return
+            }
+            if (key === 'Tab') {
+                if (onSpecialKey(key)) {
+                    e.preventDefault?.()
+                    return
+                }
+                e.preventDefault?.()
+                const session = store.getState().editSession
+                if (session == null) return
+                store.getState().commitAndNavigate(row, col, session.draft, 'right', maxRow, maxCol)
+                return
+            }
+            if (key === 'Enter') {
+                if (onSpecialKey(key)) {
+                    e.preventDefault?.()
+                    return
+                }
+                e.preventDefault?.()
+                const session = store.getState().editSession
+                if (session == null) return
+                store.getState().commitAndNavigate(row, col, session.draft, 'down', maxRow, maxCol)
             }
         },
-        [store, onSpecialKey]
+        [store, onSpecialKey, row, col, maxRow, maxCol]
     )
 
     return (
@@ -551,7 +597,6 @@ function CellEditor({
             selection={selection}
             onChangeText={onChangeText}
             onSelectionChange={onSelectionChange}
-            onSubmitEditing={onSubmit}
             onBlur={onSubmit}
             onFocus={onFocus}
             onKeyPress={onKeyPress}
@@ -566,6 +611,9 @@ function CellEditor({
                 fontSize: 12,
                 borderWidth: 2,
                 borderColor: '#22a06b',
+                // Suppress browser default focus ring — the green border
+                // is the only visual cue needed.
+                ...(Platform.OS === 'web' ? ({ outline: 'none' } as object) : null),
             }}
             className="bg-background text-foreground"
         />

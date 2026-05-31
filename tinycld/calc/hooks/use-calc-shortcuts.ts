@@ -21,6 +21,7 @@ export interface UseCalcShortcutsArgs {
     find: FindActions
     findStore: FindStoreApi
     readOnly?: boolean
+    onSelectAll: () => void
 }
 
 // Discriminated union over the predicate every shortcut needs. The
@@ -59,6 +60,7 @@ type ActionKind =
     | 'findOpenReplace'
     | 'findNext'
     | 'findPrev'
+    | 'selectAll'
 
 interface ShortcutEntry {
     id: string
@@ -241,6 +243,15 @@ const SHORTCUT_DOCS: readonly ShortcutEntry[] = [
         gate: 'findOpen',
         action: 'findPrev',
     },
+    {
+        id: 'calc.selection.selectAll',
+        keys: '$mod+a',
+        description: 'Select all cells',
+        group: 'Calc',
+        scope: 'global',
+        gate: 'editingClosed',
+        action: 'selectAll',
+    },
 ]
 
 // CalcShortcutDoc is the public shape the Keyboard shortcuts help
@@ -375,6 +386,8 @@ function actionFor(kind: ActionKind, args: UseCalcShortcutsArgs): () => void {
             return () => find.nextMatch()
         case 'findPrev':
             return () => find.prevMatch()
+        case 'selectAll':
+            return () => args.onSelectAll()
         default:
             return unreachable(kind)
     }
@@ -387,10 +400,11 @@ export function useCalcShortcuts({
     find,
     findStore,
     readOnly = false,
+    onSelectAll,
 }: UseCalcShortcutsArgs) {
     const shortcuts = useMemo<Shortcut[]>(
-        () => buildCalcShortcuts({ store, clipboard, format, find, findStore, readOnly }),
-        [store, clipboard, format, find, findStore, readOnly]
+        () => buildCalcShortcuts({ store, clipboard, format, find, findStore, readOnly, onSelectAll }),
+        [store, clipboard, format, find, findStore, readOnly, onSelectAll]
     )
 
     useRegisterShortcuts(shortcuts)

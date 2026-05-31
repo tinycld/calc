@@ -1,5 +1,5 @@
-import { forwardRef, useCallback, useMemo } from 'react'
-import { type LayoutChangeEvent, View } from 'react-native'
+import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
+import { type LayoutChangeEvent, Platform, View } from 'react-native'
 import { useFindActions } from '../hooks/find/use-find-actions'
 import { createFindStore } from '../hooks/find/use-find-store'
 import { FindStoreProvider, useFindStoreApi } from '../hooks/find/use-find-store-context'
@@ -32,9 +32,10 @@ import { useWorkbook } from '../hooks/use-workbook-context'
 import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { rangeToSheetRelativeA1 } from '../lib/conditional-format/a1'
+import { classifyCellKey } from '../lib/cell-key-action'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { buildA1Range } from '../lib/pivot/range-parse'
-import { allRanges, unionBoundingBox } from '../lib/selection-range'
+import { allRanges, computeShiftArrowTarget, primaryAnchor, unionBoundingBox } from '../lib/selection-range'
 import { useConditionalFormatPanelStore } from '../lib/stores/conditional-format-panel-store'
 import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
 import { CalcCommentDrawer } from './comments/CalcCommentDrawer'
@@ -242,6 +243,96 @@ function GridInner({
     const colResize = useGridColumnResize({ doc, sheetId, sheet, readOnly })
     const rowResize = useGridRowResize({ doc, sheetId, sheet, readOnly })
 
+    // Wire the viewport's scroll-to-visible into the store so keyboard
+    // navigation (arrow keys, Enter) can bring the new cell into view.
+    // Use a stable ref container so the effect only runs when the
+    // offsets or the scroll refs change — not on every render.
+    const scrollCtxRef = useRef({ colOffsets, rowOffsets, viewport })
+    scrollCtxRef.current = { colOffsets, rowOffsets, viewport }
+    useEffect(() => {
+        instance.scrollToCellRef.current = (row: number, col: number) => {
+            const { colOffsets: co, rowOffsets: ro, viewport: vp } = scrollCtxRef.current
+            const snap = vp.snapshotRef.current
+            const cellLeft = co[Math.max(0, col - 1)] ?? 0
+            const cellRight = co[col] ?? cellLeft + 80
+            const cellTop = ro[Math.max(0, row - 1)] ?? 0
+            const cellBottom = ro[row] ?? cellTop + 24
+            let newScrollX = snap.scrollX
+            if (cellLeft < snap.scrollX) {
+                newScrollX = cellLeft
+            } else if (cellRight > snap.scrollX + snap.width) {
+                newScrollX = Math.max(0, cellRight - snap.width)
+            }
+            let newScrollY = snap.scrollY
+            if (cellTop < snap.scrollY) {
+                newScrollY = cellTop
+            } else if (cellBottom > snap.scrollY + snap.height) {
+                newScrollY = Math.max(0, cellBottom - snap.height)
+            }
+            if (newScrollX !== snap.scrollX) {
+                vp.horizontalRef.current?.scrollTo({ x: newScrollX, animated: false })
+            }
+            if (newScrollY !== snap.scrollY) {
+                vp.verticalRef.current?.scrollTo({ y: newScrollY, animated: false })
+            }
+        }
+    }, [instance.scrollToCellRef])
+
+    // Focus sentinel: a zero-size focusable div (web only) that captures
+    // keyboard events after editing ends. Without it, the TextInput unmounts
+    // and DOM focus lands on the body — the next keystroke does nothing.
+    const sentinelRef = useRef<View>(null)
+    useEffect(() => {
+        if (Platform.OS !== 'web') return
+        instance.focusSentinelRef.current = () => {
+            // biome-ignore lint/suspicious/noExplicitAny: web-only DOM focus call
+            ;(sentinelRef.current as any)?.focus?.()
+        }
+    }, [instance.focusSentinelRef])
+
+    const onSentinelKeyDown = useCallback(
+        (e: {
+            key: string
+            shiftKey: boolean
+            metaKey: boolean
+            ctrlKey: boolean
+            altKey: boolean
+            preventDefault: () => void
+        }) => {
+            if (readOnly) return
+            const state = instance.store.getState()
+            const anchor = primaryAnchor(state.selection)
+            if (anchor == null) return
+            const action = classifyCellKey(e)
+            if (action.kind === 'ignore') return
+            e.preventDefault()
+            const maxRow = rows - 1
+            const maxCol = cols - 1
+            if (action.kind === 'arrow' || action.kind === 'navigate') {
+                state.navigateSelection(action.direction, maxRow, maxCol)
+                return
+            }
+            if (action.kind === 'extend') {
+                const next = computeShiftArrowTarget(
+                    state.selection,
+                    action.direction,
+                    anchor.row,
+                    anchor.col,
+                    maxRow,
+                    maxCol
+                )
+                state.extendActiveRangeTo(next)
+                return
+            }
+            if (action.kind === 'clear') {
+                state.clearSelection()
+                return
+            }
+            state.editCell({ row: anchor.row, col: anchor.col }, action.seed)
+        },
+        [instance.store, readOnly, rows, cols]
+    )
+
     const presence = usePresence(awareness)
     const presenceOnSheet = useMemo(
         () => presence.filter(p => p.sheetId === sheetId),
@@ -329,6 +420,11 @@ function GridInner({
             onClearFormatting,
         ]
     )
+    const onSelectAll = useCallback(
+        () => instance.store.getState().selectAll(rows, cols),
+        [instance.store, rows, cols]
+    )
+
     useCalcShortcuts({
         store: instance.store,
         clipboard,
@@ -336,6 +432,7 @@ function GridInner({
         find: findActions,
         findStore,
         readOnly,
+        onSelectAll,
     })
 
     const csvDownload = useCsvDownload(doc, sheetId, sheets, sheet?.name)
@@ -435,6 +532,24 @@ function GridInner({
 
     return (
         <View className="flex-1 bg-background web:select-none">
+            {/* Focus sentinel: zero-size focusable element that holds keyboard
+                focus between edit sessions so arrow keys / typing work without
+                requiring a double-click to re-activate the grid. */}
+            {/* biome-ignore lint/suspicious/noExplicitAny: tabIndex + onKeyDown are web-only props */}
+            <View
+                ref={sentinelRef}
+                {...({
+                    tabIndex: -1,
+                    onKeyDown: onSentinelKeyDown,
+                    style: {
+                        position: 'absolute',
+                        width: 0,
+                        height: 0,
+                        overflow: 'hidden',
+                        outline: 'none',
+                    },
+                } as any)}
+            />
             <MenuBar
                 {...toolbarPropsBundle}
                 workbookId={driveItemId}

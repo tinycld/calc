@@ -25,6 +25,8 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
             readOnly: opts.readOnly ?? false,
             writeCell: () => {},
             focusActiveInput: () => {},
+            focusSentinel: () => {},
+            scrollToCell: () => {},
             applyStructuralMutation: () => {},
             applyFill,
             resolveMergeAnchor: (row, col) => ({ row, col }),

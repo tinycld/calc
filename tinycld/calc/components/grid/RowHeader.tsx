@@ -224,6 +224,12 @@ function appendRowHeaderCells(
                                   .getState()
                                   .openHeaderMenu('row', row, colCount, e.clientX, e.clientY)
                           },
+                          onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+                              if (e.key === 'Delete' || e.key === 'Backspace') {
+                                  e.preventDefault()
+                                  store.getState().clearSelection()
+                              }
+                          },
                       }
                     : null
             const onPlainPress = () => {
@@ -243,7 +249,7 @@ function appendRowHeaderCells(
                     onPress={onPlainPress}
                     onLongPress={onLongPress}
                     accessibilityLabel={`Select row ${row}`}
-                    className={`border-r border-b border-border items-center justify-center ${
+                    className={`border-r border-b border-border items-center justify-center web:outline-none ${
                         isActive ? 'bg-accent' : 'bg-surface-secondary'
                     }`}
                     style={{
