@@ -153,6 +153,65 @@ describe('FormulaBridge named ranges', () => {
         expect(list[0].range.expression).toBe(`='Top Line'!$A$1:$A$3`)
     })
 
+    it('evaluates a cell formula that uses a name present at bootstrap time', () => {
+        // Regression guard for the bootstrap ordering: when both the
+        // name and a dependent cell formula are already in the Y.Doc
+        // before bridge.start() runs, the cell must evaluate against
+        // the name (not yield #NAME?). bootstrapCells happens before
+        // bootstrapNamedRanges, so HF must recompute on
+        // addNamedExpression to make this pass.
+        const doc = new Y.Doc()
+        bootstrapYDocFromWorkbook(doc, emptySheet())
+        doc.transact(() => {
+            writeNamedRange(doc, { name: 'TaxRate', expression: '=0.2', scope: null })
+        }, LOCAL_ORIGIN)
+        setYCellTyped(doc, 'sheet1', 1, 1, {
+            kind: 'formula',
+            raw: null,
+            display: '=TaxRate*100',
+            formula: '=TaxRate*100',
+        })
+        const bridge = startBridge(doc)
+        try {
+            expect(readRaw(doc, 'sheet1', 1, 1)).toBe(20)
+        } finally {
+            bridge.stop()
+        }
+    })
+
+    it('fires valuesUpdated subscribers when underlying cells change', () => {
+        // Regression guard for useNamedRangePreview: the bridge must
+        // notify external subscribers after each recompute so the
+        // preview column in the Name Manager stays live as the user
+        // edits cells the name references.
+        const doc = new Y.Doc()
+        bootstrapYDocFromWorkbook(doc, emptySheet())
+        doc.transact(() => {
+            writeNamedRange(doc, {
+                name: 'Revenue',
+                expression: '=Sheet1!$A$1',
+                scope: null,
+            })
+        }, LOCAL_ORIGIN)
+        const bridge = startBridge(doc)
+        let tickCount = 0
+        const unsubscribe = bridge.subscribeToValuesUpdated(() => {
+            tickCount++
+        })
+        try {
+            setYCellTyped(doc, 'sheet1', 1, 1, { kind: 'number', raw: 100, display: '100' })
+            expect(tickCount).toBeGreaterThanOrEqual(1)
+            expect(bridge.getNamedExpressionValue('Revenue', null)).toBe(100)
+
+            setYCellTyped(doc, 'sheet1', 1, 1, { kind: 'number', raw: 250, display: '250' })
+            expect(tickCount).toBeGreaterThanOrEqual(2)
+            expect(bridge.getNamedExpressionValue('Revenue', null)).toBe(250)
+        } finally {
+            unsubscribe()
+            bridge.stop()
+        }
+    })
+
     it('drops sheet-scoped named ranges when the scope sheet is deleted', () => {
         const doc = new Y.Doc()
         bootstrapYDocFromWorkbook(doc, twoSheets())

@@ -4,9 +4,10 @@ import type * as Y from 'yjs'
 import { useGridStore, useGridStoreApi } from '../hooks/use-grid-store'
 import { useNamedRanges } from '../hooks/use-named-ranges'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
+import { encodeSheetName } from '../lib/named-ranges/sheet-prefix'
 import { validateName } from '../lib/named-ranges/y-binding'
 import { parseA1Range } from '../lib/pivot/range-parse'
-import { primaryAnchor } from '../lib/selection-range'
+import { primaryAnchor, type Selection } from '../lib/selection-range'
 import { useNamedRangesDialogStore } from '../lib/stores/named-ranges-dialog-store'
 import { columnLabel } from '../lib/workbook-types'
 
@@ -236,12 +237,10 @@ function NameMenu({ ranges, activeSheetId, onPickName, onClose, onManage }: Name
 // the display chip. Single cell → `B7`. Single rectangular range →
 // `B7:D12`. Disjoint or empty selection collapses to the active anchor
 // (the formula-bar chip already did the empty-case fallback before).
-function selectionAddressLabel(selection: ReturnType<typeof useGridStore> | unknown): string {
-    // biome-ignore lint/suspicious/noExplicitAny: selection comes from useGridStore selector
-    const sel = selection as any
-    const anchor = primaryAnchor(sel)
+function selectionAddressLabel(selection: Selection): string {
+    const anchor = primaryAnchor(selection)
     if (anchor == null) return ''
-    const range = sel?.ranges?.[sel.ranges.length - 1]?.range
+    const range = selection?.ranges[selection.ranges.length - 1]?.range
     if (range == null) return `${columnLabel(anchor.col)}${anchor.row}`
     if (range.startRow === range.endRow && range.startCol === range.endCol) {
         return `${columnLabel(range.startCol)}${range.startRow}`
@@ -253,13 +252,11 @@ function selectionAddressLabel(selection: ReturnType<typeof useGridStore> | unkn
 // qualified absolute A1 reference suitable for use as a named-range
 // expression. Single cell → `=Sheet1!$B$7`, range → `=Sheet1!$B$7:$D$12`.
 // Returns null when the selection has no anchor.
-function selectionToExpression(selection: unknown, activeSheetName: string): string | null {
-    // biome-ignore lint/suspicious/noExplicitAny: selection comes from useGridStore selector
-    const sel = selection as any
-    const anchor = primaryAnchor(sel)
+function selectionToExpression(selection: Selection, activeSheetName: string): string | null {
+    const anchor = primaryAnchor(selection)
     if (anchor == null) return null
-    const range = sel?.ranges?.[sel.ranges.length - 1]?.range
-    const sheet = quoteSheetIfNeeded(activeSheetName)
+    const range = selection?.ranges[selection.ranges.length - 1]?.range
+    const sheet = encodeSheetName(activeSheetName)
     if (range == null) {
         return `=${sheet}!$${columnLabel(anchor.col)}$${anchor.row}`
     }
@@ -269,11 +266,6 @@ function selectionToExpression(selection: unknown, activeSheetName: string): str
     return `=${sheet}!$${columnLabel(range.startCol)}$${range.startRow}:$${columnLabel(
         range.endCol
     )}$${range.endRow}`
-}
-
-function quoteSheetIfNeeded(name: string): string {
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return name
-    return `'${name.replace(/'/g, "''")}'`
 }
 
 // normalizeExpression compares two A1 reference strings up to absolute

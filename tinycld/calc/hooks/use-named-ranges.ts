@@ -15,6 +15,11 @@ import {
 } from '../lib/named-ranges/y-binding'
 import { NAMED_RANGES_MAP } from '../lib/y-doc-bootstrap'
 
+// Sentinel returned by useNamedRangePreview's getSnapshot when the
+// bridge isn't ready yet. Identity-stable so useSyncExternalStore
+// doesn't loop on `undefined`.
+const PREVIEW_UNREADY: { value: unknown } = { value: undefined }
+
 export interface NamedRangeEntry {
     key: NamedRangeKey
     range: NamedRange
@@ -52,25 +57,47 @@ export function useNamedRanges(doc: Y.Doc | null): NamedRangeEntry[] {
 
 // useNamedRangePreview returns the live evaluated value of a named
 // range, or undefined when the bridge hasn't started yet / the name is
-// unknown to HF. Re-derives every render — the value already updates
-// whenever the bridge writes a result back into the doc (the formula
-// observers tick this hook indirectly via React's normal render cycle).
+// unknown to HF. Subscribes to FormulaBridge's valuesUpdated emitter so
+// the preview re-reads whenever HF recomputes — covering both name
+// edits and changes to the cells the name references.
 export function useNamedRangePreview(
     doc: Y.Doc | null,
     name: string,
-    scope: string | null,
-    // Token that changes whenever the doc mutates — the consumer passes
-    // a tick from useNamedRanges (or any cell-observer) so the preview
-    // re-reads when underlying data changes.
-    refreshToken: unknown
+    scope: string | null
 ): unknown {
-    // biome-ignore lint/correctness/useExhaustiveDependencies: refreshToken is intentionally part of the dep array so the memo re-runs when the caller's "anything-changed" tick mutates, even though refreshToken itself isn't referenced inside the callback.
-    return useMemo(() => {
+    // Cache the last snapshot per (name, scope) so getSnapshot returns
+    // a stable value when nothing has changed (useSyncExternalStore
+    // re-renders on referential inequality).
+    const snapshotRef = useRef<{ name: string; scope: string | null; value: unknown }>({
+        name: '',
+        scope: null,
+        value: undefined,
+    })
+
+    const subscribe = useCallback(
+        (onChange: () => void) => {
+            if (doc == null) return () => {}
+            const bridge = getFormulaBridge(doc)
+            if (bridge == null) return () => {}
+            return bridge.subscribeToValuesUpdated(onChange)
+        },
+        [doc]
+    )
+
+    const getSnapshot = useCallback((): unknown => {
         if (doc == null) return undefined
         const bridge = getFormulaBridge(doc)
-        if (bridge == null) return undefined
-        return bridge.getNamedExpressionValue(name, scope)
-    }, [doc, name, scope, refreshToken])
+        if (bridge == null) return PREVIEW_UNREADY.value
+        const next = bridge.getNamedExpressionValue(name, scope)
+        const prev = snapshotRef.current
+        if (prev.name === name && prev.scope === scope && Object.is(prev.value, next)) {
+            return prev.value
+        }
+        snapshotRef.current = { name, scope, value: next }
+        return next
+    }, [doc, name, scope])
+
+    return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 export interface NamedRangeMutations {

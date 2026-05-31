@@ -11,6 +11,7 @@ import { useYSheets } from '../../hooks/use-y-sheets'
 import { rangeToSheetRelativeA1 } from '../../lib/conditional-format/a1'
 import { anyRuleOverlapsRect } from '../../lib/conditional-format/range-index'
 import { applyValuesFilterFromSelection, clearFilter } from '../../lib/filter'
+import { encodeSheetName } from '../../lib/named-ranges/sheet-prefix'
 import { pluralize } from '../../lib/pluralize'
 import {
     allRanges,
@@ -234,7 +235,7 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
             onClose()
             return
         }
-        const sheetPrefix = quoteSheetIfNeeded(activeSheetName)
+        const sheetPrefix = encodeSheetName(activeSheetName)
         const sameCell = range.startRow === range.endRow && range.startCol === range.endCol
         const expression = sameCell
             ? `=${sheetPrefix}!$${columnLabel(range.startCol)}$${range.startRow}`
@@ -416,9 +417,4 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
             </Menu.Portal>
         </Menu>
     )
-}
-
-function quoteSheetIfNeeded(name: string): string {
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return name
-    return `'${name.replace(/'/g, "''")}'`
 }

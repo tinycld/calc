@@ -69,7 +69,6 @@ export function NamedRangesList({ doc, onEdit, onCreate }: NamedRangesListProps)
                                     ? 'Workbook'
                                     : sheetNameById(entry.range.scope)
                             }
-                            ticker={ranges}
                             onEdit={() => onEdit(entry.key)}
                             onAskDelete={() => setPendingDelete(entry.key)}
                             confirmingDelete={pendingDelete === entry.key}
@@ -87,11 +86,6 @@ interface NamedRangeRowProps {
     doc: Y.Doc | null
     entry: NamedRangeEntry
     scopeLabel: string
-    // Identity ticker — any token whose identity changes when the
-    // named-range list changes. Passed straight through to
-    // useNamedRangePreview so the row's preview refreshes when an
-    // upstream cell mutates.
-    ticker: unknown
     onEdit: () => void
     onAskDelete: () => void
     confirmingDelete: boolean
@@ -103,14 +97,13 @@ function NamedRangeRow({
     doc,
     entry,
     scopeLabel,
-    ticker,
     onEdit,
     onAskDelete,
     confirmingDelete,
     onConfirmDelete,
     onCancelDelete,
 }: NamedRangeRowProps) {
-    const previewValue = useNamedRangePreview(doc, entry.range.name, entry.range.scope, ticker)
+    const previewValue = useNamedRangePreview(doc, entry.range.name, entry.range.scope)
     const previewLabel = formatPreview(previewValue)
 
     return (

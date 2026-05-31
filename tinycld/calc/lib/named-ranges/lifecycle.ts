@@ -5,6 +5,7 @@
 
 import * as Y from 'yjs'
 import { NAMED_RANGES_MAP } from '../y-doc-bootstrap'
+import { encodeSheetPrefix } from './sheet-prefix'
 import { readNamedRange } from './y-binding'
 
 // propagateNamedRangeSheetRename rewrites every named range's
@@ -162,13 +163,4 @@ function isA1Start(input: string, pos: number): boolean {
     if (input[p] === '$') p++
     if (p >= input.length || !/\d/.test(input[p])) return false
     return true
-}
-
-// encodeSheetPrefix returns the bytes for `<name>!` in the form that
-// suits the name: unquoted when it matches the A-Z_/digit identifier
-// class, quoted otherwise (with `''` as the embedded-apostrophe
-// escape).
-function encodeSheetPrefix(name: string): string {
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return `${name}!`
-    return `'${name.replace(/'/g, "''")}'!`
 }

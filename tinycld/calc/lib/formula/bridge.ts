@@ -1,3 +1,4 @@
+import { captureException } from '@tinycld/core/lib/errors'
 import type {
     ExportedCellChange,
     HyperFormula,
@@ -60,6 +61,12 @@ export class FormulaBridge {
         | ((events: Y.YEvent<Y.AbstractType<unknown>>[], txn: Y.Transaction) => void)
         | null = null
     private valuesUpdatedHandler: ((changes: readonly unknown[]) => void) | null = null
+    // External subscribers that want to react to HF recompute events
+    // (e.g. the Name Manager preview reading getNamedExpressionValue).
+    // The bridge already attaches its own valuesUpdated handler to
+    // write cell results back into the doc; subscribers run after that
+    // writeback so they observe up-to-date HF state.
+    private readonly valuesUpdatedSubscribers: Set<() => void> = new Set()
 
     constructor(doc: Y.Doc, hf: HyperFormula) {
         this.doc = doc
@@ -209,6 +216,19 @@ export class FormulaBridge {
         // version counter and re-evaluate on the next render. Cheap:
         // the cells without CF rules don't subscribe.
         bumpConditionalFormatVersion()
+        // Fan out to external subscribers (e.g. Name Manager preview).
+        for (const fn of this.valuesUpdatedSubscribers) fn()
+    }
+
+    // subscribeToValuesUpdated registers a callback that fires after
+    // every HF recompute. Returns an unsubscribe fn. Used by the Name
+    // Manager preview to re-read getNamedExpressionValue when the
+    // underlying cells change.
+    subscribeToValuesUpdated(fn: () => void): () => void {
+        this.valuesUpdatedSubscribers.add(fn)
+        return () => {
+            this.valuesUpdatedSubscribers.delete(fn)
+        }
     }
 
     // bootstrapNamedRanges walks the doc's NAMED_RANGES_MAP and feeds
@@ -229,10 +249,17 @@ export class FormulaBridge {
                     expression: range.expression,
                     scope: range.scope,
                 })
-            } catch {
+            } catch (err) {
                 // HF rejects invalid names / expressions. Skip rather
                 // than crash the bridge — the manager UI surfaces the
-                // problem the next time the user edits the name.
+                // problem the next time the user edits the name —
+                // but log it so we notice when a class of expressions
+                // is silently breaking in production.
+                captureException('calc.namedRanges.bootstrap', err, {
+                    name: range.name,
+                    expression: range.expression,
+                    scope: range.scope,
+                })
             }
         }
     }
@@ -246,7 +273,9 @@ export class FormulaBridge {
 
     // getNamedExpressionValue returns the current evaluated value of a
     // named expression, or undefined when HF has no entry. Used by the
-    // Name Manager dialog's value-preview column.
+    // Name Manager dialog's value-preview column. Errors here are
+    // expected during the brief window between observer fire and HF
+    // reconcile, so we swallow without logging.
     getNamedExpressionValue(name: string, scopeSheetId: string | null): unknown {
         const scope = this.resolveNamedRangeScope(scopeSheetId)
         if (scopeSheetId != null && scope == null) return undefined
@@ -265,7 +294,9 @@ export class FormulaBridge {
     // Constants (e.g. `0.085` or `Quarterly`) and quoted strings are
     // legal as named-expression values but NOT as formulas — the
     // dialog accepts them by skipping this check when the user's input
-    // doesn't start with `=`.
+    // doesn't start with `=`. A throw here means the user typed
+    // something HF couldn't parse; surfaced as a form-field error, not
+    // a Sentry event.
     validateFormula(formula: string): boolean {
         try {
             return this.hf.validateFormula(formula)
@@ -412,14 +443,11 @@ export class FormulaBridge {
         if (entry == null) {
             // Removed in the doc — drop from HF too.
             if (previous != null) {
-                try {
-                    this.hf.removeNamedExpression(
-                        previous.name,
-                        this.resolveNamedRangeScope(previous.scope) ?? undefined
-                    )
-                } catch {
-                    // Already absent, or scope sheet was deleted — fine.
-                }
+                tryRemoveNamedExpression(
+                    this.hf,
+                    previous.name,
+                    this.resolveNamedRangeScope(previous.scope) ?? undefined
+                )
                 this.syncedNames.delete(key)
             }
             return
@@ -433,12 +461,11 @@ export class FormulaBridge {
             // Scope sheet no longer exists. Drop from HF; the doc
             // entry survives so the user can re-scope it.
             if (previous != null) {
-                try {
-                    this.hf.removeNamedExpression(
-                        previous.name,
-                        this.resolveNamedRangeScope(previous.scope) ?? undefined
-                    )
-                } catch {}
+                tryRemoveNamedExpression(
+                    this.hf,
+                    previous.name,
+                    this.resolveNamedRangeScope(previous.scope) ?? undefined
+                )
                 this.syncedNames.delete(key)
             }
             return
@@ -455,18 +482,23 @@ export class FormulaBridge {
                     expression: range.expression,
                     scope: range.scope,
                 })
-            } catch {}
+            } catch (err) {
+                captureException('calc.namedRanges.reconcile.add', err, {
+                    name: range.name,
+                    expression: range.expression,
+                    scope: range.scope,
+                })
+            }
             return
         }
         const nameChanged = previous.name !== range.name
         const scopeChanged = previous.scope !== range.scope
         if (nameChanged || scopeChanged) {
-            try {
-                this.hf.removeNamedExpression(
-                    previous.name,
-                    this.resolveNamedRangeScope(previous.scope) ?? undefined
-                )
-            } catch {}
+            tryRemoveNamedExpression(
+                this.hf,
+                previous.name,
+                this.resolveNamedRangeScope(previous.scope) ?? undefined
+            )
             try {
                 this.hf.addNamedExpression(range.name, range.expression, scopeId ?? undefined)
                 this.syncedNames.set(key, {
@@ -474,7 +506,15 @@ export class FormulaBridge {
                     expression: range.expression,
                     scope: range.scope,
                 })
-            } catch {}
+            } catch (err) {
+                captureException('calc.namedRanges.reconcile.rename', err, {
+                    name: range.name,
+                    expression: range.expression,
+                    scope: range.scope,
+                    previousName: previous.name,
+                    previousScope: previous.scope,
+                })
+            }
             return
         }
         if (previous.expression !== range.expression) {
@@ -485,7 +525,13 @@ export class FormulaBridge {
                     expression: range.expression,
                     scope: range.scope,
                 })
-            } catch {}
+            } catch (err) {
+                captureException('calc.namedRanges.reconcile.change', err, {
+                    name: range.name,
+                    expression: range.expression,
+                    scope: range.scope,
+                })
+            }
         }
     }
 
@@ -500,6 +546,25 @@ export class FormulaBridge {
         const hfValue = hfInputForCell(value)
         const address: SimpleCellAddress = { sheet: hfId, row: parsed.row - 1, col: parsed.col - 1 }
         this.hf.setCellContents(address, hfValue)
+    }
+}
+
+// tryRemoveNamedExpression wraps hf.removeNamedExpression with a
+// captureException for unexpected throws. A throw means HF doesn't
+// have the entry — this happens legitimately when a scope sheet was
+// just deleted, when the bridge is reconciling after a remote-peer
+// merge, etc. Routine "already absent" cases throw cheap errors that
+// we'd rather not page on, so we filter on the message.
+function tryRemoveNamedExpression(hf: HyperFormula, name: string, scope: number | undefined): void {
+    try {
+        hf.removeNamedExpression(name, scope)
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        // HF throws NamedExpressionDoesNotExistError for the no-op case.
+        // The class name shows up in the message — gate on it so genuine
+        // failures still surface.
+        if (/NamedExpressionDoesNotExist|does not exist/i.test(message)) return
+        captureException('calc.namedRanges.remove', err, { name, scope })
     }
 }
 
