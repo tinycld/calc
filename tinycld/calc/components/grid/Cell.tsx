@@ -10,13 +10,13 @@ import {
     type TextInputSelectionChangeEventData,
     type View,
 } from 'react-native'
-import type { ArrowDirection } from '../../lib/cell-key-action'
 import { useCellMerge } from '../../hooks/use-cell-merge'
 import { useConditionalStyleForCell } from '../../hooks/use-conditional-style'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
 import { useWorkbook } from '../../hooks/use-workbook-context'
 import { useYCell } from '../../hooks/use-y-cell'
+import type { ArrowDirection } from '../../lib/cell-key-action'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
 import { cellStyleToRenderProps, mergeCellStyles } from '../../lib/cell-style-render'
 import { computeShiftArrowTarget, containsAny, primaryAnchor } from '../../lib/selection-range'
@@ -390,11 +390,9 @@ export const Cell = memo(function Cell({
             // traversal between them. preventDefault to stop the page
             // from scrolling, then move the selection explicitly.
             e.preventDefault?.()
-            store.getState().navigateSelection(
-                action.direction,
-                rowOffsets.length - 1,
-                colOffsets.length - 1
-            )
+            store
+                .getState()
+                .navigateSelection(action.direction, rowOffsets.length - 1, colOffsets.length - 1)
             return
         }
         if (action.kind === 'extend') {

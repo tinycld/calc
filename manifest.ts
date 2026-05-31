@@ -16,6 +16,7 @@ const manifest = {
     collections: { register: 'collections', types: 'types' },
     seed: { script: 'seed' },
     server: { package: 'server', module: 'tinycld.org/packages/calc' },
+    repository: { url: 'https://github.com/tinycld/calc' },
     dependencies: ['drive'],
 }
 

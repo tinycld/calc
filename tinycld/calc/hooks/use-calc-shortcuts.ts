@@ -403,7 +403,16 @@ export function useCalcShortcuts({
     onSelectAll,
 }: UseCalcShortcutsArgs) {
     const shortcuts = useMemo<Shortcut[]>(
-        () => buildCalcShortcuts({ store, clipboard, format, find, findStore, readOnly, onSelectAll }),
+        () =>
+            buildCalcShortcuts({
+                store,
+                clipboard,
+                format,
+                find,
+                findStore,
+                readOnly,
+                onSelectAll,
+            }),
         [store, clipboard, format, find, findStore, readOnly, onSelectAll]
     )
 
