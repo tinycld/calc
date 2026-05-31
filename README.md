@@ -2,34 +2,100 @@
 
 Spreadsheets for your organization.
 
-A feature package for the [tinycld](https://github.com/tinycld/tinycld)
-ecosystem. Lives as a standalone git repo alongside the
-[`tinycld`](https://github.com/tinycld/tinycld) app shell and other sibling
-packages (`contacts`, `mail`, `calendar`, `drive`,
-`google-takeout-import`). The app shell bundles `@tinycld/core` inside it
-— there is no separate core repo to clone.
+A feature package for the [tinycld](https://tinycld.org/) ecosystem.
+Lives as a standalone git repo alongside the [tinycld
+app](https://github.com/tinycld/app) and other sibling packages
+(`contacts`, `mail`, `calendar`, `drive`, `text`,
+`google-takeout-import`). `@tinycld/core` is its own standalone repo,
+not bundled inside the app shell.
 
 ## What it does
 
 Stores spreadsheets as `.xlsx` files in `@tinycld/drive` and edits them
 collaboratively. Workbooks open from the drive UI (calc registers an xlsx
-preview + an "Open in Calc" file action) or from the dedicated `/a/<org>/calc`
-index. The grid handles cell editing, formulas (via HyperFormula), styling
-(font, fill, alignment, borders, number formats), structural mutations (insert
-/ delete rows and columns, with formula-reference rewriting), copy / cut /
-paste with marching-ants cut indicator, fill-handle series detection, column /
-row resize, undo / redo, per-cell threaded comments, live presence
-(cursors, selections, who's-editing-what), sort and filter, conditional
-formatting (`lib/conditional-format/`), pivot tables (`lib/pivot/`),
-per-sheet tab color and hidden-sheet support, CSV import / export
-(`lib/csv/`), and print (`lib/print/`, with a dedicated render
-pipeline that paginates the active sheet for the browser / iOS print
-sheet).
+preview + an "Open in Calc" file action) or from the dedicated
+`/a/<org>/calc` index.
 
-Calc depends on `@tinycld/drive` — the drive_item record is the spreadsheet's
-identity, the drive share rules govern who can open the room, and the xlsx
-blob attached to the drive_item is the source of truth that survives across
-sessions.
+Editing features:
+
+- Cell editing — type to enter, double-click to edit in place, Enter /
+  Tab navigation, ⌘Z / ⌘⇧Z undo + redo backed by `Y.UndoManager`
+- Formulas via **HyperFormula** running client-side, with formula-bar
+  editing, autocomplete by function name, the full HyperFormula
+  function set surfaced through **Help → Function list**, and a
+  rewrite layer that keeps cross-sheet refs and inserted/deleted rows
+  and columns in sync (`lib/formula/`)
+- Cell formatting — font (family / size / color), fill color, text
+  styles (**bold / italic / underline / strike**), horizontal
+  alignment, per-edge borders with presets, and a clear-formatting
+  shortcut (⌘\)
+- Number formats — preset registry (currency, percent, decimal
+  stepper, date / time, custom) backed by `numfmt` (`lib/number-format/`)
+- Structural mutations — insert / delete rows and columns, merge
+  cells, column / row resize (drag the gridline; double-click to
+  auto-fit), per-sheet tab color, hide / unhide sheets, freeze panes
+  (rows / columns / up to selection)
+- Copy / cut / paste with a **marching-ants cut overlay**, paste
+  special (**Values only** / **Format only**), and TSV / HTML
+  clipboard codecs that round-trip with Excel and Sheets
+  (`lib/clipboard/`)
+- **Fill handle** — drag the selected range's corner to extend a
+  series; the detector (`lib/fill/detect-series.ts`) handles linear
+  numeric, date, and weekday patterns; live shift-toggle mid-drag
+  switches between extend and overwrite on web
+- Sort and filter — single- or multi-column sort, filter banner with
+  per-column predicates (`lib/sort.ts`, `lib/filter.ts`)
+- **Conditional formatting** — rule-based cell highlighting
+  (`lib/conditional-format/`); rules round-trip through the xlsx
+  conditional-format XML on save
+- **Pivot tables** — toolbar **Insert pivot table** button pre-fills
+  the dialog with the current selection; rows / columns / values /
+  filters fields, per-filter selections, grand-total + subtotal
+  toggles. The pivot definition lives in a dedicated `pivots` Y.Map;
+  the materialized output range lives in the target sheet's cells
+  (`lib/pivot/`)
+- Per-cell **threaded comments** (`useCellComments`,
+  `CommentPopover`, `CommentIndicator`), persisted in PocketBase and
+  written to the xlsx as classic cell notes on save
+- **Live presence** — peer cursors, selections, and "who's editing
+  this cell" through Yjs awareness
+- Find and replace (`FindReplaceDialog`) — match scope, case
+  sensitivity, replace one / replace all
+- CSV import (with a preview dialog so you can check the delimiter
+  before committing) and CSV export, per active sheet or every sheet
+  (`lib/csv/`)
+- **Save version** — snapshots the current xlsx + Yjs state into a
+  `drive_item_versions` row so a named state can be restored later
+  from Drive's version history
+- File actions — **New spreadsheet**, **Open**, **Make a copy**,
+  **Share** (Drive's share dialog rendered inside the editor),
+  **Rename**, **Move to trash**, **Details**. The Share dialog is
+  gated on `capabilities.canUseFileActions` so guest / anon
+  share-link visitors don't see it.
+- **Print** (`lib/print/`) — dedicated render pipeline that
+  paginates the active sheet for browser print on web and the iOS
+  print sheet on iPad
+- iOS **soft-keyboard accessory** — Tab / Enter / Esc / ▲ / ▼ / fx
+  buttons that sit above the keyboard on iPad
+  (`KeyboardAccessoryHost.ios.tsx`,
+  `FormulaBarKeyboardAccessory.tsx`)
+- Landing panel (**No-File panel**) — when the workspace has no
+  last-opened workbook, the rail surfaces **New sheet** / **Upload
+  files** / **Recent files**; otherwise the rail deep-links straight
+  back to the most recent spreadsheet
+- Anonymous share links — viewer / commentor anon visitors land
+  read-only with the editor mounted; the server resolves the
+  read-only flag once at connect time and the broker's write
+  predicate gates every inbound frame so a stale or spoofed client
+  can't write
+- **Read-only enforcement** — viewer / commentor roles see the
+  editor in read-only form; menus that would mutate the workbook
+  disable as a group rather than per-item
+
+Calc depends on `@tinycld/drive` — the drive_item record is the
+spreadsheet's identity, the drive share rules govern who can open the
+room, and the xlsx blob attached to the drive_item is the source of
+truth that survives across sessions.
 
 ## Platform support
 
@@ -426,51 +492,51 @@ tinycld/calc/
 ## Development
 
 ```sh
-# Clone the app shell and this package as siblings
-cd ~/code/tinycld
-git clone git@github.com:tinycld/tinycld.git
-git clone git@github.com:tinycld/calc.git
+# Assemble a workspace with this package + its dependency (drive).
+mkdir ~/code/tinycld && cd ~/code/tinycld
+npx @tinycld/bootstrap@latest --assemble-only --with calc
 
-# Install deps in the app shell
-cd tinycld
-pnpm install
-
-# Link this package (and its dependency, @tinycld/drive) into the app shell
-pnpm run packages:link ../drive
-pnpm run packages:link ../calc
+# Install at the workspace root (the generator runs as postinstall).
+npm install
 
 # Run the full stack
-pnpm run dev
+cd app && npm run dev
 ```
 
 ## Standalone checks
 
-From this directory, with `node_modules` symlinked to `../tinycld/node_modules`:
+Run quality checks from inside this package via the workspace-installed
+`tinycld-pkg` CLI:
 
 ```sh
-ln -s ../tinycld/node_modules node_modules
-
-pnpm run lint        # biome (config lives in the app shell)
+cd ~/code/tinycld/calc
+npx tinycld-pkg check     # typecheck + vitest (scoped to this package)
+npx tinycld-pkg test      # vitest only
+npx tinycld-pkg test:e2e  # Playwright for this package
+npx tinycld-pkg typecheck # tsc only
 ```
 
-Typechecking is best done from inside `tinycld/` after this package is linked
-in — the app shell's tsconfig pulls in `expo`'s base config, `uniwind` type
-augments, and the live `~/types/pbSchema` generated from PocketBase, none of
-which a standalone `tsc` invocation in this package can see:
+For an ecosystem-wide sweep, run from the workspace's `app/` directory:
 
 ```sh
-cd ../tinycld
-pnpm run typecheck
-pnpm run test:unit       # vitest, including this package's tests/
-pnpm run test:go         # go test on this package's server/
+cd ~/code/tinycld/app
+npm run lint        # biome over the whole workspace
+npm run pkg:check   # typecheck + unit across every present member
+npm run pkg:test:e2e  # Playwright across every present member
 ```
+
+Biome lives only in `app/` and is the single config for the whole
+ecosystem. This repo intentionally ships no `biome.json` of its own.
 
 ## CI
 
-`.github/workflows/ci.yml` runs lint, typecheck, and vitest on every push to
-`main` and every PR. It clones `tinycld/tinycld@main` into a sibling
-directory, installs the app shell's deps, links this package in, and runs
-the checks — exactly what a developer does locally.
+`.github/workflows/ci.yml` runs typecheck, unit tests, Go tests, and
+end-to-end Playwright specs on every push to `main` and every PR. It
+checks out the workspace meta-repo (`tinycld/workspace`), puts this
+package into its workspace slot, runs `bootstrap --assemble-only` to
+clone app + core + drive as siblings, installs at the workspace root,
+and invokes `tinycld-pkg check` / `tinycld-pkg test:e2e` from inside
+this package — exactly what a developer does locally.
 
 ## Package anatomy
 
