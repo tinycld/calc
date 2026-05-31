@@ -81,3 +81,16 @@ jobs:
       - name: E2E
         working-directory: ws/${{ env.PACKAGE }}
         run: npx tinycld-pkg test:e2e
+      # Capture Playwright's per-failure artifacts (trace, screenshot,
+      # video, error-context.md) so a CI failure can be diagnosed
+      # without a re-run. `if: failure()` skips the upload on green
+      # runs to save bandwidth + retention.
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            ws/${{ env.PACKAGE }}/test-results/
+            ws/${{ env.PACKAGE }}/playwright-report/
+          retention-days: 14
