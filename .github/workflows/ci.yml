@@ -80,6 +80,11 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: E2E
         working-directory: ws/${{ env.PACKAGE }}
+        env:
+          # Pre-warm calc's lazy screen chunk in globalSetup so the
+          # first test per worker doesn't race the cold Metro compile.
+          # See tinycld/app#18.
+          TINYCLD_WARM_PACKAGES: calc
         run: npx tinycld-pkg test:e2e
       # Capture Playwright's per-failure artifacts (trace, screenshot,
       # video, error-context.md) so a CI failure can be diagnosed
