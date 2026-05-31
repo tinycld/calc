@@ -1,4 +1,5 @@
 import { eq } from '@tanstack/db'
+import { DocumentTitle } from '@tinycld/core/components/DocumentTitle'
 import { useAuth } from '@tinycld/core/lib/auth'
 import { type EditorMount, EditorMountProvider } from '@tinycld/core/lib/editor/editor-mount'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
@@ -45,6 +46,7 @@ export function CalcEditorFromMount({
 
     return (
         <EditorMountProvider value={mount}>
+            <DocumentTitle pkg="Calc" title={mount.itemName} />
             <WorkbookProvider
                 doc={room.doc}
                 awareness={room.awareness}

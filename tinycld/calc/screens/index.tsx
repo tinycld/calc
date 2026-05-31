@@ -1,3 +1,4 @@
+import { DocumentTitle } from '@tinycld/core/components/DocumentTitle'
 import { captureException } from '@tinycld/core/lib/errors'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useToastStore } from '@tinycld/core/lib/stores/toast-store'
@@ -60,6 +61,7 @@ export default function CalcIndex() {
 
     return (
         <>
+            <DocumentTitle pkg="Calc" />
             <NoFilePanel
                 headline="A fresh sheet."
                 sublabel="Where the next idea lands."
