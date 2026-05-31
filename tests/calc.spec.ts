@@ -16,7 +16,11 @@ test.describe('Calc', () => {
         await page.goto(`/a/${ORG_SLUG}/drive/recent`)
         await page.getByText('Team Scorecard.xlsx').click()
 
-        await expect(page.getByText('Name', { exact: true })).toBeVisible()
+        // Header row mounts as the xlsx parse + grid hydration completes.
+        // First header expectation absorbs the slow path (CI under load
+        // takes longer than the default 5s); subsequent checks default-
+        // timeout once the grid is up.
+        await expect(page.getByText('Name', { exact: true })).toBeVisible({ timeout: 15_000 })
         await expect(page.getByText('Role', { exact: true })).toBeVisible()
         await expect(page.getByText('Score', { exact: true })).toBeVisible()
 
@@ -1682,7 +1686,12 @@ test.describe('Calc CSV import/export', () => {
 
     test('Import CSV creates a new spreadsheet from the file picker', async ({ page }) => {
         await navigateToPackage(page, 'calc')
-        await expect(page.getByRole('heading', { level: 2, name: 'Calc' }).first()).toBeVisible({
+        // Wait for the No-File panel headline — the calc index renders it
+        // (with 'A fresh sheet.') as the entry point that hosts the
+        // Import CSV button.
+        await expect(
+            page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })
+        ).toBeVisible({
             timeout: 30_000,
         })
 
