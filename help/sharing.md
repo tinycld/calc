@@ -20,7 +20,7 @@ Click **Send**. The spreadsheet appears in their **Shared with me** section in D
 
 ## Generating a public link
 
-To share with someone outside your org — or anyone without an account — use **Get link**. The dialog generates a tokenized URL of the form `https://<your-instance>/share/<token>` that opens the spreadsheet directly, no sign-in required. You choose what the link grants:
+To share with someone outside your org — or anyone without an account — use **Get link**. The dialog generates a tokenized URL of the form `https://<your-instance>/p/drive/share/<token>` that opens the spreadsheet directly, no sign-in required. You choose what the link grants:
 
 - **Viewer** — read-only, no comments, no sign-in.
 - **Commentor** — read-only, but the visitor can leave comments on cells after a one-time email verification (OTP).
