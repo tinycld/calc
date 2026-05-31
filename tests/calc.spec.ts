@@ -28,13 +28,16 @@ test.describe('Calc', () => {
         // between cells can exceed the default 5s, so each header gets
         // its own generous timeout instead of relying on the first one
         // to land all three in the same frame.
-        await expect(page.getByText('Name', { exact: true }).first()).toBeVisible({
+        // Cell A1 / B1 / C1 are uniquely labelled by aria-label rather
+        // than relying on the inner text — text 'Name' also matches the
+        // virtualized recent-files "Sort by Name" muted-text header.
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Name', {
             timeout: 30_000,
         })
-        await expect(page.getByText('Role', { exact: true }).first()).toBeVisible({
+        await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Role', {
             timeout: 15_000,
         })
-        await expect(page.getByText('Score', { exact: true }).first()).toBeVisible({
+        await expect(page.getByLabel('Cell C1', { exact: true })).toHaveText('Score', {
             timeout: 15_000,
         })
 
@@ -45,23 +48,19 @@ test.describe('Calc', () => {
         await expect(page.getByText('Carol', { exact: true })).toBeVisible()
         await expect(page.getByText('Manager', { exact: true })).toBeVisible()
 
-        // Verify columns are correctly aligned by reading the DOM. A1
-        // (Name) and B1 (Role) should be at viewport-x positions exactly
-        // CELL_WIDTH (96px) apart.
+        // Verify columns are correctly aligned by reading the DOM
+        // through the stable Cell-A1/B1/C1 aria-labels (not text content,
+        // which also matches the recent-view "Sort by Name" header
+        // outside the grid). A1 and B1 should be at viewport-x
+        // positions exactly CELL_WIDTH (96px) apart.
         const positions = await page.evaluate(() => {
-            const find = (text: string) => {
-                for (const el of Array.from(document.querySelectorAll('div'))) {
-                    if (el.textContent === text && el.children.length === 0) {
-                        const cell = el.parentElement
-                        if (cell) {
-                            const rect = cell.getBoundingClientRect()
-                            return { left: rect.left, width: rect.width }
-                        }
-                    }
-                }
-                return null
+            const find = (label: string) => {
+                const el = document.querySelector(`[aria-label="${label}"]`) as HTMLElement | null
+                if (!el) return null
+                const rect = el.getBoundingClientRect()
+                return { left: rect.left, width: rect.width }
             }
-            return { name: find('Name'), role: find('Role'), score: find('Score') }
+            return { name: find('Cell A1'), role: find('Cell B1'), score: find('Cell C1') }
         })
         expect(positions.name).not.toBeNull()
         expect(positions.role).not.toBeNull()
