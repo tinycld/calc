@@ -118,7 +118,7 @@ const SHORTCUT_DOCS: readonly ShortcutEntry[] = [
     },
     {
         id: 'calc.clipboard.pasteValues',
-        keys: '$mod+Shift+v',
+        keys: '$mod+Alt+v',
         description: 'Paste values only',
         group: 'Calc',
         scope: 'global',
@@ -136,7 +136,7 @@ const SHORTCUT_DOCS: readonly ShortcutEntry[] = [
     },
     {
         id: 'calc.clipboard.pasteFormat',
-        keys: '$mod+Alt+v',
+        keys: '$mod+Shift+v',
         description: 'Paste format only',
         group: 'Calc',
         scope: 'global',

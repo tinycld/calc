@@ -78,7 +78,7 @@ describe('selectColumn', () => {
 })
 
 describe('selectAll (corner-cell click)', () => {
-    it("sets scope to sheet, anchor to (1, 1), and a full-grid range", () => {
+    it('sets scope to sheet, anchor to (1, 1), and a full-grid range', () => {
         const store = createGridStore(makeStubDeps())
         store.getState().selectAll(10, 26)
         const s = store.getState()

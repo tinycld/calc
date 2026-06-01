@@ -54,8 +54,8 @@ import type { SheetWithId } from '../../hooks/use-y-sheets'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { Cell } from './Cell'
 import { CutMarchingAntsOverlay } from './CutMarchingAntsOverlay'
-import { FormatPainterOverlay } from './FormatPainterOverlay'
 import { FindMatchOverlay } from './FindMatchOverlay'
+import { FormatPainterOverlay } from './FormatPainterOverlay'
 import {
     FillPreviewOverlay,
     LocalSelectionOverlay,

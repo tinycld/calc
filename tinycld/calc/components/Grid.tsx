@@ -32,7 +32,6 @@ import { useWorkbook } from '../hooks/use-workbook-context'
 import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { classifyCellKey } from '../lib/cell-key-action'
-import type { CellStyle } from '../lib/workbook-types'
 import { rangeToSheetRelativeA1 } from '../lib/conditional-format/a1'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { buildA1Range } from '../lib/pivot/range-parse'
@@ -46,6 +45,7 @@ import {
 import { useConditionalFormatPanelStore } from '../lib/stores/conditional-format-panel-store'
 import { useNamedRangesDialogStore } from '../lib/stores/named-ranges-dialog-store'
 import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
+import type { CellStyle } from '../lib/workbook-types'
 import { CalcCommentDrawer } from './comments/CalcCommentDrawer'
 import { ConditionalFormatPanel } from './conditional-format/ConditionalFormatPanel'
 import { FindReplaceDialogGate } from './FindReplaceDialog'
@@ -62,8 +62,8 @@ import { HandleContextMenu } from './grid/HandleContextMenu'
 import { HeaderContextMenu } from './grid/HeaderContextMenu'
 import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
-import { applyFormatPainterToDest, readCellStyle } from './grid/style-helpers'
 import { SortDialog } from './grid/SortDialog'
+import { applyFormatPainterToDest, readCellStyle } from './grid/style-helpers'
 import { KeyboardAccessoryHost } from './KeyboardAccessoryHost'
 import { MenuBar } from './menubar/MenuBar'
 import { NameBox } from './NameBox'
@@ -377,9 +377,9 @@ function GridInner({
         if (state.formatPainterCells == null || doc == null) return
         const range = primaryRange(state.selection)
         if (range == null) return
-        applyFormatPainterToDest(doc, sheetId, state.formatPainterCells, range)
+        applyFormatPainterToDest(doc, sheetId, state.formatPainterCells, range, rows, cols)
         state.clearFormatPainter()
-    }, [doc, sheetId, instance.store])
+    }, [doc, sheetId, instance.store, rows, cols])
 
     useEffect(() => {
         if (Platform.OS !== 'web') return

@@ -70,9 +70,7 @@ export function RowHeader({
     })
     const selectedRowSet = useMemo(
         () =>
-            selectedRowsKey
-                ? new Set(selectedRowsKey.split(',').map(Number))
-                : new Set<number>(),
+            selectedRowsKey ? new Set(selectedRowsKey.split(',').map(Number)) : new Set<number>(),
         [selectedRowsKey]
     )
     const store = useGridStoreApi()

@@ -177,14 +177,16 @@ export function applyFormatPainterToDest(
     doc: Y.Doc,
     sheetId: string,
     cells: CellStyle[][],
-    destRange: CellRange
+    destRange: CellRange,
+    rowCount = Number.POSITIVE_INFINITY,
+    colCount = Number.POSITIVE_INFINITY
 ): void {
     const srcRows = cells.length
     const srcCols = cells[0]?.length ?? 0
     if (srcRows === 0 || srcCols === 0) return
     const isSingleCell =
         destRange.startRow === destRange.endRow && destRange.startCol === destRange.endCol
-    const target = isSingleCell
+    const expanded = isSingleCell
         ? {
               startRow: destRange.startRow,
               startCol: destRange.startCol,
@@ -192,6 +194,12 @@ export function applyFormatPainterToDest(
               endCol: destRange.startCol + srcCols - 1,
           }
         : destRange
+    const target = {
+        startRow: expanded.startRow,
+        startCol: expanded.startCol,
+        endRow: Math.min(expanded.endRow, rowCount),
+        endCol: Math.min(expanded.endCol, colCount),
+    }
     applyFormatPainterStyles(doc, sheetId, cells, target)
 }
 

@@ -29,7 +29,6 @@
 // `lib/selection-range.ts` for the helper layer call sites use.
 import { createStore as createVanillaStore, type StoreApi } from 'zustand/vanilla'
 import type { ArrowDirection } from '../lib/cell-key-action'
-import type { CellStyle } from '../lib/workbook-types'
 import {
     applyFunctionInsertion,
     applyNameInsertion,
@@ -55,6 +54,7 @@ import {
     singleRectSelection,
     subRangeAtCell,
 } from '../lib/selection-range'
+import type { CellStyle } from '../lib/workbook-types'
 
 export interface SelectedCell {
     row: number

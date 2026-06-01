@@ -19,7 +19,12 @@ import { useYCell } from '../../hooks/use-y-cell'
 import type { ArrowDirection } from '../../lib/cell-key-action'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
 import { cellStyleToRenderProps, mergeCellStyles } from '../../lib/cell-style-render'
-import { computeShiftArrowTarget, containsAny, primaryAnchor, primaryRange } from '../../lib/selection-range'
+import {
+    computeShiftArrowTarget,
+    containsAny,
+    primaryAnchor,
+    primaryRange,
+} from '../../lib/selection-range'
 import { columnLabel, formatCell } from '../../lib/workbook-types'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { FORMULA_BAR_ACCESSORY_ID } from '../formula-accessory-id'
@@ -239,7 +244,14 @@ export const Cell = memo(function Cell({
             if (state.formatPainterCells != null && doc != null) {
                 const destRange = primaryRange(state.selection)
                 if (destRange != null) {
-                    applyFormatPainterToDest(doc, sheetId, state.formatPainterCells, destRange)
+                    applyFormatPainterToDest(
+                        doc,
+                        sheetId,
+                        state.formatPainterCells,
+                        destRange,
+                        rowOffsets.length - 1,
+                        colOffsets.length - 1
+                    )
                 }
                 state.clearFormatPainter()
             }
@@ -291,12 +303,19 @@ export const Cell = memo(function Cell({
         if (state.cellRefTap(row, col)) return
         if (state.formatPainterCells != null && doc != null) {
             state.selectCell({ row, col })
-            applyFormatPainterToDest(doc, sheetId, state.formatPainterCells, {
-                startRow: row,
-                startCol: col,
-                endRow: row,
-                endCol: col,
-            })
+            applyFormatPainterToDest(
+                doc,
+                sheetId,
+                state.formatPainterCells,
+                {
+                    startRow: row,
+                    startCol: col,
+                    endRow: row,
+                    endCol: col,
+                },
+                rowOffsets.length - 1,
+                colOffsets.length - 1
+            )
             state.clearFormatPainter()
             return
         }

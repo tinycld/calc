@@ -92,9 +92,7 @@ export function ColumnHeader({
     })
     const selectedColSet = useMemo(
         () =>
-            selectedColsKey
-                ? new Set(selectedColsKey.split(',').map(Number))
-                : new Set<number>(),
+            selectedColsKey ? new Set(selectedColsKey.split(',').map(Number)) : new Set<number>(),
         [selectedColsKey]
     )
     const store = useGridStoreApi()
