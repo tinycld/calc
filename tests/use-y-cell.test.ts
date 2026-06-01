@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { setYCell, setYCellStyle, setYCellTyped } from '../tinycld/calc/hooks/use-y-cell'
+import {
+    clearYCellContent,
+    setYCell,
+    setYCellStyle,
+    setYCellTyped,
+} from '../tinycld/calc/hooks/use-y-cell'
 import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
 import { CELLS_MAP, readYCell, STYLE_KEY } from '../tinycld/calc/lib/y-doc-bootstrap'
 
@@ -244,6 +249,43 @@ describe('setYCellStyle', () => {
         expect(cellsMap.has(yCellKey('sheet1', 1, 1))).toBe(false)
         setYCellStyle(doc, 'sheet1', 1, 1, { font: { bold: true } })
         expect(cellsMap.has(yCellKey('sheet1', 1, 1))).toBe(true)
+    })
+})
+
+describe('clearYCellContent (Delete key — clear content, keep format)', () => {
+    it('wipes value fields but preserves the style Y.Map', () => {
+        const doc = new Y.Doc()
+        setYCell(doc, 'sheet1', 1, 1, 'hello')
+        setYCellStyle(doc, 'sheet1', 1, 1, { font: { bold: true } })
+
+        clearYCellContent(doc, 'sheet1', 1, 1)
+
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+        const cell = cellsMap.get(yCellKey('sheet1', 1, 1))
+        expect(cell).toBeDefined()
+        expect(cell?.has('kind')).toBe(false)
+        expect(cell?.has('raw')).toBe(false)
+        expect(cell?.has('display')).toBe(false)
+        expect(cell?.has('formula')).toBe(false)
+        const style = cell?.get(STYLE_KEY) as Y.Map<unknown> | undefined
+        const font = style?.get('font') as Y.Map<unknown> | undefined
+        expect(font?.get('bold')).toBe(true)
+    })
+
+    it('removes the whole entry when the cell has no style', () => {
+        const doc = new Y.Doc()
+        setYCell(doc, 'sheet1', 2, 2, 'plain')
+
+        clearYCellContent(doc, 'sheet1', 2, 2)
+
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+        expect(cellsMap.has(yCellKey('sheet1', 2, 2))).toBe(false)
+    })
+
+    it('is a no-op for a cell that does not exist', () => {
+        const doc = new Y.Doc()
+        expect(() => clearYCellContent(doc, 'sheet1', 9, 9)).not.toThrow()
+        expect(doc.getMap<Y.Map<unknown>>(CELLS_MAP).size).toBe(0)
     })
 })
 

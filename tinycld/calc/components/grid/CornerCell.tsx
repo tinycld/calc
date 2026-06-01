@@ -1,14 +1,33 @@
-import { View } from 'react-native'
+import { Platform, Pressable } from 'react-native'
+import type { GridStoreApi } from '../../hooks/grid-store'
 import { HEADER_HEIGHT, ROW_HEADER_WIDTH } from './constants'
 
-// Top-left corner stub. Renders nothing interactive — just fills the
-// intersection of the column-header row and row-header column with
-// the same surface color so the grid lines align cleanly.
-export function CornerCell() {
+interface CornerCellProps {
+    store: GridStoreApi
+    rowCount: number
+    colCount: number
+}
+
+export function CornerCell({ store, rowCount, colCount }: CornerCellProps) {
+    const webProps =
+        Platform.OS === 'web'
+            ? {
+                  onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+                      if (e.key === 'Delete' || e.key === 'Backspace') {
+                          e.preventDefault()
+                          store.getState().clearSelection()
+                      }
+                  },
+              }
+            : null
     return (
-        <View
-            className="bg-surface-secondary border-r border-b border-border"
+        <Pressable
+            accessibilityLabel="Select all cells"
+            className="bg-surface-secondary border-r border-b border-border web:outline-none"
             style={{ width: ROW_HEADER_WIDTH, height: HEADER_HEIGHT }}
+            onPress={() => store.getState().selectAll(rowCount, colCount)}
+            // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
+            {...((webProps ?? {}) as any)}
         />
     )
 }

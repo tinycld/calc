@@ -39,11 +39,13 @@ import {
     allRanges,
     computeShiftArrowTarget,
     primaryAnchor,
+    primaryRange,
     unionBoundingBox,
 } from '../lib/selection-range'
 import { useConditionalFormatPanelStore } from '../lib/stores/conditional-format-panel-store'
 import { useNamedRangesDialogStore } from '../lib/stores/named-ranges-dialog-store'
 import { usePivotPanelStore } from '../lib/stores/pivot-panel-store'
+import type { CellStyle } from '../lib/workbook-types'
 import { CalcCommentDrawer } from './comments/CalcCommentDrawer'
 import { ConditionalFormatPanel } from './conditional-format/ConditionalFormatPanel'
 import { FindReplaceDialogGate } from './FindReplaceDialog'
@@ -61,6 +63,7 @@ import { HeaderContextMenu } from './grid/HeaderContextMenu'
 import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
 import { SortDialog } from './grid/SortDialog'
+import { applyFormatPainterToDest, readCellStyle } from './grid/style-helpers'
 import { KeyboardAccessoryHost } from './KeyboardAccessoryHost'
 import { MenuBar } from './menubar/MenuBar'
 import { NameBox } from './NameBox'
@@ -347,6 +350,51 @@ function GridInner({
         [presence, sheetId]
     )
 
+    const isFormatPainterActive = useGridStore(s => s.formatPainterCells != null)
+
+    const activateFormatPainter = useCallback(() => {
+        if (readOnly || doc == null) return
+        const state = instance.store.getState()
+        if (state.formatPainterCells != null) {
+            state.clearFormatPainter()
+            return
+        }
+        const range = primaryRange(state.selection)
+        if (range == null) return
+        const cells: CellStyle[][] = []
+        for (let r = range.startRow; r <= range.endRow; r++) {
+            const row: CellStyle[] = []
+            for (let c = range.startCol; c <= range.endCol; c++) {
+                row.push(readCellStyle(doc, sheetId, r, c) ?? {})
+            }
+            cells.push(row)
+        }
+        state.setFormatPainter(cells, range)
+    }, [readOnly, doc, sheetId, instance.store])
+
+    const applyFormatPainterIfActive = useCallback(() => {
+        const state = instance.store.getState()
+        if (state.formatPainterCells == null || doc == null) return
+        const range = primaryRange(state.selection)
+        if (range == null) return
+        applyFormatPainterToDest(doc, sheetId, state.formatPainterCells, range, rows, cols)
+        state.clearFormatPainter()
+    }, [doc, sheetId, instance.store, rows, cols])
+
+    useEffect(() => {
+        if (Platform.OS !== 'web') return
+        const cls = 'calc-format-painter-active'
+        const root = document.documentElement
+        if (isFormatPainterActive) {
+            root.classList.add(cls)
+        } else {
+            root.classList.remove(cls)
+        }
+        return () => {
+            root.classList.remove(cls)
+        }
+    }, [isFormatPainterActive])
+
     const toolbar = useGridToolbarToggles({ doc, sheetId, readOnly })
     const format = useGridFormatControls({
         doc,
@@ -389,6 +437,31 @@ function GridInner({
     // the shortcuts live for the lifetime of the Grid mount. The
     // clipboard hook owns the actual copy/paste plumbing.
     const clipboard = useClipboard({ doc, sheetId, store: instance.store, readOnly })
+
+    // Native paste event listener — reads clipboard data synchronously
+    // from event.clipboardData, bypassing the async Clipboard API which
+    // requires clipboard-read permission and breaks in Safari from a
+    // keydown context. The Cmd+V tinykeys shortcut is intentionally NOT
+    // registered so the browser fires this native paste event instead.
+    //
+    // Guard: skip when a cell editor TextInput has focus (the input
+    // handles its own paste to insert text into the formula). Any
+    // <input> or <textarea> that is NOT the grid's own editor (formula
+    // bar, dialogs) also keeps its default paste behaviour.
+    useEffect(() => {
+        if (Platform.OS !== 'web') return
+        const handler = (event: ClipboardEvent) => {
+            const active = document.activeElement
+            if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return
+            const state = instance.store.getState()
+            if (state.editSession != null) return
+            event.preventDefault()
+            clipboard.pasteFromNativeEvent(event)
+        }
+        window.addEventListener('paste', handler)
+        return () => window.removeEventListener('paste', handler)
+    }, [clipboard, instance.store])
+
     const findStore = useFindStoreApi()
     const findActions = useFindActions({ doc, sheetId, findStore, readOnly })
     const onOpenFind = useCallback(() => findActions.openFind(), [findActions])
@@ -520,6 +593,8 @@ function GridInner({
         onSetBorders: format.setBorders,
         horizontalAlign: format.horizontalAlign,
         onSetHorizontalAlign: format.setHorizontalAlign,
+        isFormatPainterActive,
+        onActivateFormatPainter: activateFormatPainter,
         onOpenFind: onOpenFind,
         onDownloadCsvCurrent: csvDownload.downloadCurrent,
         onDownloadCsvAll: csvDownload.downloadAll,
@@ -601,7 +676,7 @@ function GridInner({
                 onAnchorLayout={formulaBar.onAnchorLayout}
             />
             <View className="flex-row">
-                <CornerCell />
+                <CornerCell store={instance.store} rowCount={rows} colCount={cols} />
                 <ColumnHeader
                     scrollRef={viewport.headerScrollRef}
                     contentWidth={contentWidth}
@@ -616,6 +691,7 @@ function GridInner({
                     activeFilterCols={filter.activeFilterCols}
                     filterMode={filter.filterView?.mode ?? null}
                     onRemoveColumnCriterion={filter.removeHeaderCriterion}
+                    onFormatPainterApply={applyFormatPainterIfActive}
                 />
             </View>
             <View className="flex-1 flex-row" onLayout={onBodyContainerLayout}>
@@ -629,6 +705,7 @@ function GridInner({
                     frozenRows={frozenRows}
                     makeHandleProps={rowResize.makeHandleProps}
                     dragState={rowResize.dragState}
+                    onFormatPainterApply={applyFormatPainterIfActive}
                 />
                 <Body
                     horizontalRef={viewport.horizontalRef}

@@ -31,6 +31,7 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): StubDeps {
         deps: {
             readOnly: opts.readOnly ?? false,
             writeCell: (row, col, value) => writeCalls.push({ row, col, value }),
+            clearCellContent: (row, col) => writeCalls.push({ row, col, value: '' }),
             focusActiveInput: () => {
                 focusCalls += 1
             },

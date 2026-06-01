@@ -54,6 +54,7 @@ import {
     singleRectSelection,
     subRangeAtCell,
 } from '../lib/selection-range'
+import type { CellStyle } from '../lib/workbook-types'
 
 export interface SelectedCell {
     row: number
@@ -178,6 +179,11 @@ export interface GridState {
     // refused copy on a disjoint selection). Consumers clear it via
     // dismissSelectionStatus or the next selection-mutating action.
     selectionStatus: SelectionStatus
+    // Format painter: source styles to apply on next click/drag. Set by
+    // the toolbar paintbrush button; cleared after the first apply or on
+    // button toggle. Row-major 2D array matching the source range shape.
+    formatPainterCells: CellStyle[][] | null
+    formatPainterSourceRange: CellRange | null
 }
 
 // Live cursor position inside the editing input. Stored as a
@@ -208,6 +214,7 @@ export type StructuralOp =
 export interface GridStoreDeps {
     readOnly: boolean
     writeCell: (row: number, col: number, value: string) => void
+    clearCellContent: (row: number, col: number) => void
     focusActiveInput: () => void
     scrollToCell: (row: number, col: number) => void
     focusSentinel: () => void
@@ -357,6 +364,8 @@ export interface GridActions {
     setSortStatus: (status: { mergesBroken: number } | null) => void
     setSelectionStatus: (status: SelectionStatus) => void
     dismissSelectionStatus: () => void
+    setFormatPainter: (cells: CellStyle[][], sourceRange: CellRange) => void
+    clearFormatPainter: () => void
     mergeSelection: () => void
     mergeSelectionHorizontal: () => void
     mergeSelectionVertical: () => void
@@ -400,6 +409,8 @@ const initialState: GridState = {
     filterDialogCol: null,
     sortStatus: null,
     selectionStatus: null,
+    formatPainterCells: null,
+    formatPainterSourceRange: null,
 }
 
 const CLIPBOARD_MARKER_TTL_MS = 30_000
@@ -976,7 +987,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 for (const sr of selection.ranges) {
                     for (let r = sr.range.startRow; r <= sr.range.endRow; r++) {
                         for (let c = sr.range.startCol; c <= sr.range.endCol; c++) {
-                            deps.writeCell(r, c, '')
+                            deps.clearCellContent(r, c)
                         }
                     }
                 }
@@ -1422,6 +1433,10 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             setSortStatus: status => set({ sortStatus: status }),
             setSelectionStatus: status => set({ selectionStatus: status }),
             dismissSelectionStatus: () => set({ selectionStatus: null }),
+            setFormatPainter: (cells, sourceRange) =>
+                set({ formatPainterCells: cells, formatPainterSourceRange: sourceRange }),
+            clearFormatPainter: () =>
+                set({ formatPainterCells: null, formatPainterSourceRange: null }),
 
             fillDragStart: () => {
                 if (deps.readOnly) return false

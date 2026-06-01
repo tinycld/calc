@@ -77,6 +77,40 @@ describe('selectColumn', () => {
     })
 })
 
+describe('selectAll (corner-cell click)', () => {
+    it('sets scope to sheet, anchor to (1, 1), and a full-grid range', () => {
+        const store = createGridStore(makeStubDeps())
+        store.getState().selectAll(10, 26)
+        const s = store.getState()
+        expect(overallScope(s.selection)).toBe('sheet')
+        expect(primaryAnchor(s.selection)).toEqual({ row: 1, col: 1 })
+        expect(primaryRange(s.selection)).toEqual({
+            startRow: 1,
+            endRow: 10,
+            startCol: 1,
+            endCol: 26,
+        })
+    })
+
+    it('clamps an empty grid to a 1×1 range', () => {
+        const store = createGridStore(makeStubDeps())
+        store.getState().selectAll(0, 0)
+        expect(primaryRange(store.getState().selection)).toEqual({
+            startRow: 1,
+            endRow: 1,
+            startCol: 1,
+            endCol: 1,
+        })
+    })
+
+    it('clears any in-flight edit session', () => {
+        const store = createGridStore(makeStubDeps())
+        store.getState().editCell({ row: 1, col: 1 })
+        store.getState().selectAll(5, 5)
+        expect(store.getState().editSession).toBeNull()
+    })
+})
+
 describe('overallScope reset by body interactions', () => {
     it('selectCell resets scope from row back to cells', () => {
         const store = createGridStore(makeStubDeps())

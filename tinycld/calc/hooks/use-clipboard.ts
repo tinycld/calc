@@ -8,6 +8,7 @@ import {
 } from '../lib/clipboard/adapter-native'
 import {
     type AdapterReadResult,
+    readFromClipboardEvent,
     readFromOsClipboard as readFromOsClipboardWeb,
     writeToOsClipboard as writeToOsClipboardWeb,
 } from '../lib/clipboard/adapter-web'
@@ -66,6 +67,7 @@ export interface ClipboardActions {
     copy: () => Promise<void>
     cut: () => Promise<void>
     paste: (mode?: PasteMode) => Promise<void>
+    pasteFromNativeEvent: (event: ClipboardEvent, mode?: PasteMode) => void
 }
 
 export function useClipboard({
@@ -128,11 +130,31 @@ export function useClipboard({
         [doc, sheetId, store, readOnly]
     )
 
+    const pasteFromNativeEvent = useCallback(
+        (event: ClipboardEvent, mode: PasteMode = 'all') => {
+            if (doc == null || readOnly) return
+            const result = readFromClipboardEvent(event)
+            if (result == null) return
+            const state = store.getState()
+            const anchor = primaryAnchor(state.selection)
+            if (anchor == null) return
+            const cutContext = computeCutContext(state, result.markerId)
+            applyClipboardPaste(doc, sheetId, result.payload, mode, anchor, cutContext)
+            if (cutContext != null) {
+                state.clearClipboardMarker()
+            }
+        },
+        [doc, sheetId, store, readOnly]
+    )
+
     // Stable identity so downstream memos (e.g. useCalcShortcuts'
     // useMemo of the shortcut array) don't re-fire on every render
     // of Grid. The inner callbacks are already stable; this just
     // wraps them in a stable object.
-    return useMemo(() => ({ copy, cut, paste }), [copy, cut, paste])
+    return useMemo(
+        () => ({ copy, cut, paste, pasteFromNativeEvent }),
+        [copy, cut, paste, pasteFromNativeEvent]
+    )
 }
 
 // computeCutContext: when paste runs and the user previously hit

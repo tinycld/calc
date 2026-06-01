@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import {
+    applyFormatPainterStyles,
+    applyFormatPainterToDest,
     applyStyleToRange,
     toggleCellFontAttrInRange,
 } from '../tinycld/calc/components/grid/style-helpers'
@@ -94,6 +96,85 @@ describe('applyStyleToRange', () => {
                 }
             )
         ).not.toThrow()
+    })
+})
+
+describe('applyFormatPainterStyles (modulo tiling)', () => {
+    // numFmt strings double as position markers so we can assert exactly
+    // which source cell each destination cell was painted from.
+    const SRC = [
+        [{ numFmt: 'A' }, { numFmt: 'B' }],
+        [{ numFmt: 'C' }, { numFmt: 'D' }],
+    ]
+
+    it('tiles a 2×2 source over a larger range with row-major modulo wrap', () => {
+        const doc = new Y.Doc()
+        applyFormatPainterStyles(doc, SHEET, SRC, {
+            startRow: 1,
+            startCol: 1,
+            endRow: 4,
+            endCol: 4,
+        })
+        // Top-left maps 1:1; the rest wraps every 2 rows / 2 cols.
+        expect(readNumFmt(doc, 1, 1)).toBe('A')
+        expect(readNumFmt(doc, 1, 2)).toBe('B')
+        expect(readNumFmt(doc, 2, 1)).toBe('C')
+        expect(readNumFmt(doc, 2, 2)).toBe('D')
+        expect(readNumFmt(doc, 3, 3)).toBe('A') // (2%2, 2%2)
+        expect(readNumFmt(doc, 4, 4)).toBe('D') // (3%2, 3%2)
+        expect(readNumFmt(doc, 4, 1)).toBe('C') // (3%2, 0)
+    })
+
+    it('is a no-op when the source has no cells', () => {
+        const doc = new Y.Doc()
+        const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+        applyFormatPainterStyles(doc, SHEET, [], {
+            startRow: 1,
+            startCol: 1,
+            endRow: 2,
+            endCol: 2,
+        })
+        expect(cellsMap.size).toBe(0)
+    })
+})
+
+describe('applyFormatPainterToDest (single-cell expansion)', () => {
+    const SRC = [
+        [{ numFmt: 'A' }, { numFmt: 'B' }],
+        [{ numFmt: 'C' }, { numFmt: 'D' }],
+    ]
+
+    it('expands a single-cell target to the full source dimensions', () => {
+        const doc = new Y.Doc()
+        applyFormatPainterToDest(doc, SHEET, SRC, {
+            startRow: 3,
+            startCol: 3,
+            endRow: 3,
+            endCol: 3,
+        })
+        expect(readNumFmt(doc, 3, 3)).toBe('A')
+        expect(readNumFmt(doc, 3, 4)).toBe('B')
+        expect(readNumFmt(doc, 4, 3)).toBe('C')
+        expect(readNumFmt(doc, 4, 4)).toBe('D')
+        // Nothing painted beyond the expanded block.
+        expect(readNumFmt(doc, 3, 5)).toBeUndefined()
+        expect(readNumFmt(doc, 5, 3)).toBeUndefined()
+    })
+
+    it('tiles a multi-cell target as-is without expanding past it', () => {
+        const doc = new Y.Doc()
+        // One-row destination must stay one row even though the source
+        // has two — the painter only auto-grows single-cell targets.
+        applyFormatPainterToDest(doc, SHEET, SRC, {
+            startRow: 1,
+            startCol: 1,
+            endRow: 1,
+            endCol: 3,
+        })
+        expect(readNumFmt(doc, 1, 1)).toBe('A')
+        expect(readNumFmt(doc, 1, 2)).toBe('B')
+        expect(readNumFmt(doc, 1, 3)).toBe('A') // col wraps
+        expect(readNumFmt(doc, 2, 1)).toBeUndefined()
     })
 })
 

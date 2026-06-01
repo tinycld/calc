@@ -46,7 +46,6 @@ type ActionKind =
     | 'clipboardCopy'
     | 'clipboardCut'
     | 'clipboardCancelCut'
-    | 'clipboardPasteAll'
     | 'clipboardPasteValues'
     | 'clipboardPasteFormulas'
     | 'clipboardPasteFormat'
@@ -108,17 +107,8 @@ const SHORTCUT_DOCS: readonly ShortcutEntry[] = [
         action: 'clipboardCancelCut',
     },
     {
-        id: 'calc.clipboard.paste',
-        keys: '$mod+v',
-        description: 'Paste',
-        group: 'Calc',
-        scope: 'global',
-        gate: 'selectedCellWritable',
-        action: 'clipboardPasteAll',
-    },
-    {
         id: 'calc.clipboard.pasteValues',
-        keys: '$mod+Shift+v',
+        keys: '$mod+Alt+v',
         description: 'Paste values only',
         group: 'Calc',
         scope: 'global',
@@ -127,7 +117,7 @@ const SHORTCUT_DOCS: readonly ShortcutEntry[] = [
     },
     {
         id: 'calc.clipboard.pasteFormulas',
-        keys: '$mod+Alt+v',
+        keys: '$mod+Alt+Shift+v',
         description: 'Paste formulas only',
         group: 'Calc',
         scope: 'global',
@@ -136,7 +126,7 @@ const SHORTCUT_DOCS: readonly ShortcutEntry[] = [
     },
     {
         id: 'calc.clipboard.pasteFormat',
-        keys: '$mod+Alt+Shift+v',
+        keys: '$mod+Shift+v',
         description: 'Paste format only',
         group: 'Calc',
         scope: 'global',
@@ -347,10 +337,6 @@ function actionFor(kind: ActionKind, args: UseCalcShortcutsArgs): () => void {
         case 'clipboardCancelCut':
             return () => {
                 store.getState().clearClipboardMarker()
-            }
-        case 'clipboardPasteAll':
-            return () => {
-                void clipboard.paste('all')
             }
         case 'clipboardPasteValues':
             return () => {

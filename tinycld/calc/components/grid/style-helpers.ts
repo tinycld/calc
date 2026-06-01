@@ -144,6 +144,65 @@ export function toggleCellFontAttrAcrossRanges(
     }, LOCAL_ORIGIN)
 }
 
+// applyFormatPainterStyles tiles the source style grid onto destRange
+// using row-major modulo wrap. Each destination cell (dr, dc) gets the
+// source style at (dr % srcRows, dc % srcCols) — identical to Excel's
+// format-painter multi-cell tiling semantics.
+export function applyFormatPainterStyles(
+    doc: Y.Doc,
+    sheetId: string,
+    cells: CellStyle[][],
+    destRange: CellRange
+): void {
+    const srcRows = cells.length
+    if (srcRows === 0) return
+    const srcCols = cells[0].length
+    if (srcCols === 0) return
+    doc.transact(() => {
+        for (let r = destRange.startRow; r <= destRange.endRow; r++) {
+            for (let c = destRange.startCol; c <= destRange.endCol; c++) {
+                const srcR = (r - destRange.startRow) % srcRows
+                const srcC = (c - destRange.startCol) % srcCols
+                setYCellStyle(doc, sheetId, r, c, cells[srcR][srcC])
+            }
+        }
+    }, LOCAL_ORIGIN)
+}
+
+// applyFormatPainterToDest applies the painter onto a destination range,
+// expanding a single-cell target to the full source dimensions first (so
+// clicking one cell stamps the whole captured block). Multi-cell targets
+// — e.g. a dragged region or a whole row/column — are tiled as-is.
+export function applyFormatPainterToDest(
+    doc: Y.Doc,
+    sheetId: string,
+    cells: CellStyle[][],
+    destRange: CellRange,
+    rowCount = Number.POSITIVE_INFINITY,
+    colCount = Number.POSITIVE_INFINITY
+): void {
+    const srcRows = cells.length
+    const srcCols = cells[0]?.length ?? 0
+    if (srcRows === 0 || srcCols === 0) return
+    const isSingleCell =
+        destRange.startRow === destRange.endRow && destRange.startCol === destRange.endCol
+    const expanded = isSingleCell
+        ? {
+              startRow: destRange.startRow,
+              startCol: destRange.startCol,
+              endRow: destRange.startRow + srcRows - 1,
+              endCol: destRange.startCol + srcCols - 1,
+          }
+        : destRange
+    const target = {
+        startRow: expanded.startRow,
+        startCol: expanded.startCol,
+        endRow: Math.min(expanded.endRow, rowCount),
+        endCol: Math.min(expanded.endCol, colCount),
+    }
+    applyFormatPainterStyles(doc, sheetId, cells, target)
+}
+
 // locateCellAtGridCoord maps an (x, y) inside the grid body to the
 // 1-based (row, col) of the cell at that point. Used by the cell
 // PanResponder to translate pointer-move locations into the cell the

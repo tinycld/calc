@@ -16,9 +16,9 @@ The reference below is the complete set.
 | ⌘C | Copy |
 | ⌘X | Cut |
 | ⌘V | Paste |
-| ⌘⇧V | Paste values only |
-| ⌘⌥V | Paste formulas only |
-| ⌘⌥⇧V | Paste format only |
+| ⌘⌥V | Paste values only |
+| ⌘⌥⇧V | Paste formulas only |
+| ⌘⇧V | Paste format only |
 | ⌘⌥T | Paste transposed |
 | Esc | Cancel a pending cut |
 

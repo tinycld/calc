@@ -1,6 +1,6 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { FilterX } from 'lucide-react-native'
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import {
     type GestureResponderEvent,
     Platform,
@@ -53,6 +53,7 @@ interface ColumnHeaderProps {
     // Callback to remove the criterion for a single column (header-mode
     // only). Wired to the ✕ press.
     onRemoveColumnCriterion: (col: number) => void
+    onFormatPainterApply?: () => void
 }
 
 export function ColumnHeader({
@@ -69,21 +70,31 @@ export function ColumnHeader({
     activeFilterCols,
     filterMode,
     onRemoveColumnCriterion,
+    onFormatPainterApply,
 }: ColumnHeaderProps) {
     const borderColor = useThemeColor('border')
     const activeCol = useGridStore(s => primaryAnchor(s.selection)?.col ?? null)
-    // Mirror of RowHeader: bolden the column label when the user
-    // selected the WHOLE column (any sub-range with scope='column'
-    // anchored at this col). Disjoint column selections light up
-    // every selected column header, matching Sheets.
-    const colScopeActive = useGridStore(s => {
-        if (s.selection == null) return false
-        if (activeCol == null) return false
-        for (const sr of s.selection.ranges) {
-            if (sr.scope === 'column' && sr.anchor.col === activeCol) return true
+    // Sorted comma-separated string of all column-scope anchor cols.
+    // Primitive return keeps the selector stable across calls (a new Set
+    // each time would trigger infinite re-renders via useSyncExternalStore).
+    const selectedColsKey = useGridStore(s => {
+        const cols: number[] = []
+        if (s.selection != null) {
+            for (const sr of s.selection.ranges) {
+                if (sr.scope === 'column') {
+                    for (let c = sr.range.startCol; c <= sr.range.endCol; c++) {
+                        cols.push(c)
+                    }
+                }
+            }
         }
-        return false
+        return cols.sort((a, b) => a - b).join(',')
     })
+    const selectedColSet = useMemo(
+        () =>
+            selectedColsKey ? new Set(selectedColsKey.split(',').map(Number)) : new Set<number>(),
+        [selectedColsKey]
+    )
     const store = useGridStoreApi()
     const accent = useThemeColor('accent')
     // Skip the synthetic onPress after a modifier mousedown.
@@ -107,6 +118,7 @@ export function ColumnHeader({
         store,
         accent,
         skipNextPressRef,
+        onFormatPainterApply,
     }
 
     const frozenCells: React.ReactNode[] = []
@@ -118,7 +130,7 @@ export function ColumnHeader({
             fCols,
             0,
             activeCol,
-            colScopeActive,
+            selectedColSet,
             rowCount,
             makeHandleProps,
             dragState,
@@ -133,7 +145,7 @@ export function ColumnHeader({
         lastCol,
         frozenW,
         activeCol,
-        colScopeActive,
+        selectedColSet,
         rowCount,
         makeHandleProps,
         dragState,
@@ -202,6 +214,7 @@ interface HeaderFilterCtx {
     store: GridStoreApi
     accent: string
     skipNextPressRef: React.MutableRefObject<boolean>
+    onFormatPainterApply?: () => void
 }
 
 // appendHeaderCells emits one column-header label cell + one resize
@@ -216,15 +229,17 @@ function appendHeaderCells(
     last: number,
     xShift: number,
     activeCol: number | null,
-    colScopeActive: boolean,
+    selectedColSet: ReadonlySet<number>,
     rowCount: number,
     makeHandleProps: (col: number) => Record<string, unknown>,
     dragState: DragState | null,
     filter: HeaderFilterCtx
 ): void {
     for (let col = first; col <= last; col++) {
+        // isActive: primary anchor column — gets the inset shadow affordance
         const isActive = col === activeCol
-        const isColScope = colScopeActive && isActive
+        // isSelected: any column-scope sub-range covers this col → green tint
+        const isSelected = isActive || selectedColSet.has(col)
         const absLeft = colOffsets[col - 1]
         const width = colOffsets[col] - absLeft
         const left = absLeft - xShift
@@ -306,6 +321,7 @@ function appendHeaderCells(
                     return
                 }
                 filter.store.getState().selectColumn(col, rowCount)
+                filter.onFormatPainterApply?.()
             }
             const onLongPress = (e: GestureResponderEvent) => {
                 const { pageX, pageY } = e.nativeEvent
@@ -318,7 +334,7 @@ function appendHeaderCells(
                     onLongPress={onLongPress}
                     accessibilityLabel={`Select column ${columnLabel(col)}`}
                     className={`border-r border-b border-border flex-row items-center justify-center web:outline-none ${
-                        isActive ? 'bg-accent' : 'bg-surface-secondary'
+                        isSelected ? 'bg-accent' : 'bg-surface-secondary'
                     }`}
                     style={{
                         position: 'absolute',
@@ -332,8 +348,8 @@ function appendHeaderCells(
                     {...((webMouseDownProp ?? {}) as any)}
                 >
                     <Text
-                        className={`text-xs ${isActive ? 'text-accent-foreground' : 'text-muted-foreground'}`}
-                        style={isActive || isColScope ? { fontWeight: 'bold' } : undefined}
+                        className={`text-xs ${isSelected ? 'text-accent-foreground' : 'text-muted-foreground'}`}
+                        style={isSelected ? { fontWeight: 'bold' } : undefined}
                     >
                         {columnLabel(col)}
                     </Text>

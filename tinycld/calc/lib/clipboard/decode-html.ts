@@ -114,6 +114,7 @@ function buildCell(attrs: Map<string, string>, innerHtml: string): ClipboardCell
     const rawAttr = attrs.get('data-tinycld-raw')
     const formulaAttr =
         attrs.get('data-tinycld-formula') ?? attrs.get('data-sheets-formula') ?? undefined
+    const numFmtAttr = attrs.get('data-tinycld-numfmt')
     const style = parseInlineStyle(attrs.get('style'))
 
     const displayText = stripTags(innerHtml).trim()
@@ -122,7 +123,11 @@ function buildCell(attrs: Map<string, string>, innerHtml: string): ClipboardCell
         raw: coerceRaw(kindAttr ?? 'string', rawAttr, displayText),
     }
     if (formulaAttr != null) cell.formula = formulaAttr
-    if (style != null) cell.style = style
+    if (numFmtAttr != null && numFmtAttr.length > 0) {
+        cell.style = { ...(style ?? {}), numFmt: numFmtAttr }
+    } else if (style != null) {
+        cell.style = style
+    }
     return cell
 }
 
@@ -285,27 +290,30 @@ function parsePx(value: string): number | null {
 }
 
 function parseCssColor(value: string): string | null {
-    // Hex with hash: keep verbatim, sans hash for excelize-compat
-    // storage (matches what payloadToHtml normalises FROM).
+    // Normalise to canonical `#RRGGBB` (uppercase): the same form the
+    // color picker writes to font.color / fill.fgColor. Keeping pasted
+    // and picker-set colors byte-identical lets swatch active-matching
+    // and color equality work uniformly.
     const hex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.exec(value)
     if (hex != null) {
         const h = hex[1]
         if (h.length === 3) {
-            return h
+            return `#${h
                 .split('')
                 .map(c => c + c)
-                .join('')
+                .join('')}`.toUpperCase()
         }
-        if (h.length === 8) return h.slice(2)
-        return h
+        // 8-digit is #AARRGGBB — drop the leading alpha pair.
+        if (h.length === 8) return `#${h.slice(2)}`.toUpperCase()
+        return `#${h}`.toUpperCase()
     }
     // rgb()/rgba() — convert to hex for symmetry with our encoder.
     const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(value)
     if (rgb != null) {
-        return [rgb[1], rgb[2], rgb[3]]
+        return `#${[rgb[1], rgb[2], rgb[3]]
             .map(n => Number(n).toString(16).padStart(2, '0'))
             .join('')
-            .toUpperCase()
+            .toUpperCase()}`
     }
     return null
 }

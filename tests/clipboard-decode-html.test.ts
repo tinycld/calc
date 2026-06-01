@@ -94,6 +94,22 @@ describe('htmlToPayload — own-encoder round trip', () => {
         })
     })
 
+    it('recovers numFmt and colors so Paste → Format only carries number format', () => {
+        const source = p([
+            [
+                {
+                    kind: 'number',
+                    raw: 1234.5,
+                    style: { numFmt: '#,##0.00', font: { color: '#ff0000' } },
+                },
+            ],
+        ])
+        const html = payloadToHtml(source, 'm')
+        const style = htmlToPayload(html)?.payload.cells[0][0].style
+        expect(style?.numFmt).toBe('#,##0.00')
+        expect(style?.font?.color).toBe('#FF0000')
+    })
+
     it('recovers cells containing HTML special chars', () => {
         const source = p([[{ kind: 'string', raw: '<b>&"</b>' }]])
         const html = payloadToHtml(source, 'm')
@@ -154,13 +170,13 @@ describe('htmlToPayload — foreign producer fixtures', () => {
     it('parses background-color from inline style', () => {
         const html = '<table><tr><td style="background-color: #FFCC00">x</td></tr></table>'
         const out = htmlToPayload(html)
-        expect(out?.payload.cells[0][0].style?.fill?.fgColor).toBe('FFCC00')
+        expect(out?.payload.cells[0][0].style?.fill?.fgColor).toBe('#FFCC00')
     })
 
     it('converts rgb() to hex on the way in', () => {
         const html = '<table><tr><td style="color: rgb(255, 0, 0)">x</td></tr></table>'
         const out = htmlToPayload(html)
-        expect(out?.payload.cells[0][0].style?.font?.color).toBe('FF0000')
+        expect(out?.payload.cells[0][0].style?.font?.color).toBe('#FF0000')
     })
 
     it('pads short rows to make the grid rectangular', () => {

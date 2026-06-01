@@ -32,11 +32,11 @@ export function EditMenu(props: MenuBarProps) {
                 <Menu.SubContent>
                     <Menu.Item onPress={props.onPasteValues} isDisabled={props.disabled}>
                         <Menu.ItemTitle>Values only</Menu.ItemTitle>
-                        <MenuShortcut keys="⌘⇧V" />
+                        <MenuShortcut keys="⌘⌥V" />
                     </Menu.Item>
                     <Menu.Item onPress={props.onPasteFormat} isDisabled={props.disabled}>
                         <Menu.ItemTitle>Format only</Menu.ItemTitle>
-                        <MenuShortcut keys="⌘⌥V" />
+                        <MenuShortcut keys="⌘⇧V" />
                     </Menu.Item>
                 </Menu.SubContent>
             </Menu.Sub>
