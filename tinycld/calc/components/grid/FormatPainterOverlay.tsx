@@ -9,12 +9,13 @@ import { useGridStore } from '../../hooks/use-grid-store'
 
 const PAINTER_STYLE_ID = 'tinycld-calc-painter-ants-style'
 
-// Paintbrush cursor shown while the painter is armed (Excel-style). White
-// outline halo under filled shapes so it reads on any background; hotspot
-// at the bristle tip (4, 28). Toggled by the `calc-format-painter-active`
-// class on <html>, set from Grid's painter effect.
-const PAINTER_CURSOR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"><path d="M4 28 L6 20 L12 26 Z"/><path d="M8 21 L21 8 L24 11 L11 24 Z"/><path d="M21 8 L25 4 a2.8 2.8 0 0 1 3 3 L24 11 Z"/></g><path d="M4 28 L6 20 L12 26 Z" fill="#2563eb"/><path d="M8 21 L21 8 L24 11 L11 24 Z" fill="#9ca3af"/><path d="M21 8 L25 4 a2.8 2.8 0 0 1 3 3 L24 11 Z" fill="#1f2937"/></svg>`
-const PAINTER_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(PAINTER_CURSOR_SVG)}") 4 28, copy`
+// Paintbrush cursor shown while the painter is armed: the classic Excel
+// format-painter glyph — a bold white cross (the click target) with a
+// small paintbrush to its right. White fills with black outline so it
+// reads on any background; hotspot at the cross center (8, 9). Toggled by
+// the `calc-format-painter-active` class on <html>, set from Grid's effect.
+const PAINTER_CURSOR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="31" height="19" viewBox="0 0 31 19"><g fill="#fff" stroke="#000" stroke-width="1.5" stroke-linejoin="round"><polygon points="6,2 11,2 11,7 16,7 16,12 11,12 11,17 6,17 6,12 1,12 1,7 6,7"/><polygon points="22,3 29,3 28,8 23,8"/><polygon points="23,8 28,8 27,15 24,15"/></g><g stroke="#000" stroke-width="0.9"><line x1="24.6" y1="9" x2="24.6" y2="14.5"/><line x1="25.7" y1="9" x2="25.7" y2="14.5"/><line x1="26.6" y1="9" x2="26.6" y2="14.5"/></g></svg>`
+const PAINTER_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(PAINTER_CURSOR_SVG)}") 8 9, copy`
 
 interface FormatPainterOverlayProps {
     colOffsets: Float64Array
