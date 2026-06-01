@@ -7,7 +7,7 @@ test.describe('Calc Help menu', () => {
         await login(page)
     })
 
-    test('Help menu lists Search help, Keyboard shortcuts, Function list, and Browse calc help', async ({
+    test('Help menu lists Search help, Keyboard shortcuts, Function list, Browse calc help, and Report an issue', async ({
         page,
     }) => {
         await navigateToPackage(page, 'calc')
@@ -19,6 +19,41 @@ test.describe('Calc Help menu', () => {
         await expect(page.getByRole('menuitem', { name: 'Keyboard shortcuts' })).toBeVisible()
         await expect(page.getByRole('menuitem', { name: 'Function list' })).toBeVisible()
         await expect(page.getByRole('menuitem', { name: 'Browse calc help' })).toBeVisible()
+        await expect(page.getByRole('menuitem', { name: 'Report an issue' })).toBeVisible()
+    })
+
+    test('Report an issue opens the calc GitHub new-issue page with diagnostic context', async ({
+        page,
+    }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        // openPackageIssue → Linking.openURL → window.open on web. Stub
+        // window.open so the assertion stays deterministic and never makes a
+        // real request to github.com (which would add network flakiness and
+        // an outbound side-effect to the suite).
+        await page.evaluate(() => {
+            ;(window as unknown as { __openedUrl?: string }).__openedUrl = undefined
+            window.open = (url?: string | URL) => {
+                ;(window as unknown as { __openedUrl?: string }).__openedUrl = String(url)
+                return null
+            }
+        })
+
+        await page.getByRole('button', { name: 'Help', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Report an issue' }).click()
+
+        const opened = await page.evaluate(
+            () => (window as unknown as { __openedUrl?: string }).__openedUrl
+        )
+        expect(opened).toContain('github.com/tinycld/calc/issues/new')
+        // The pre-filled body carries the package identity and platform so an
+        // issue arrives with real diagnostic context. URLSearchParams encodes
+        // spaces as '+', which decodeURIComponent leaves intact — normalize
+        // them back so the body assertions read naturally.
+        const decoded = decodeURIComponent(opened ?? '').replace(/\+/g, ' ')
+        expect(decoded).toContain('@tinycld/calc')
+        expect(decoded).toContain('**Platform:** web')
     })
 
     test('Search help… opens the help search palette', async ({ page }) => {

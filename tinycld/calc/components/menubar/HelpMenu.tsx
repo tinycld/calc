@@ -1,5 +1,6 @@
 import { openHelp, openHelpPackage } from '@tinycld/core/lib/help/open-help'
 import { useHelpSearchStore } from '@tinycld/core/lib/help/search-store'
+import { useReportIssue } from '@tinycld/core/lib/help/use-report-issue'
 import { Menu, MenuBarMenu, MenuShortcut, Separator } from '@tinycld/core/ui/menubar'
 import { Platform } from 'react-native'
 
@@ -8,6 +9,8 @@ import { Platform } from 'react-native'
 // function list), and a breadcrumb to the package's topic index.
 // Per-topic entries live in the search palette.
 export function HelpMenu() {
+    const reportIssue = useReportIssue('calc')
+
     return (
         <MenuBarMenu menuId="help" label="Help">
             <Menu.Item onPress={() => useHelpSearchStore.getState().open()}>
@@ -24,6 +27,11 @@ export function HelpMenu() {
             <Menu.Item onPress={() => openHelpPackage('calc')}>
                 <Menu.ItemTitle>Browse calc help</Menu.ItemTitle>
             </Menu.Item>
+            {reportIssue && (
+                <Menu.Item onPress={reportIssue}>
+                    <Menu.ItemTitle>Report an issue</Menu.ItemTitle>
+                </Menu.Item>
+            )}
         </MenuBarMenu>
     )
 }
