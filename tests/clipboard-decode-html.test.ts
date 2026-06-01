@@ -94,6 +94,22 @@ describe('htmlToPayload — own-encoder round trip', () => {
         })
     })
 
+    it('recovers numFmt and colors so Paste → Format only carries number format', () => {
+        const source = p([
+            [
+                {
+                    kind: 'number',
+                    raw: 1234.5,
+                    style: { numFmt: '#,##0.00', font: { color: '#ff0000' } },
+                },
+            ],
+        ])
+        const html = payloadToHtml(source, 'm')
+        const style = htmlToPayload(html)?.payload.cells[0][0].style
+        expect(style?.numFmt).toBe('#,##0.00')
+        expect(style?.font?.color?.toLowerCase()).toContain('ff0000')
+    })
+
     it('recovers cells containing HTML special chars', () => {
         const source = p([[{ kind: 'string', raw: '<b>&"</b>' }]])
         const html = payloadToHtml(source, 'm')
