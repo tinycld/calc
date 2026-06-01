@@ -114,6 +114,7 @@ function buildCell(attrs: Map<string, string>, innerHtml: string): ClipboardCell
     const rawAttr = attrs.get('data-tinycld-raw')
     const formulaAttr =
         attrs.get('data-tinycld-formula') ?? attrs.get('data-sheets-formula') ?? undefined
+    const numFmtAttr = attrs.get('data-tinycld-numfmt')
     const style = parseInlineStyle(attrs.get('style'))
 
     const displayText = stripTags(innerHtml).trim()
@@ -122,7 +123,11 @@ function buildCell(attrs: Map<string, string>, innerHtml: string): ClipboardCell
         raw: coerceRaw(kindAttr ?? 'string', rawAttr, displayText),
     }
     if (formulaAttr != null) cell.formula = formulaAttr
-    if (style != null) cell.style = style
+    if (numFmtAttr != null && numFmtAttr.length > 0) {
+        cell.style = { ...(style ?? {}), numFmt: numFmtAttr }
+    } else if (style != null) {
+        cell.style = style
+    }
     return cell
 }
 

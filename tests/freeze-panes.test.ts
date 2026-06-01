@@ -174,6 +174,7 @@ describe('grid-store freeze actions delegate through deps', () => {
         const store = createGridStore({
             readOnly: false,
             writeCell: () => {},
+            clearCellContent: () => {},
             focusActiveInput: () => {},
             focusSentinel: () => {},
             scrollToCell: () => {},
@@ -201,6 +202,7 @@ describe('grid-store freeze actions delegate through deps', () => {
         const store = createGridStore({
             readOnly: true,
             writeCell: () => {},
+            clearCellContent: () => {},
             focusActiveInput: () => {},
             focusSentinel: () => {},
             scrollToCell: () => {},

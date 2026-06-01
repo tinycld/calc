@@ -208,6 +208,7 @@ export type StructuralOp =
 export interface GridStoreDeps {
     readOnly: boolean
     writeCell: (row: number, col: number, value: string) => void
+    clearCellContent: (row: number, col: number) => void
     focusActiveInput: () => void
     scrollToCell: (row: number, col: number) => void
     focusSentinel: () => void
@@ -976,7 +977,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 for (const sr of selection.ranges) {
                     for (let r = sr.range.startRow; r <= sr.range.endRow; r++) {
                         for (let c = sr.range.startCol; c <= sr.range.endCol; c++) {
-                            deps.writeCell(r, c, '')
+                            deps.clearCellContent(r, c)
                         }
                     }
                 }

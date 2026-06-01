@@ -253,6 +253,28 @@ export function deleteYCell(doc: Y.Doc, sheetId: string, row: number, col: numbe
     }, LOCAL_ORIGIN)
 }
 
+// clearYCellContent wipes the value fields (kind/raw/display/formula) of
+// a cell while preserving its style Y.Map. Used by the Delete key so
+// number format and text formatting survive the keystroke. If the cell
+// has no style the entry is removed entirely (same result as deleteYCell).
+export function clearYCellContent(doc: Y.Doc, sheetId: string, row: number, col: number): void {
+    const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+    const key = yCellKey(sheetId, row, col)
+    doc.transact(() => {
+        const cell = cellsMap.get(key)
+        if (cell == null) return
+        const hasStyle = cell.has(STYLE_KEY)
+        if (!hasStyle) {
+            cellsMap.delete(key)
+            return
+        }
+        cell.delete('kind')
+        cell.delete('raw')
+        cell.delete('display')
+        cell.delete('formula')
+    }, LOCAL_ORIGIN)
+}
+
 // setYCellStyle deep-merges a partial CellStyle patch onto the cell at
 // (sheetId, row, col). Cells that don't exist yet are created with no
 // raw/display, just style — toggling bold on an empty cell is valid

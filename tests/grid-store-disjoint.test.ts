@@ -21,6 +21,7 @@ function makeStubDeps(opts: { readOnly?: boolean } = {}): GridStoreDeps {
     return {
         readOnly: opts.readOnly ?? false,
         writeCell: () => {},
+        clearCellContent: () => {},
         focusActiveInput: () => {},
         focusSentinel: () => {},
         scrollToCell: () => {},
@@ -269,21 +270,20 @@ describe('mergeSelection — disjoint refusal', () => {
 
 describe('clearSelection on disjoint', () => {
     it('clears every cell in every sub-range', () => {
-        const writes: Array<{ row: number; col: number; value: string }> = []
+        const cleared: Array<{ row: number; col: number }> = []
         const deps = {
             ...makeStubDeps(),
-            writeCell: (row: number, col: number, value: string) =>
-                writes.push({ row, col, value }),
+            clearCellContent: (row: number, col: number) => cleared.push({ row, col }),
         }
         const store = createGridStore(deps)
         store.getState().selectCell({ row: 1, col: 1 })
         store.getState().extendActiveRangeTo({ row: 1, col: 2 })
         store.getState().addSubRange({ row: 5, col: 5 })
         store.getState().clearSelection()
-        expect(writes).toEqual([
-            { row: 1, col: 1, value: '' },
-            { row: 1, col: 2, value: '' },
-            { row: 5, col: 5, value: '' },
+        expect(cleared).toEqual([
+            { row: 1, col: 1 },
+            { row: 1, col: 2 },
+            { row: 5, col: 5 },
         ])
     })
 })

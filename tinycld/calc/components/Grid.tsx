@@ -601,7 +601,7 @@ function GridInner({
                 onAnchorLayout={formulaBar.onAnchorLayout}
             />
             <View className="flex-row">
-                <CornerCell />
+                <CornerCell store={instance.store} rowCount={rows} colCount={cols} />
                 <ColumnHeader
                     scrollRef={viewport.headerScrollRef}
                     contentWidth={contentWidth}

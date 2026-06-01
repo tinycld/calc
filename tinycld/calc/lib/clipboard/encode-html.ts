@@ -53,6 +53,9 @@ function renderTd(cell: ClipboardCell): string {
         const rawAttr = typeof cell.raw === 'string' ? cell.raw : String(cell.raw)
         attrs.push(`data-tinycld-raw="${escapeAttr(rawAttr)}"`)
     }
+    if (cell.style?.numFmt != null && cell.style.numFmt.length > 0) {
+        attrs.push(`data-tinycld-numfmt="${escapeAttr(cell.style.numFmt)}"`)
+    }
     const style = inlineStyleFor(cell)
     if (style.length > 0) {
         attrs.push(`style="${escapeAttr(style)}"`)

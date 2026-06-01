@@ -1,5 +1,5 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import {
     type GestureResponderEvent,
     Platform,
@@ -49,18 +49,30 @@ export function RowHeader({
 }: RowHeaderProps) {
     const borderColor = useThemeColor('border')
     const activeRow = useGridStore(s => primaryAnchor(s.selection)?.row ?? null)
-    // Highlight the row label more strongly when the user has selected
-    // the WHOLE row (any sub-range with scope='row' anchored at this
-    // row). Disjoint row selections light up every selected row
-    // header, matching Sheets.
-    const rowScopeActive = useGridStore(s => {
-        if (s.selection == null) return false
-        if (activeRow == null) return false
-        for (const sr of s.selection.ranges) {
-            if (sr.scope === 'row' && sr.anchor.row === activeRow) return true
+    // Sorted comma-separated string of all row-scope anchor rows. Using
+    // a primitive return value keeps the selector's result stable across
+    // calls (useSyncExternalStore compares with Object.is, so returning
+    // a new Set each time would trigger infinite re-renders).
+    const selectedRowsKey = useGridStore(s => {
+        const rows: number[] = []
+        if (s.selection != null) {
+            for (const sr of s.selection.ranges) {
+                if (sr.scope === 'row') {
+                    for (let r = sr.range.startRow; r <= sr.range.endRow; r++) {
+                        rows.push(r)
+                    }
+                }
+            }
         }
-        return false
+        return rows.sort((a, b) => a - b).join(',')
     })
+    const selectedRowSet = useMemo(
+        () =>
+            selectedRowsKey
+                ? new Set(selectedRowsKey.split(',').map(Number))
+                : new Set<number>(),
+        [selectedRowsKey]
+    )
     const store = useGridStoreApi()
     // Skip the synthetic onPress after a modifier mousedown — see the
     // matching ref in ColumnHeader.tsx for the rationale.
@@ -81,7 +93,7 @@ export function RowHeader({
             fRows,
             0,
             activeRow,
-            rowScopeActive,
+            selectedRowSet,
             store,
             colCount,
             makeHandleProps,
@@ -97,7 +109,7 @@ export function RowHeader({
         lastRow,
         frozenH,
         activeRow,
-        rowScopeActive,
+        selectedRowSet,
         store,
         colCount,
         makeHandleProps,
@@ -165,7 +177,7 @@ function appendRowHeaderCells(
     last: number,
     yShift: number,
     activeRow: number | null,
-    rowScopeActive: boolean,
+    selectedRowSet: ReadonlySet<number>,
     store: ReturnType<typeof useGridStoreApi>,
     colCount: number,
     makeHandleProps: (row: number) => Record<string, unknown>,
@@ -173,8 +185,10 @@ function appendRowHeaderCells(
     skipNextPressRef: React.MutableRefObject<boolean>
 ): void {
     for (let row = first; row <= last; row++) {
+        // isActive: primary anchor row — gets the inset shadow affordance
         const isActive = row === activeRow
-        const isRowScope = rowScopeActive && isActive
+        // isSelected: any row-scope sub-range covers this row → green tint
+        const isSelected = isActive || selectedRowSet.has(row)
         const absTop = rowOffsets[row - 1]
         const height = rowOffsets[row] - absTop
         const top = absTop - yShift
@@ -250,7 +264,7 @@ function appendRowHeaderCells(
                     onLongPress={onLongPress}
                     accessibilityLabel={`Select row ${row}`}
                     className={`border-r border-b border-border items-center justify-center web:outline-none ${
-                        isActive ? 'bg-accent' : 'bg-surface-secondary'
+                        isSelected ? 'bg-accent' : 'bg-surface-secondary'
                     }`}
                     style={{
                         position: 'absolute',
@@ -264,8 +278,8 @@ function appendRowHeaderCells(
                     {...((webMouseDownProp ?? {}) as any)}
                 >
                     <Text
-                        className={`text-xs ${isActive ? 'text-accent-foreground' : 'text-muted-foreground'}`}
-                        style={isActive || isRowScope ? { fontWeight: 'bold' } : undefined}
+                        className={`text-xs ${isSelected ? 'text-accent-foreground' : 'text-muted-foreground'}`}
+                        style={isSelected ? { fontWeight: 'bold' } : undefined}
                     >
                         {row}
                     </Text>

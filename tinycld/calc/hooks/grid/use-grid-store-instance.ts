@@ -20,7 +20,7 @@ import {
 } from '../../lib/structural-mutations'
 import type { CellRange } from '../grid-store'
 import { createGridStore, type GridStoreApi, type GridStoreDeps } from '../grid-store'
-import { setYCell } from '../use-y-cell'
+import { clearYCellContent, setYCell } from '../use-y-cell'
 import { setFrozenCols, setFrozenRows } from '../use-y-sheets'
 
 export interface GridStoreInstance {
@@ -76,6 +76,7 @@ export function useGridStoreInstance({
         const deps: GridStoreDeps = {
             readOnly,
             writeCell: (row, col, value) => setYCell(doc, sheetId, row, col, value),
+            clearCellContent: (row, col) => clearYCellContent(doc, sheetId, row, col),
             focusActiveInput: () => {
                 const surface = holder.api?.getState().activeSurface ?? 'cell'
                 const target =

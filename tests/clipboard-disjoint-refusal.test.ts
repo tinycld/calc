@@ -14,6 +14,7 @@ function makeStubDeps(): GridStoreDeps {
     return {
         readOnly: false,
         writeCell: () => {},
+        clearCellContent: () => {},
         focusActiveInput: () => {},
         focusSentinel: () => {},
         scrollToCell: () => {},

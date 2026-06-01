@@ -31,6 +31,7 @@ function makeDepsWithMerges(merges: FakeMerge[]): GridStoreDeps {
     return {
         readOnly: false,
         writeCell: () => {},
+        clearCellContent: () => {},
         focusActiveInput: () => {},
         focusSentinel: () => {},
         scrollToCell: () => {},
