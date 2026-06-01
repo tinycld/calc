@@ -62,7 +62,7 @@ import { HandleContextMenu } from './grid/HandleContextMenu'
 import { HeaderContextMenu } from './grid/HeaderContextMenu'
 import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
-import { applyFormatPainterStyles, readCellStyle } from './grid/style-helpers'
+import { applyFormatPainterToDest, readCellStyle } from './grid/style-helpers'
 import { SortDialog } from './grid/SortDialog'
 import { KeyboardAccessoryHost } from './KeyboardAccessoryHost'
 import { MenuBar } from './menubar/MenuBar'
@@ -377,20 +377,21 @@ function GridInner({
         if (state.formatPainterCells == null || doc == null) return
         const range = primaryRange(state.selection)
         if (range == null) return
-        applyFormatPainterStyles(doc, sheetId, state.formatPainterCells, range)
+        applyFormatPainterToDest(doc, sheetId, state.formatPainterCells, range)
         state.clearFormatPainter()
     }, [doc, sheetId, instance.store])
 
     useEffect(() => {
         if (Platform.OS !== 'web') return
-        const el = document.documentElement
+        const cls = 'calc-format-painter-active'
+        const root = document.documentElement
         if (isFormatPainterActive) {
-            el.style.setProperty('--calc-grid-cursor', 'cell')
+            root.classList.add(cls)
         } else {
-            el.style.removeProperty('--calc-grid-cursor')
+            root.classList.remove(cls)
         }
         return () => {
-            el.style.removeProperty('--calc-grid-cursor')
+            root.classList.remove(cls)
         }
     }, [isFormatPainterActive])
 

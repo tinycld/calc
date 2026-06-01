@@ -9,6 +9,13 @@ import { useGridStore } from '../../hooks/use-grid-store'
 
 const PAINTER_STYLE_ID = 'tinycld-calc-painter-ants-style'
 
+// Paintbrush cursor shown while the painter is armed (Excel-style). White
+// outline halo under filled shapes so it reads on any background; hotspot
+// at the bristle tip (4, 28). Toggled by the `calc-format-painter-active`
+// class on <html>, set from Grid's painter effect.
+const PAINTER_CURSOR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"><path d="M4 28 L6 20 L12 26 Z"/><path d="M8 21 L21 8 L24 11 L11 24 Z"/><path d="M21 8 L25 4 a2.8 2.8 0 0 1 3 3 L24 11 Z"/></g><path d="M4 28 L6 20 L12 26 Z" fill="#2563eb"/><path d="M8 21 L21 8 L24 11 L11 24 Z" fill="#9ca3af"/><path d="M21 8 L25 4 a2.8 2.8 0 0 1 3 3 L24 11 Z" fill="#1f2937"/></svg>`
+const PAINTER_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(PAINTER_CURSOR_SVG)}") 4 28, copy`
+
 interface FormatPainterOverlayProps {
     colOffsets: Float64Array
     rowOffsets: Float64Array
@@ -37,6 +44,9 @@ export function FormatPainterOverlay({ colOffsets, rowOffsets }: FormatPainterOv
     background-position: 0 0, 0 100%, 0 0, 100% 0;
     background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
     animation: tinycld-calc-painter-ants 0.6s linear infinite;
+}
+html.calc-format-painter-active, html.calc-format-painter-active * {
+    cursor: ${PAINTER_CURSOR} !important;
 }
 `
         document.head.appendChild(style)

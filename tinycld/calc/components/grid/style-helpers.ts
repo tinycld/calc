@@ -169,6 +169,32 @@ export function applyFormatPainterStyles(
     }, LOCAL_ORIGIN)
 }
 
+// applyFormatPainterToDest applies the painter onto a destination range,
+// expanding a single-cell target to the full source dimensions first (so
+// clicking one cell stamps the whole captured block). Multi-cell targets
+// — e.g. a dragged region or a whole row/column — are tiled as-is.
+export function applyFormatPainterToDest(
+    doc: Y.Doc,
+    sheetId: string,
+    cells: CellStyle[][],
+    destRange: CellRange
+): void {
+    const srcRows = cells.length
+    const srcCols = cells[0]?.length ?? 0
+    if (srcRows === 0 || srcCols === 0) return
+    const isSingleCell =
+        destRange.startRow === destRange.endRow && destRange.startCol === destRange.endCol
+    const target = isSingleCell
+        ? {
+              startRow: destRange.startRow,
+              startCol: destRange.startCol,
+              endRow: destRange.startRow + srcRows - 1,
+              endCol: destRange.startCol + srcCols - 1,
+          }
+        : destRange
+    applyFormatPainterStyles(doc, sheetId, cells, target)
+}
+
 // locateCellAtGridCoord maps an (x, y) inside the grid body to the
 // 1-based (row, col) of the cell at that point. Used by the cell
 // PanResponder to translate pointer-move locations into the cell the
