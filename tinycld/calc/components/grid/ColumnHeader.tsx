@@ -53,6 +53,7 @@ interface ColumnHeaderProps {
     // Callback to remove the criterion for a single column (header-mode
     // only). Wired to the ✕ press.
     onRemoveColumnCriterion: (col: number) => void
+    onFormatPainterApply?: () => void
 }
 
 export function ColumnHeader({
@@ -69,6 +70,7 @@ export function ColumnHeader({
     activeFilterCols,
     filterMode,
     onRemoveColumnCriterion,
+    onFormatPainterApply,
 }: ColumnHeaderProps) {
     const borderColor = useThemeColor('border')
     const activeCol = useGridStore(s => primaryAnchor(s.selection)?.col ?? null)
@@ -118,6 +120,7 @@ export function ColumnHeader({
         store,
         accent,
         skipNextPressRef,
+        onFormatPainterApply,
     }
 
     const frozenCells: React.ReactNode[] = []
@@ -213,6 +216,7 @@ interface HeaderFilterCtx {
     store: GridStoreApi
     accent: string
     skipNextPressRef: React.MutableRefObject<boolean>
+    onFormatPainterApply?: () => void
 }
 
 // appendHeaderCells emits one column-header label cell + one resize
@@ -319,6 +323,7 @@ function appendHeaderCells(
                     return
                 }
                 filter.store.getState().selectColumn(col, rowCount)
+                filter.onFormatPainterApply?.()
             }
             const onLongPress = (e: GestureResponderEvent) => {
                 const { pageX, pageY } = e.nativeEvent

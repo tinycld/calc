@@ -5,6 +5,7 @@ import {
     Bold,
     DollarSign,
     Italic,
+    Paintbrush,
     Percent,
     Redo,
     Search,
@@ -67,6 +68,9 @@ export interface ToolbarProps {
 
     horizontalAlign: HorizontalAlign | undefined
     onSetHorizontalAlign: (align: HorizontalAlign) => void
+
+    isFormatPainterActive: boolean
+    onActivateFormatPainter: () => void
 
     onOpenFind: () => void
 
@@ -149,6 +153,8 @@ function ToolbarImpl(props: ToolbarProps) {
         onSetBorders,
         horizontalAlign,
         onSetHorizontalAlign,
+        isFormatPainterActive,
+        onActivateFormatPainter,
         onOpenFind,
         doc,
         pivotSourceRangeDefault,
@@ -166,6 +172,13 @@ function ToolbarImpl(props: ToolbarProps) {
             <ToolbarButton icon={Redo} disabled={!canRedo} onPress={onRedo} label="Redo" />
             <ToolbarDivider />
 
+            <ToolbarButton
+                icon={Paintbrush}
+                active={isFormatPainterActive}
+                disabled={disabled}
+                onPress={onActivateFormatPainter}
+                label="Format painter"
+            />
             <NumberFormatMenu
                 currentNumFmt={currentNumFmt}
                 disabled={disabled}

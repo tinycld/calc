@@ -32,6 +32,7 @@ import { useWorkbook } from '../hooks/use-workbook-context'
 import type { WorkbookFileActions } from '../hooks/use-workbook-file-actions'
 import { useAllYSheets, useYSheets } from '../hooks/use-y-sheets'
 import { classifyCellKey } from '../lib/cell-key-action'
+import type { CellStyle } from '../lib/workbook-types'
 import { rangeToSheetRelativeA1 } from '../lib/conditional-format/a1'
 import { buildColOffsets, buildRowOffsets } from '../lib/dimensions'
 import { buildA1Range } from '../lib/pivot/range-parse'
@@ -39,6 +40,7 @@ import {
     allRanges,
     computeShiftArrowTarget,
     primaryAnchor,
+    primaryRange,
     unionBoundingBox,
 } from '../lib/selection-range'
 import { useConditionalFormatPanelStore } from '../lib/stores/conditional-format-panel-store'
@@ -60,6 +62,7 @@ import { HandleContextMenu } from './grid/HandleContextMenu'
 import { HeaderContextMenu } from './grid/HeaderContextMenu'
 import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
+import { applyFormatPainterStyles, readCellStyle } from './grid/style-helpers'
 import { SortDialog } from './grid/SortDialog'
 import { KeyboardAccessoryHost } from './KeyboardAccessoryHost'
 import { MenuBar } from './menubar/MenuBar'
@@ -347,6 +350,50 @@ function GridInner({
         [presence, sheetId]
     )
 
+    const isFormatPainterActive = useGridStore(s => s.formatPainterCells != null)
+
+    const activateFormatPainter = useCallback(() => {
+        if (readOnly || doc == null) return
+        const state = instance.store.getState()
+        if (state.formatPainterCells != null) {
+            state.clearFormatPainter()
+            return
+        }
+        const range = primaryRange(state.selection)
+        if (range == null) return
+        const cells: CellStyle[][] = []
+        for (let r = range.startRow; r <= range.endRow; r++) {
+            const row: CellStyle[] = []
+            for (let c = range.startCol; c <= range.endCol; c++) {
+                row.push(readCellStyle(doc, sheetId, r, c) ?? {})
+            }
+            cells.push(row)
+        }
+        state.setFormatPainter(cells, range)
+    }, [readOnly, doc, sheetId, instance.store])
+
+    const applyFormatPainterIfActive = useCallback(() => {
+        const state = instance.store.getState()
+        if (state.formatPainterCells == null || doc == null) return
+        const range = primaryRange(state.selection)
+        if (range == null) return
+        applyFormatPainterStyles(doc, sheetId, state.formatPainterCells, range)
+        state.clearFormatPainter()
+    }, [doc, sheetId, instance.store])
+
+    useEffect(() => {
+        if (Platform.OS !== 'web') return
+        const el = document.documentElement
+        if (isFormatPainterActive) {
+            el.style.setProperty('--calc-grid-cursor', 'cell')
+        } else {
+            el.style.removeProperty('--calc-grid-cursor')
+        }
+        return () => {
+            el.style.removeProperty('--calc-grid-cursor')
+        }
+    }, [isFormatPainterActive])
+
     const toolbar = useGridToolbarToggles({ doc, sheetId, readOnly })
     const format = useGridFormatControls({
         doc,
@@ -520,6 +567,8 @@ function GridInner({
         onSetBorders: format.setBorders,
         horizontalAlign: format.horizontalAlign,
         onSetHorizontalAlign: format.setHorizontalAlign,
+        isFormatPainterActive,
+        onActivateFormatPainter: activateFormatPainter,
         onOpenFind: onOpenFind,
         onDownloadCsvCurrent: csvDownload.downloadCurrent,
         onDownloadCsvAll: csvDownload.downloadAll,
@@ -616,6 +665,7 @@ function GridInner({
                     activeFilterCols={filter.activeFilterCols}
                     filterMode={filter.filterView?.mode ?? null}
                     onRemoveColumnCriterion={filter.removeHeaderCriterion}
+                    onFormatPainterApply={applyFormatPainterIfActive}
                 />
             </View>
             <View className="flex-1 flex-row" onLayout={onBodyContainerLayout}>
@@ -629,6 +679,7 @@ function GridInner({
                     frozenRows={frozenRows}
                     makeHandleProps={rowResize.makeHandleProps}
                     dragState={rowResize.dragState}
+                    onFormatPainterApply={applyFormatPainterIfActive}
                 />
                 <Body
                     horizontalRef={viewport.horizontalRef}

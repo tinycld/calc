@@ -54,6 +54,7 @@ import type { SheetWithId } from '../../hooks/use-y-sheets'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { Cell } from './Cell'
 import { CutMarchingAntsOverlay } from './CutMarchingAntsOverlay'
+import { FormatPainterOverlay } from './FormatPainterOverlay'
 import { FindMatchOverlay } from './FindMatchOverlay'
 import {
     FillPreviewOverlay,
@@ -170,6 +171,7 @@ function SingleQuadrantBody({
                         rowOffsets={rowOffsets}
                     />
                     <CutMarchingAntsOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
+                    <FormatPainterOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <FillPreviewOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <SelectionHandleOverlay
                         sheetId={sheetId}
@@ -417,6 +419,10 @@ function SplitBody({
                                 rowOffsets={brRowOffsets}
                             />
                             <CutMarchingAntsOverlay
+                                colOffsets={brColOffsets}
+                                rowOffsets={brRowOffsets}
+                            />
+                            <FormatPainterOverlay
                                 colOffsets={brColOffsets}
                                 rowOffsets={brRowOffsets}
                             />

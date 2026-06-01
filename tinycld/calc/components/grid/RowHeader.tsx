@@ -34,6 +34,7 @@ interface RowHeaderProps {
     frozenRows: number
     makeHandleProps: (row: number) => Record<string, unknown>
     dragState: RowDragState | null
+    onFormatPainterApply?: () => void
 }
 
 export function RowHeader({
@@ -46,6 +47,7 @@ export function RowHeader({
     frozenRows,
     makeHandleProps,
     dragState,
+    onFormatPainterApply,
 }: RowHeaderProps) {
     const borderColor = useThemeColor('border')
     const activeRow = useGridStore(s => primaryAnchor(s.selection)?.row ?? null)
@@ -98,7 +100,8 @@ export function RowHeader({
             colCount,
             makeHandleProps,
             dragState,
-            skipNextPressRef
+            skipNextPressRef,
+            onFormatPainterApply
         )
     }
     const scrollableCells: React.ReactNode[] = []
@@ -114,7 +117,8 @@ export function RowHeader({
         colCount,
         makeHandleProps,
         dragState,
-        skipNextPressRef
+        skipNextPressRef,
+        onFormatPainterApply
     )
 
     if (fRows <= 0) {
@@ -182,7 +186,8 @@ function appendRowHeaderCells(
     colCount: number,
     makeHandleProps: (row: number) => Record<string, unknown>,
     dragState: RowDragState | null,
-    skipNextPressRef: React.MutableRefObject<boolean>
+    skipNextPressRef: React.MutableRefObject<boolean>,
+    onFormatPainterApply: (() => void) | undefined
 ): void {
     for (let row = first; row <= last; row++) {
         // isActive: primary anchor row — gets the inset shadow affordance
@@ -252,6 +257,7 @@ function appendRowHeaderCells(
                     return
                 }
                 store.getState().selectRow(row, colCount)
+                onFormatPainterApply?.()
             }
             const onLongPress = (e: GestureResponderEvent) => {
                 const { pageX, pageY } = e.nativeEvent

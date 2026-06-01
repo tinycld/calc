@@ -19,12 +19,12 @@ import { useYCell } from '../../hooks/use-y-cell'
 import type { ArrowDirection } from '../../lib/cell-key-action'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
 import { cellStyleToRenderProps, mergeCellStyles } from '../../lib/cell-style-render'
-import { computeShiftArrowTarget, containsAny, primaryAnchor } from '../../lib/selection-range'
+import { computeShiftArrowTarget, containsAny, primaryAnchor, primaryRange } from '../../lib/selection-range'
 import { columnLabel, formatCell } from '../../lib/workbook-types'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { FORMULA_BAR_ACCESSORY_ID } from '../formula-accessory-id'
 import { CommentIndicator } from './CommentIndicator'
-import { locateCellAtGridCoord } from './style-helpers'
+import { applyFormatPainterStyles, locateCellAtGridCoord } from './style-helpers'
 
 interface CellProps {
     sheetId: string
@@ -235,6 +235,27 @@ export const Cell = memo(function Cell({
             }
             dragModeRef.current = null
             cellOriginRef.current = null
+            const state = store.getState()
+            if (state.formatPainterCells != null && doc != null) {
+                let destRange = primaryRange(state.selection)
+                if (destRange != null) {
+                    const srcRows = state.formatPainterCells.length
+                    const srcCols = state.formatPainterCells[0]?.length ?? 0
+                    const isSingleCell =
+                        destRange.startRow === destRange.endRow &&
+                        destRange.startCol === destRange.endCol
+                    if (isSingleCell && srcRows > 0 && srcCols > 0) {
+                        destRange = {
+                            startRow: destRange.startRow,
+                            startCol: destRange.startCol,
+                            endRow: destRange.startRow + srcRows - 1,
+                            endCol: destRange.startCol + srcCols - 1,
+                        }
+                    }
+                    applyFormatPainterStyles(doc, sheetId, state.formatPainterCells, destRange)
+                }
+                state.clearFormatPainter()
+            }
         },
     })
 
@@ -281,6 +302,22 @@ export const Cell = memo(function Cell({
         }
         const state = store.getState()
         if (state.cellRefTap(row, col)) return
+        if (state.formatPainterCells != null && doc != null) {
+            state.selectCell({ row, col })
+            const cells = state.formatPainterCells
+            const srcRows = cells.length
+            const srcCols = cells[0]?.length ?? 0
+            if (srcRows > 0 && srcCols > 0) {
+                applyFormatPainterStyles(doc, sheetId, cells, {
+                    startRow: row,
+                    startCol: col,
+                    endRow: row + srcRows - 1,
+                    endCol: col + srcCols - 1,
+                })
+            }
+            state.clearFormatPainter()
+            return
+        }
         if (isSelected) {
             state.editCell({ row, col }, editDraft)
         } else {

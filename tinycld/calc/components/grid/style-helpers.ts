@@ -144,6 +144,31 @@ export function toggleCellFontAttrAcrossRanges(
     }, LOCAL_ORIGIN)
 }
 
+// applyFormatPainterStyles tiles the source style grid onto destRange
+// using row-major modulo wrap. Each destination cell (dr, dc) gets the
+// source style at (dr % srcRows, dc % srcCols) — identical to Excel's
+// format-painter multi-cell tiling semantics.
+export function applyFormatPainterStyles(
+    doc: Y.Doc,
+    sheetId: string,
+    cells: CellStyle[][],
+    destRange: CellRange
+): void {
+    const srcRows = cells.length
+    if (srcRows === 0) return
+    const srcCols = cells[0].length
+    if (srcCols === 0) return
+    doc.transact(() => {
+        for (let r = destRange.startRow; r <= destRange.endRow; r++) {
+            for (let c = destRange.startCol; c <= destRange.endCol; c++) {
+                const srcR = (r - destRange.startRow) % srcRows
+                const srcC = (c - destRange.startCol) % srcCols
+                setYCellStyle(doc, sheetId, r, c, cells[srcR][srcC])
+            }
+        }
+    }, LOCAL_ORIGIN)
+}
+
 // locateCellAtGridCoord maps an (x, y) inside the grid body to the
 // 1-based (row, col) of the cell at that point. Used by the cell
 // PanResponder to translate pointer-move locations into the cell the

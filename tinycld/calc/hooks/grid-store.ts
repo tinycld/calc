@@ -29,6 +29,7 @@
 // `lib/selection-range.ts` for the helper layer call sites use.
 import { createStore as createVanillaStore, type StoreApi } from 'zustand/vanilla'
 import type { ArrowDirection } from '../lib/cell-key-action'
+import type { CellStyle } from '../lib/workbook-types'
 import {
     applyFunctionInsertion,
     applyNameInsertion,
@@ -178,6 +179,11 @@ export interface GridState {
     // refused copy on a disjoint selection). Consumers clear it via
     // dismissSelectionStatus or the next selection-mutating action.
     selectionStatus: SelectionStatus
+    // Format painter: source styles to apply on next click/drag. Set by
+    // the toolbar paintbrush button; cleared after the first apply or on
+    // button toggle. Row-major 2D array matching the source range shape.
+    formatPainterCells: CellStyle[][] | null
+    formatPainterSourceRange: CellRange | null
 }
 
 // Live cursor position inside the editing input. Stored as a
@@ -358,6 +364,8 @@ export interface GridActions {
     setSortStatus: (status: { mergesBroken: number } | null) => void
     setSelectionStatus: (status: SelectionStatus) => void
     dismissSelectionStatus: () => void
+    setFormatPainter: (cells: CellStyle[][], sourceRange: CellRange) => void
+    clearFormatPainter: () => void
     mergeSelection: () => void
     mergeSelectionHorizontal: () => void
     mergeSelectionVertical: () => void
@@ -401,6 +409,8 @@ const initialState: GridState = {
     filterDialogCol: null,
     sortStatus: null,
     selectionStatus: null,
+    formatPainterCells: null,
+    formatPainterSourceRange: null,
 }
 
 const CLIPBOARD_MARKER_TTL_MS = 30_000
@@ -1423,6 +1433,10 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             setSortStatus: status => set({ sortStatus: status }),
             setSelectionStatus: status => set({ selectionStatus: status }),
             dismissSelectionStatus: () => set({ selectionStatus: null }),
+            setFormatPainter: (cells, sourceRange) =>
+                set({ formatPainterCells: cells, formatPainterSourceRange: sourceRange }),
+            clearFormatPainter: () =>
+                set({ formatPainterCells: null, formatPainterSourceRange: null }),
 
             fillDragStart: () => {
                 if (deps.readOnly) return false
