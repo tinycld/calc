@@ -80,17 +80,48 @@ export async function writeToOsClipboard(
     return { markerId, osWriteOk }
 }
 
-// readFromOsClipboard pulls a payload out of the OS clipboard. Order
-// of preference:
+// decodeRead resolves raw clipboard html/text into a payload. Order of
+// preference:
 //   1. text/html → extract marker → fidelity-store hit → return full
 //      payload with markerId.
 //   2. text/html → no marker (or marker miss) → parse the HTML via
 //      htmlToPayload.
 //   3. text/plain → tsvToPayload.
 //   4. Nothing usable → null.
-//
-// Returns null when the clipboard is empty, unsupported, or the read
-// was denied.
+// Shared by both the sync (paste event) and async (Clipboard API) reads.
+function decodeRead(html: string, text: string): AdapterReadResult | null {
+    if (html.length > 0) {
+        const decoded = htmlToPayload(html)
+        if (decoded != null) {
+            if (decoded.markerId != null) {
+                const fidelity = getPayload(decoded.markerId)
+                if (fidelity != null) {
+                    return { payload: fidelity, markerId: decoded.markerId }
+                }
+            }
+            return { payload: decoded.payload, markerId: decoded.markerId }
+        }
+    }
+    if (text.length > 0) {
+        return { payload: tsvToPayload(text), markerId: null }
+    }
+    return null
+}
+
+// readFromClipboardEvent reads synchronously from a native paste event's
+// clipboardData. This is the preferred path for user-initiated Cmd+V
+// because it requires no permission and works in all browsers including
+// Safari, where the async Clipboard API fails after any await.
+export function readFromClipboardEvent(event: ClipboardEvent): AdapterReadResult | null {
+    const html = event.clipboardData?.getData('text/html') ?? ''
+    const text = event.clipboardData?.getData('text/plain') ?? ''
+    return decodeRead(html, text)
+}
+
+// readFromOsClipboard pulls a payload out of the OS clipboard via the
+// async Clipboard API, deferring to decodeRead for the html/text
+// preference order. Returns null when the clipboard is empty,
+// unsupported, or the read was denied.
 export async function readFromOsClipboard(): Promise<AdapterReadResult | null> {
     if (typeof navigator === 'undefined' || navigator.clipboard == null) return null
 
@@ -99,27 +130,14 @@ export async function readFromOsClipboard(): Promise<AdapterReadResult | null> {
         const items = await navigator.clipboard.read()
         for (const item of items) {
             const types = item.types ?? []
-            if (types.includes('text/html')) {
-                const blob = await item.getType('text/html')
-                const html = await blob.text()
-                const decoded = htmlToPayload(html)
-                if (decoded != null) {
-                    if (decoded.markerId != null) {
-                        const fidelity = getPayload(decoded.markerId)
-                        if (fidelity != null) {
-                            return { payload: fidelity, markerId: decoded.markerId }
-                        }
-                    }
-                    return { payload: decoded.payload, markerId: decoded.markerId }
-                }
-            }
-            if (types.includes('text/plain')) {
-                const blob = await item.getType('text/plain')
-                const text = await blob.text()
-                if (text.length > 0) {
-                    return { payload: tsvToPayload(text), markerId: null }
-                }
-            }
+            const html = types.includes('text/html')
+                ? await (await item.getType('text/html')).text()
+                : ''
+            const text = types.includes('text/plain')
+                ? await (await item.getType('text/plain')).text()
+                : ''
+            const result = decodeRead(html, text)
+            if (result != null) return result
         }
     } catch {
         // .read() can fail on Firefox (not implemented) or when the
@@ -130,8 +148,7 @@ export async function readFromOsClipboard(): Promise<AdapterReadResult | null> {
     // only this one).
     try {
         const text = await navigator.clipboard.readText()
-        if (text.length === 0) return null
-        return { payload: tsvToPayload(text), markerId: null }
+        return decodeRead('', text)
     } catch {
         return null
     }

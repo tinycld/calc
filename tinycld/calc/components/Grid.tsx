@@ -437,6 +437,31 @@ function GridInner({
     // the shortcuts live for the lifetime of the Grid mount. The
     // clipboard hook owns the actual copy/paste plumbing.
     const clipboard = useClipboard({ doc, sheetId, store: instance.store, readOnly })
+
+    // Native paste event listener — reads clipboard data synchronously
+    // from event.clipboardData, bypassing the async Clipboard API which
+    // requires clipboard-read permission and breaks in Safari from a
+    // keydown context. The Cmd+V tinykeys shortcut is intentionally NOT
+    // registered so the browser fires this native paste event instead.
+    //
+    // Guard: skip when a cell editor TextInput has focus (the input
+    // handles its own paste to insert text into the formula). Any
+    // <input> or <textarea> that is NOT the grid's own editor (formula
+    // bar, dialogs) also keeps its default paste behaviour.
+    useEffect(() => {
+        if (Platform.OS !== 'web') return
+        const handler = (event: ClipboardEvent) => {
+            const active = document.activeElement
+            if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return
+            const state = instance.store.getState()
+            if (state.editSession != null) return
+            event.preventDefault()
+            clipboard.pasteFromNativeEvent(event)
+        }
+        window.addEventListener('paste', handler)
+        return () => window.removeEventListener('paste', handler)
+    }, [clipboard, instance.store])
+
     const findStore = useFindStoreApi()
     const findActions = useFindActions({ doc, sheetId, findStore, readOnly })
     const onOpenFind = useCallback(() => findActions.openFind(), [findActions])
