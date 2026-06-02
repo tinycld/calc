@@ -497,10 +497,10 @@ mkdir ~/code/tinycld && cd ~/code/tinycld
 npx @tinycld/bootstrap@latest --assemble-only --with calc
 
 # Install at the workspace root (the generator runs as postinstall).
-npm install
+pnpm install
 
 # Run the full stack
-cd app && npm run dev
+cd app && pnpm run dev
 ```
 
 ## Standalone checks
@@ -510,19 +510,19 @@ Run quality checks from inside this package via the workspace-installed
 
 ```sh
 cd ~/code/tinycld/calc
-npx tinycld-pkg check     # typecheck + vitest (scoped to this package)
-npx tinycld-pkg test      # vitest only
-npx tinycld-pkg test:e2e  # Playwright for this package
-npx tinycld-pkg typecheck # tsc only
+pnpm exec tinycld-pkg check     # typecheck + vitest (scoped to this package)
+pnpm exec tinycld-pkg test      # vitest only
+pnpm exec tinycld-pkg test:e2e  # Playwright for this package
+pnpm exec tinycld-pkg typecheck # tsc only
 ```
 
 For an ecosystem-wide sweep, run from the workspace's `app/` directory:
 
 ```sh
 cd ~/code/tinycld/app
-npm run lint        # biome over the whole workspace
-npm run pkg:check   # typecheck + unit across every present member
-npm run pkg:test:e2e  # Playwright across every present member
+pnpm run lint        # biome over the whole workspace
+pnpm run pkg:check   # typecheck + unit across every present member
+pnpm run pkg:test:e2e  # Playwright across every present member
 ```
 
 Biome lives only in `app/` and is the single config for the whole
