@@ -25,16 +25,23 @@
         "@tinycld/package-scripts": "*"
     },
     "peerDependencies": {
+        "@tanstack/db": ">=0.6",
+        "@tanstack/react-db": ">=0.1",
+        "expo-clipboard": ">=55.0.0",
+        "expo-file-system": "~55.0.19",
+        "expo-print": "^55.0.14",
+        "expo-router": ">=55.0.0",
+        "expo-sharing": "~55.0.18",
+        "hyperformula": ">=3.0.0",
+        "lucide-react-native": "^1.7.0",
+        "numfmt": ">=3.2",
+        "pbtsdb": ">=0.5",
+        "pocketbase": "^0.26.8",
         "react": ">=19",
         "react-native": ">=0.83",
-        "expo-clipboard": ">=55.0.0",
-        "expo-router": ">=55.0.0",
-        "pbtsdb": ">=0.5",
-        "@tanstack/react-db": ">=0.1",
-        "@tanstack/db": ">=0.6",
-        "hyperformula": ">=3.0.0",
-        "yjs": ">=13.6",
         "y-protocols": ">=1.0",
-        "numfmt": ">=3.2"
+        "yjs": ">=13.6",
+        "zod": "^4.3.6",
+        "zustand": "^5.0.12"
     }
 }
