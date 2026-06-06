@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { mergeConfig } from 'vitest/config'
-import appConfig from '../app/vitest.config'
+import appConfig from '../tinycld/vitest.config'
 
 export default mergeConfig(appConfig, {
     resolve: {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { login, navigateToPackage } from '../../app/tests/e2e/helpers'
+import { login, navigateToPackage } from '../../tinycld/tests/e2e/helpers'
 import { openNewSpreadsheet } from './_menubar-helpers'
 
 // Regression — when one menubar menu was open and the user moved the
