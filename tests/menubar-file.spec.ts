@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { login, navigateToPackage } from '../../app/tests/e2e/helpers'
+import { login, navigateToPackage } from '../../tinycld/tests/e2e/helpers'
 import { openNewSpreadsheet } from './_menubar-helpers'
 
 test.describe('Calc File menu', () => {
