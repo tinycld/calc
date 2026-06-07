@@ -19,11 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # This PR's code, checked out into its member slot. The workspace root is
-      # NOT a committed repo (post app+core merge) — bootstrap assembles it from
-      # scratch around this checkout. bootstrap --assemble-only clones the merged
-      # `tinycld` member (app shell + nested core + package-scripts) plus this
-      # PACKAGE; it skips PACKAGE's slot since it already exists, so we test THIS
-      # PR's code.
+      # not a committed repo — bootstrap assembles it from scratch around this
+      # checkout. `--assemble-only` clones the `tinycld` member (app shell + core
+      # + package-scripts) plus this PACKAGE, skipping PACKAGE's slot since it's
+      # already present, so CI tests this PR's code.
       - uses: actions/checkout@v5
         with:
           path: ws/${{ env.PACKAGE }}
