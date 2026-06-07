@@ -18,28 +18,24 @@ jobs:
     name: Typecheck & Unit
     runs-on: ubuntu-latest
     steps:
-      # 1. The workspace meta-repo becomes the job root.
-      - uses: actions/checkout@v5
-        with:
-          repository: tinycld/workspace
-          ref: main
-          path: ws
-      # 2. This PR's code, checked out into the member slot.
+      # This PR's code, checked out into its member slot. The workspace root is
+      # NOT a committed repo (post app+core merge) — bootstrap assembles it from
+      # scratch around this checkout. bootstrap --assemble-only clones the merged
+      # `tinycld` member (app shell + nested core + package-scripts) plus this
+      # PACKAGE; it skips PACKAGE's slot since it already exists, so we test THIS
+      # PR's code.
       - uses: actions/checkout@v5
         with:
           path: ws/${{ env.PACKAGE }}
+      - name: Assemble workspace (app + core + drive)
+        working-directory: ws
+        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive
       - uses: actions/setup-node@v5
         with:
           node-version-file: ws/.node-version
       - uses: actions/setup-go@v6
         with:
           go-version-file: ws/.go-version
-      # 3. Clone app + core (the PR's PACKAGE is already checked out into its
-      #    slot; bootstrap --assemble-only skips dirs that already exist). A sibling
-      #    only needs app + core + itself to typecheck + unit-test.
-      - name: Assemble workspace (app + core + drive)
-        working-directory: ws
-        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive
       - name: Install (workspace root)
         working-directory: ws
         run: corepack enable && pnpm install --no-frozen-lockfile
@@ -53,21 +49,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          repository: tinycld/workspace
-          ref: main
-          path: ws
-      - uses: actions/checkout@v5
-        with:
           path: ws/${{ env.PACKAGE }}
+      - name: Assemble workspace (app + core + drive)
+        working-directory: ws
+        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive
       - uses: actions/setup-node@v5
         with:
           node-version-file: ws/.node-version
       - uses: actions/setup-go@v6
         with:
           go-version-file: ws/.go-version
-      - name: Assemble workspace (app + core + drive)
-        working-directory: ws
-        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive
       - name: Install (workspace root)
         working-directory: ws
         run: corepack enable && pnpm install --no-frozen-lockfile
@@ -75,9 +66,9 @@ jobs:
       # polling — see tinycld/app#21 for the trace evidence and the
       # blank-page-after-reload flake it fixed.
       - name: Configure test env
-        uses: tinycld/app/.github/actions/configure-test-env@main
+        uses: ./ws/tinycld/.github/actions/configure-test-env
       - name: Install Playwright browsers
-        working-directory: ws/app
+        working-directory: ws/tinycld
         run: pnpm exec playwright install --with-deps chromium
       - name: E2E
         working-directory: ws/${{ env.PACKAGE }}
