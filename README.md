@@ -3,11 +3,12 @@
 Spreadsheets for your organization.
 
 A feature package for the [tinycld](https://tinycld.org/) ecosystem.
-Lives as a standalone git repo alongside the [tinycld
-app](https://github.com/tinycld/app) and other sibling packages
-(`contacts`, `mail`, `calendar`, `drive`, `text`,
-`google-takeout-import`). `@tinycld/core` is its own standalone repo,
-not bundled inside the app shell.
+Lives as a standalone git repo alongside the [tinycld app
+shell](https://github.com/tinycld/tinycld) and other sibling feature
+packages (`contacts`, `mail`, `calendar`, `drive`, `text`,
+`google-takeout-import`). `@tinycld/core` is the shared runtime/UI
+library, nested inside the `tinycld` shell repo at `tinycld/core/` and
+imported as `@tinycld/core`.
 
 ## What it does
 
@@ -500,7 +501,7 @@ npx @tinycld/bootstrap@latest --assemble-only --with calc
 pnpm install
 
 # Run the full stack
-cd app && pnpm run dev
+cd tinycld && pnpm run dev
 ```
 
 ## Standalone checks
@@ -516,10 +517,10 @@ pnpm exec tinycld-pkg test:e2e  # Playwright for this package
 pnpm exec tinycld-pkg typecheck # tsc only
 ```
 
-For an ecosystem-wide sweep, run from the workspace's `app/` directory:
+For an ecosystem-wide sweep, run from the workspace's `tinycld/` directory:
 
 ```sh
-cd ~/code/tinycld/app
+cd ~/code/tinycld/tinycld
 pnpm run lint        # biome over the whole workspace
 pnpm run pkg:check   # typecheck + unit across every present member
 pnpm run pkg:test:e2e  # Playwright across every present member
