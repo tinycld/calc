@@ -255,6 +255,7 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
                         <View style={{ marginBottom: 8, gap: 6 }}>
                             {values.map((value, idx) => (
                                 <View
+                                    // biome-ignore lint/suspicious/noArrayIndexKey: positional filter-value inputs; values may be empty/duplicate while typing, so index is the only stable identity
                                     key={idx}
                                     className="flex-row items-center"
                                     style={{ gap: 6 }}
