@@ -29,6 +29,7 @@ export function FieldList({
                     </Text>
                 )}
                 {headers.map((h, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: source-range headers list, never reordered; index disambiguates duplicate header names
                     <View key={`${i}:${h}`} className="flex-row items-center justify-between">
                         <Text className="flex-1 text-sm text-foreground">{h || '(unnamed)'}</Text>
                         <View className="flex-row gap-1">

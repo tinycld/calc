@@ -235,9 +235,11 @@ function PreviewTable({ rows, totalCols }: PreviewTableProps) {
             >
                 <View>
                     {rows.map((row, r) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: read-only CSV preview grid; rows/cells are positional and never reordered
                         <View key={`${r}`} className="flex-row">
                             {Array.from({ length: totalCols }).map((_, c) => (
                                 <View
+                                    // biome-ignore lint/suspicious/noArrayIndexKey: read-only CSV preview grid; rows/cells are positional and never reordered
                                     key={`${c}`}
                                     className="px-2 py-1 border-r border-b border-border min-w-[80px]"
                                 >
