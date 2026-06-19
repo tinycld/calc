@@ -99,7 +99,6 @@ export function PivotSidePanel({ doc, def, isOpen, onClose, readOnly }: PivotSid
                     <FieldSlot label="Rows">
                         {def.rows.map((f, i) => (
                             <FieldRow
-                                // biome-ignore lint/suspicious/noArrayIndexKey: pivot fields have no stable id and the same column may repeat; reorder clones the Yjs map, so position is the identity
                                 key={`${f.sourceColumn}:${i}`}
                                 label={f.displayName ?? f.sourceColumn}
                                 canMoveUp={canMoveUp(i)}
@@ -115,7 +114,6 @@ export function PivotSidePanel({ doc, def, isOpen, onClose, readOnly }: PivotSid
                     <FieldSlot label="Columns">
                         {def.cols.map((f, i) => (
                             <FieldRow
-                                // biome-ignore lint/suspicious/noArrayIndexKey: pivot fields have no stable id and the same column may repeat; reorder clones the Yjs map, so position is the identity
                                 key={`${f.sourceColumn}:${i}`}
                                 label={f.displayName ?? f.sourceColumn}
                                 canMoveUp={canMoveUp(i)}
@@ -131,7 +129,6 @@ export function PivotSidePanel({ doc, def, isOpen, onClose, readOnly }: PivotSid
                     <FieldSlot label="Values">
                         {def.values.map((f, i) => (
                             <ValueFieldRow
-                                // biome-ignore lint/suspicious/noArrayIndexKey: pivot fields have no stable id and the same column may repeat; reorder clones the Yjs map, so position is the identity
                                 key={`${f.sourceColumn}:${i}`}
                                 field={f}
                                 canMoveUp={canMoveUp(i)}
@@ -151,7 +148,6 @@ export function PivotSidePanel({ doc, def, isOpen, onClose, readOnly }: PivotSid
                     <FieldSlot label="Filters">
                         {def.filters.map((f, i) => (
                             <FilterFieldRow
-                                // biome-ignore lint/suspicious/noArrayIndexKey: pivot fields have no stable id and the same column may repeat; reorder clones the Yjs map, so position is the identity
                                 key={`${f.sourceColumn}:${i}`}
                                 column={f.sourceColumn}
                                 selected={def.filterSelections[f.sourceColumn] ?? []}

@@ -78,7 +78,6 @@ export function FilterFieldRow({
             <View className="mt-2 flex-row flex-wrap gap-1">
                 {visible.map((v, i) => (
                     <FilterValueChip
-                        // biome-ignore lint/suspicious/noArrayIndexKey: distinct-value chips rendered in a fixed order; index disambiguates repeated display values
                         key={`${i}:${v}`}
                         value={v}
                         active={selectedSet.has(v)}
