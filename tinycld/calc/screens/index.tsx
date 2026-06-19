@@ -7,7 +7,7 @@ import { useCreateDriveItem } from '@tinycld/drive/lib/upload-to-drive'
 import { router } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { CsvImportDialog } from '../components/CsvImportDialog'
-import { blankWorkbookBlob } from '../lib/blank-workbook'
+import { blankWorkbookBody } from '../lib/blank-workbook'
 import { useCsvImportStore } from '../lib/csv/import-store'
 import { XLSX_MIME_TYPE } from '../types'
 
@@ -21,7 +21,7 @@ export default function CalcIndex() {
     const handleCreateNew = useCallback(() => {
         void (async () => {
             const result = await create.mutateAsync({
-                body: blankWorkbookBlob(),
+                body: await blankWorkbookBody(),
                 name: 'Untitled.xlsx',
                 mimeType: XLSX_MIME_TYPE,
             })
@@ -49,7 +49,7 @@ export default function CalcIndex() {
             if (rows.length === 0) return
             const baseName = stripCsvExtension(filename) || 'Imported'
             const result = await create.mutateAsync({
-                body: blankWorkbookBlob(),
+                body: await blankWorkbookBody(),
                 name: `${baseName}.xlsx`,
                 mimeType: XLSX_MIME_TYPE,
             })
