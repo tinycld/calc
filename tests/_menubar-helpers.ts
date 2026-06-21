@@ -10,10 +10,8 @@ export async function openNewSpreadsheet(page: Page): Promise<void> {
     // create button. handleCreateNew throws "Organization context not
     // ready" if useOrgInfo / useCurrentUserOrg haven't resolved yet; when
     // that happens the click silently does nothing and waitForURL hangs.
-    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
-        timeout: 30_000,
-    })
+    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
     await page.getByRole('button', { name: 'New sheet' }).click()
-    await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
-    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 75_000 })
+    await page.waitForURL(/\/calc\/[^/]+$/)
+    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
 }

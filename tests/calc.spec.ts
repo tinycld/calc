@@ -20,7 +20,7 @@ test.describe('Calc', () => {
         await page.goto(`/a/${ORG_SLUG}/drive/recent`)
         await page.getByText('Team Scorecard.xlsx').click({ button: 'right' })
         await page.getByRole('menuitem', { name: 'Open in Calc' }).click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 30_000 })
+        await page.waitForURL(/\/calc\/[^/]+$/)
 
         // Header row mounts as the xlsx parse + grid hydration completes.
         // Header cells appear one-by-one as the xlsx parser yields each
@@ -31,15 +31,9 @@ test.describe('Calc', () => {
         // Cell A1 / B1 / C1 are uniquely labelled by aria-label rather
         // than relying on the inner text — text 'Name' also matches the
         // virtualized recent-files "Sort by Name" muted-text header.
-        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Name', {
-            timeout: 30_000,
-        })
-        await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Role', {
-            timeout: 15_000,
-        })
-        await expect(page.getByLabel('Cell C1', { exact: true })).toHaveText('Score', {
-            timeout: 15_000,
-        })
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Name')
+        await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Role')
+        await expect(page.getByLabel('Cell C1', { exact: true })).toHaveText('Score')
 
         await expect(page.getByText('Alice', { exact: true })).toBeVisible()
         await expect(page.getByText('Engineer', { exact: true })).toBeVisible()
@@ -1098,9 +1092,7 @@ test.describe('Calc', () => {
             // final synchronous save) before re-opening from disk.
             await page.goto('about:blank')
             await page.goto(sheetUrl)
-            await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({
-                timeout: 30_000,
-            })
+            await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
             // Allow live-query / Y.Doc sync to settle so the merge
             // entry is observed before we measure.
             await expect(page.getByLabel('Cell B1', { exact: true })).toHaveCount(0)
@@ -1318,9 +1310,7 @@ test.describe('Persistence', () => {
         await page.waitForTimeout(6_000)
 
         await page.goto(workbookUrl)
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({
-            timeout: 60_000,
-        })
+        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
 
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('keep-top')
         await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('keep-bottom')
@@ -1627,17 +1617,15 @@ async function openNewSpreadsheet(page: import('@playwright/test').Page): Promis
     // create button. handleCreateNew throws "Organization context not
     // ready" if useOrgInfo / useCurrentUserOrg haven't resolved yet; when
     // that happens the click silently does nothing and waitForURL hangs.
-    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
-        timeout: 30_000,
-    })
+    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
     const newBtn = page.getByRole('button', { name: 'New sheet' })
     await newBtn.click()
     // The click triggers an async create + navigation. Under parallel-
     // worker contention either the create or the realtime open can take
     // longer than usual, so the URL/grid waits use a generous timeout.
     // 90s aligns with the file-level test timeout above.
-    await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
-    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 75_000 })
+    await page.waitForURL(/\/calc\/[^/]+$/)
+    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
 }
 
 // Reads the on-screen left/width of column-header cells A and B.
@@ -1703,9 +1691,7 @@ test.describe('Calc CSV import/export', () => {
         // happens via the unified "Upload files" card which accepts
         // .xlsx and .csv. The file-picker click triggers the same
         // CsvImportDialog as the old standalone "Import CSV" button.
-        await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
-            timeout: 30_000,
-        })
+        await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
 
         const csv = 'Title,Count\r\nApples,12\r\nOranges,7'
         const fileChooserPromise = page.waitForEvent('filechooser')
@@ -1718,14 +1704,12 @@ test.describe('Calc CSV import/export', () => {
         })
 
         await page.getByRole('button', { name: 'Confirm CSV import' }).click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
+        await page.waitForURL(/\/calc\/[^/]+$/)
         // The import lands on a fresh sheet named "Imported" so the
         // pre-existing blank Sheet1 stays untouched; activate that
         // tab to view the imported rows.
-        await page.getByLabel('Sheet Imported', { exact: true }).click({ timeout: 75_000 })
-        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Title', {
-            timeout: 75_000,
-        })
+        await page.getByLabel('Sheet Imported', { exact: true }).click()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Title')
         await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Count')
         await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('Apples')
         await expect(page.getByLabel('Cell B2', { exact: true })).toHaveText('12')

@@ -44,9 +44,7 @@ test.describe('Calc named ranges', () => {
         await formulaBar.press('Escape')
         await formulaBar.press('Enter')
 
-        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('10', {
-            timeout: 5_000,
-        })
+        await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('10')
     })
 
     test('Cell context menu → "Define name from selection…" opens the form pre-filled with the selection', async ({

@@ -50,7 +50,7 @@ test.describe('Calc pivot tables', () => {
 
         await createPivot(page, { sourceRange: 'Sheet1!A1:B3', targetSheetName: 'Summary' })
 
-        await expect(page.getByText('Configure your pivot')).toBeVisible({ timeout: 30_000 })
+        await expect(page.getByText('Configure your pivot')).toBeVisible()
 
         // Drag fields in via the FieldList click shortcuts on the
         // side panel. Labels mirror the plan: "Add <field> to R/C/V/F".
@@ -83,9 +83,7 @@ test.describe('Calc pivot tables', () => {
         // East=99, West=20, Grand Total=119. (119 appears twice — at the
         // row-totals column intersect and the column-total row.)
         await page.getByLabel('Sheet Summary').first().click()
-        await expect(page.getByText('119', { exact: true }).first()).toBeVisible({
-            timeout: 15_000,
-        })
+        await expect(page.getByText('119', { exact: true }).first()).toBeVisible()
     })
 
     test('swap value aggregation from sum to count', async ({ page }) => {
@@ -116,9 +114,7 @@ test.describe('Calc pivot tables', () => {
 
         // Default sum aggregation renders the West row's 20 and the
         // grand total 30.
-        await expect(page.getByText('20', { exact: true }).first()).toBeVisible({
-            timeout: 15_000,
-        })
+        await expect(page.getByText('20', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('30', { exact: true }).first()).toBeVisible()
 
         // Switch the aggregation to 'count'. The chip's
@@ -128,9 +124,7 @@ test.describe('Calc pivot tables', () => {
 
         // Each region has 1 row → count is 1 per region, total 2.
         // The 20 and 30 totals from sum should be gone from the output.
-        await expect(page.getByText('2', { exact: true }).first()).toBeVisible({
-            timeout: 15_000,
-        })
+        await expect(page.getByText('2', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('20', { exact: true })).toHaveCount(0)
         await expect(page.getByText('30', { exact: true })).toHaveCount(0)
     })
@@ -162,7 +156,7 @@ test.describe('Calc pivot tables', () => {
 
         // Defaults: grand-totals on, subtotals off
         // (buildInitialPivotDefinition mirrors Sheets).
-        await expect(rowGrand).toBeChecked({ timeout: 15_000 })
+        await expect(rowGrand).toBeChecked()
         await expect(colGrand).toBeChecked()
         await expect(rowSub).not.toBeChecked()
         await expect(colSub).not.toBeChecked()
@@ -215,9 +209,7 @@ test.describe('Calc pivot tables', () => {
 
         // Pre-filter: all three region totals are present in the
         // rendered output.
-        await expect(page.getByText('10', { exact: true }).first()).toBeVisible({
-            timeout: 15_000,
-        })
+        await expect(page.getByText('10', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('20', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('30', { exact: true }).first()).toBeVisible()
         // Grand total = 10 + 20 + 30 = 60.
@@ -257,9 +249,7 @@ test.describe('Calc pivot tables', () => {
         // After createPivot the panel opens automatically (the insert
         // button calls usePivotPanelStore.open). Close it first so we
         // can test re-opening via the empty-state CTA.
-        await expect(page.getByText('Pivot editor', { exact: true })).toBeVisible({
-            timeout: 15_000,
-        })
+        await expect(page.getByText('Pivot editor', { exact: true })).toBeVisible()
         await closePivotPanel(page)
 
         // Empty-state CTA brings the panel back.
@@ -321,7 +311,7 @@ test.describe('Calc pivot tables', () => {
         await closePivotPanel(page)
 
         // Banner shows; click "Edit pivot" → panel re-opens.
-        await expect(page.getByLabel('Pivot error')).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByLabel('Pivot error')).toBeVisible()
         await expect(page.getByText(/no value fields/i)).toBeVisible()
         await page.getByRole('button', { name: 'Edit pivot' }).click()
         await expect(page.getByText('Pivot editor', { exact: true })).toBeVisible()
@@ -344,7 +334,7 @@ test.describe('Calc pivot tables', () => {
         })
         await page.getByLabel('Add Region to R').click()
         await page.getByLabel('Add Sales to V').click()
-        await expect(page.getByText('East', { exact: true })).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('East', { exact: true })).toBeVisible()
 
         // Close the pivot panel — its backdrop would intercept the
         // right-click on the sheet tab below.
@@ -362,7 +352,7 @@ test.describe('Calc pivot tables', () => {
         // New tab label appears, pivot output still renders because
         // findOwningPivot keeps resolving (either via PIVOT_SHEET_KEY
         // or the new name matching def.targetSheetName).
-        await expect(page.getByLabel('Sheet AfterRename')).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByLabel('Sheet AfterRename')).toBeVisible()
         await expect(page.getByLabel('Sheet BeforeRename')).toHaveCount(0)
         await expect(page.getByText('East', { exact: true })).toBeVisible()
     })
@@ -388,7 +378,7 @@ test.describe('Calc pivot tables', () => {
         await page.getByLabel('Add Region to R').click()
         await page.getByLabel('Add Sales to V').click()
         // Make sure the pivot fully rendered before we destroy its sheet.
-        await expect(page.getByText('East', { exact: true })).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('East', { exact: true })).toBeVisible()
 
         // Close the pivot panel — its backdrop would intercept the
         // right-click on the sheet tab below.
@@ -405,9 +395,7 @@ test.describe('Calc pivot tables', () => {
         // The tab is gone; Sheet1 is the active sheet and shows the
         // original source data (Region/Sales headers).
         await expect(page.getByLabel('Sheet ToDelete')).toHaveCount(0)
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({
-            timeout: 15_000,
-        })
+        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Region')
     })
 
@@ -434,7 +422,7 @@ test.describe('Calc pivot tables', () => {
             sourceRange: 'Sheet1!A1:B3',
             targetSheetName: 'WillUndo',
         })
-        await expect(page.getByLabel('Sheet WillUndo')).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByLabel('Sheet WillUndo')).toBeVisible()
 
         // Close the pivot panel — its backdrop would intercept the
         // sheet-tab click below.
@@ -492,12 +480,10 @@ async function openNewSpreadsheet(page: Page): Promise<void> {
     // the create button — handleCreateNew needs useOrgInfo /
     // useCurrentUserOrg to resolve first, and if the click races that
     // the create silently no-ops and waitForURL hangs.
-    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
-        timeout: 30_000,
-    })
+    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
     await page.getByRole('button', { name: 'New sheet' }).click()
-    await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
-    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 75_000 })
+    await page.waitForURL(/\/calc\/[^/]+$/)
+    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
 }
 
 // Open the insert dialog, fill source range + target sheet name, and
@@ -515,7 +501,7 @@ async function createPivot(
     const targetInput = page.getByLabel('New sheet name', { exact: true })
     await targetInput.fill(targetSheetName)
     await page.getByRole('button', { name: 'Create pivot table' }).click()
-    await expect(page.getByLabel(`Sheet ${targetSheetName}`)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByLabel(`Sheet ${targetSheetName}`)).toBeVisible()
 }
 
 // Dismiss the PivotSidePanel and wait for it to fully unmount. The panel is a
@@ -525,7 +511,5 @@ async function createPivot(
 // scope) and is robust to the backdrop intercepting a close-button click.
 async function closePivotPanel(page: Page): Promise<void> {
     await page.keyboard.press('Escape')
-    await expect(page.getByText('Pivot editor', { exact: true })).toHaveCount(0, {
-        timeout: 10_000,
-    })
+    await expect(page.getByText('Pivot editor', { exact: true })).toHaveCount(0)
 }
