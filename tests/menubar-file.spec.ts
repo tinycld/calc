@@ -22,8 +22,7 @@ test.describe('Calc File menu', () => {
         await page.getByRole('button', { name: 'Rename', exact: true }).click()
 
         await expect(page.locator('[data-test-id="calc-workbook-header"]')).toHaveText(
-            'Renamed Scorecard',
-            { timeout: 15_000 }
+            'Renamed Scorecard'
         )
     })
 

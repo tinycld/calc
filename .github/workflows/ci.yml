@@ -61,21 +61,18 @@ jobs:
       - name: Install (workspace root)
         working-directory: ws
         run: corepack enable && pnpm install --no-frozen-lockfile
-      # Installs watchman so Metro's file watcher doesn't fall back to
-      # polling — see tinycld/app#21 for the trace evidence and the
-      # blank-page-after-reload flake it fixed.
+      # Shared e2e prep: installs the Playwright browser and pre-builds the
+      # static web bundle (expo export + sourcemaps). e2e serves that bundle
+      # statically — there's no Metro at runtime — so the old watchman install
+      # is gone. The E2E step reuses the built bundle via TINYCLD_E2E_SKIP_EXPORT.
       - name: Configure test env
         uses: ./ws/tinycld/.github/actions/configure-test-env
-      - name: Install Playwright browsers
-        working-directory: ws/tinycld
-        run: pnpm exec playwright install --with-deps chromium
       - name: E2E
         working-directory: ws/${{ env.PACKAGE }}
         env:
-          # Pre-warm calc's lazy screen chunk in globalSetup so the
-          # first test per worker doesn't race the cold Metro compile.
-          # See tinycld/app#18.
-          TINYCLD_WARM_PACKAGES: calc
+          # The bundle was built by the action above; reuse it (the webServer
+          # still seeds + promotes + serves, just doesn't export a second time).
+          TINYCLD_E2E_SKIP_EXPORT: '1'
         run: pnpm exec tinycld-pkg test:e2e
       # Capture Playwright's per-failure artifacts (trace, screenshot,
       # video, error-context.md) so a CI failure can be diagnosed

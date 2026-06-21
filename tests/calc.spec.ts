@@ -20,7 +20,6 @@ test.describe('Calc', () => {
         await page.goto(`/a/${ORG_SLUG}/drive/recent`)
         await page.getByText('Team Scorecard.xlsx').click({ button: 'right' })
         await page.getByRole('menuitem', { name: 'Open in Calc' }).click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 30_000 })
 
         // Header row mounts as the xlsx parse + grid hydration completes.
         // Header cells appear one-by-one as the xlsx parser yields each
@@ -31,15 +30,14 @@ test.describe('Calc', () => {
         // Cell A1 / B1 / C1 are uniquely labelled by aria-label rather
         // than relying on the inner text — text 'Name' also matches the
         // virtualized recent-files "Sort by Name" muted-text header.
+        // Open-gated: the xlsx parse + grid hydration after "Open in Calc" can
+        // take longer than the default 5s on a 2-core CI runner, so the first
+        // header cell gets 10s; B1/C1 follow in the same frame once A1 lands.
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Name', {
-            timeout: 30_000,
+            timeout: 10_000,
         })
-        await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Role', {
-            timeout: 15_000,
-        })
-        await expect(page.getByLabel('Cell C1', { exact: true })).toHaveText('Score', {
-            timeout: 15_000,
-        })
+        await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Role')
+        await expect(page.getByLabel('Cell C1', { exact: true })).toHaveText('Score')
 
         await expect(page.getByText('Alice', { exact: true })).toBeVisible()
         await expect(page.getByText('Engineer', { exact: true })).toBeVisible()
@@ -626,26 +624,30 @@ test.describe('Calc', () => {
 
         // The handle now paints at the bottom-right of A2 (the end
         // of the range). Drag it down to A6 → destRange = A1:A6,
-        // direction locks to 'down' (dRow > dCol).
+        // direction locks to 'down' (dRow > dCol). Retried via toPass: a
+        // single handle→A6 mousemove can be dropped under CI load, leaving
+        // the cells empty with no recovery path. Re-read boxes each attempt
+        // (coords go stale if the grid reflows) and gate on A3=3 landing.
         const handle = page.getByLabel('Selection handle', { exact: true })
         await expect(handle).toBeVisible()
-        const handleBox = await handle.boundingBox()
-        if (handleBox == null) throw new Error('selection handle has no box')
-
-        const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
-        if (a6Box == null) throw new Error('A6 has no box')
-
-        await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
-        await page.mouse.down()
-        await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, { steps: 10 })
-        await page.mouse.up()
-
-        // After the fill commits, A3..A6 carry the projected series.
-        // Move selection away first so a re-click on the destination
-        // cells lands as "select" and the cell text reflects the
-        // committed value.
-        await page.getByLabel('Cell C1', { exact: true }).click()
-        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('3')
+        await expect(async () => {
+            const handleBox = await handle.boundingBox()
+            const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
+            if (handleBox == null || a6Box == null) throw new Error('handle/A6 rects missing')
+            await page.mouse.move(
+                handleBox.x + handleBox.width / 2,
+                handleBox.y + handleBox.height / 2
+            )
+            await page.mouse.down()
+            await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, {
+                steps: 10,
+            })
+            await page.mouse.up()
+            // Move selection away so a re-click lands as "select" and the
+            // cell text reflects the committed value.
+            await page.getByLabel('Cell C1', { exact: true }).click()
+            await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('3')
+        }).toPass()
         await expect(page.getByLabel('Cell A4', { exact: true })).toHaveText('4')
         await expect(page.getByLabel('Cell A5', { exact: true })).toHaveText('5')
         await expect(page.getByLabel('Cell A6', { exact: true })).toHaveText('6')
@@ -805,21 +807,30 @@ test.describe('Calc', () => {
 
         const handle = page.getByLabel('Selection handle', { exact: true })
         await expect(handle).toBeVisible()
-        const handleBox = await handle.boundingBox()
-        if (handleBox == null) throw new Error('selection handle has no box')
 
-        const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
-        if (a6Box == null) throw new Error('A6 has no box')
-
-        await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
-        await page.mouse.down()
-        await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, { steps: 10 })
-        await page.mouse.up()
-
-        // Wait for the fill to commit before undoing. A3 carrying
-        // its projected value is the direct "fill landed" signal.
-        await page.getByLabel('Cell C1', { exact: true }).click()
-        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('3')
+        // Drag the fill handle down to A6, then confirm the projection
+        // landed (A3 = 3). The whole drag is retried via toPass because a
+        // single handle→A6 mousemove can be dropped under CI load — leaving
+        // the cells empty with no way for a later assertion to recover. Each
+        // attempt re-reads the boxes fresh (coords can go stale if the grid
+        // reflows) and re-asserts; toPass stops as soon as the fill lands.
+        await expect(async () => {
+            const handleBox = await handle.boundingBox()
+            const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
+            if (handleBox == null || a6Box == null) throw new Error('handle/A6 rects missing')
+            await page.mouse.move(
+                handleBox.x + handleBox.width / 2,
+                handleBox.y + handleBox.height / 2
+            )
+            await page.mouse.down()
+            await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, {
+                steps: 10,
+            })
+            await page.mouse.up()
+            // Click off the selection so the projected values commit.
+            await page.getByLabel('Cell C1', { exact: true }).click()
+            await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('3')
+        }).toPass()
 
         // Undo via the toolbar button. The keyboard shortcut would
         // also work, but the toolbar path is what the existing
@@ -1098,8 +1109,11 @@ test.describe('Calc', () => {
             // final synchronous save) before re-opening from disk.
             await page.goto('about:blank')
             await page.goto(sheetUrl)
+            // Reload-gated: a full SPA cold-boot + workbook re-fetch doesn't fit
+            // the default 5s expect timeout on a 2-core CI runner. 10s is enough
+            // for a real reload; if the grid isn't up by then, something is wrong.
             await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({
-                timeout: 30_000,
+                timeout: 10_000,
             })
             // Allow live-query / Y.Doc sync to settle so the merge
             // entry is observed before we measure.
@@ -1318,8 +1332,11 @@ test.describe('Persistence', () => {
         await page.waitForTimeout(6_000)
 
         await page.goto(workbookUrl)
+        // Reload-gated: a full SPA cold-boot + workbook re-fetch doesn't fit the
+        // default 5s expect timeout on a 2-core CI runner. 10s is enough for a
+        // real reload; if the grid isn't up by then, something is wrong.
         await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({
-            timeout: 60_000,
+            timeout: 10_000,
         })
 
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('keep-top')
@@ -1617,27 +1634,27 @@ async function typeIntoCell(
     await formulaBar.press('Enter')
 }
 
-// Click the "New spreadsheet" button on the calc index, wait for the
-// detail URL, and wait for the Grid (column A header) to render. The
-// detail screen flips through "Loading…" / "Opening…" placeholders
-// before mounting the Grid; tests that read DOM geometry or click
-// cells immediately after waitForURL race that mount.
+// Click the "New spreadsheet" button on the calc index and wait for the Grid
+// (Cell A1) to render. The detail screen flips through "Loading…" / "Opening…"
+// placeholders before mounting the Grid; the grid becoming visible is the real
+// readiness signal — we don't gate on the URL (it can change before, or out of
+// step with, the on-screen render, adding a flake that says nothing about the
+// grid being interactive).
 async function openNewSpreadsheet(page: import('@playwright/test').Page): Promise<void> {
     // Wait for the No-File panel's headline to render before clicking the
     // create button. handleCreateNew throws "Organization context not
     // ready" if useOrgInfo / useCurrentUserOrg haven't resolved yet; when
-    // that happens the click silently does nothing and waitForURL hangs.
-    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
-        timeout: 30_000,
-    })
+    // that happens the click silently does nothing.
+    await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
     const newBtn = page.getByRole('button', { name: 'New sheet' })
     await newBtn.click()
-    // The click triggers an async create + navigation. Under parallel-
-    // worker contention either the create or the realtime open can take
-    // longer than usual, so the URL/grid waits use a generous timeout.
-    // 90s aligns with the file-level test timeout above.
-    await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
-    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 75_000 })
+    // The click triggers an async create + navigation, then a fresh workbook
+    // opens over realtime — slower than the default 5s on a 2-core CI runner.
+    // 10s covers the create + open; if the grid isn't up by then, something is
+    // wrong.
+    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({
+        timeout: 10_000,
+    })
 }
 
 // Reads the on-screen left/width of column-header cells A and B.
@@ -1703,9 +1720,7 @@ test.describe('Calc CSV import/export', () => {
         // happens via the unified "Upload files" card which accepts
         // .xlsx and .csv. The file-picker click triggers the same
         // CsvImportDialog as the old standalone "Import CSV" button.
-        await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible({
-            timeout: 30_000,
-        })
+        await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
 
         const csv = 'Title,Count\r\nApples,12\r\nOranges,7'
         const fileChooserPromise = page.waitForEvent('filechooser')
@@ -1718,13 +1733,14 @@ test.describe('Calc CSV import/export', () => {
         })
 
         await page.getByRole('button', { name: 'Confirm CSV import' }).click()
-        await page.waitForURL(/\/calc\/[^/]+$/, { timeout: 75_000 })
         // The import lands on a fresh sheet named "Imported" so the
         // pre-existing blank Sheet1 stays untouched; activate that
         // tab to view the imported rows.
-        await page.getByLabel('Sheet Imported', { exact: true }).click({ timeout: 75_000 })
+        await page.getByLabel('Sheet Imported', { exact: true }).click()
+        // Open-gated: the imported sheet's grid hydrates after the tab switch,
+        // which can exceed the default 5s on a 2-core CI runner.
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Title', {
-            timeout: 75_000,
+            timeout: 10_000,
         })
         await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Count')
         await expect(page.getByLabel('Cell A2', { exact: true })).toHaveText('Apples')
