@@ -620,26 +620,30 @@ test.describe('Calc', () => {
 
         // The handle now paints at the bottom-right of A2 (the end
         // of the range). Drag it down to A6 → destRange = A1:A6,
-        // direction locks to 'down' (dRow > dCol).
+        // direction locks to 'down' (dRow > dCol). Retried via toPass: a
+        // single handle→A6 mousemove can be dropped under CI load, leaving
+        // the cells empty with no recovery path. Re-read boxes each attempt
+        // (coords go stale if the grid reflows) and gate on A3=3 landing.
         const handle = page.getByLabel('Selection handle', { exact: true })
         await expect(handle).toBeVisible()
-        const handleBox = await handle.boundingBox()
-        if (handleBox == null) throw new Error('selection handle has no box')
-
-        const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
-        if (a6Box == null) throw new Error('A6 has no box')
-
-        await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
-        await page.mouse.down()
-        await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, { steps: 10 })
-        await page.mouse.up()
-
-        // After the fill commits, A3..A6 carry the projected series.
-        // Move selection away first so a re-click on the destination
-        // cells lands as "select" and the cell text reflects the
-        // committed value.
-        await page.getByLabel('Cell C1', { exact: true }).click()
-        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('3')
+        await expect(async () => {
+            const handleBox = await handle.boundingBox()
+            const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
+            if (handleBox == null || a6Box == null) throw new Error('handle/A6 rects missing')
+            await page.mouse.move(
+                handleBox.x + handleBox.width / 2,
+                handleBox.y + handleBox.height / 2
+            )
+            await page.mouse.down()
+            await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, {
+                steps: 10,
+            })
+            await page.mouse.up()
+            // Move selection away so a re-click lands as "select" and the
+            // cell text reflects the committed value.
+            await page.getByLabel('Cell C1', { exact: true }).click()
+            await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('3')
+        }).toPass()
         await expect(page.getByLabel('Cell A4', { exact: true })).toHaveText('4')
         await expect(page.getByLabel('Cell A5', { exact: true })).toHaveText('5')
         await expect(page.getByLabel('Cell A6', { exact: true })).toHaveText('6')
@@ -799,21 +803,30 @@ test.describe('Calc', () => {
 
         const handle = page.getByLabel('Selection handle', { exact: true })
         await expect(handle).toBeVisible()
-        const handleBox = await handle.boundingBox()
-        if (handleBox == null) throw new Error('selection handle has no box')
 
-        const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
-        if (a6Box == null) throw new Error('A6 has no box')
-
-        await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
-        await page.mouse.down()
-        await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, { steps: 10 })
-        await page.mouse.up()
-
-        // Wait for the fill to commit before undoing. A3 carrying
-        // its projected value is the direct "fill landed" signal.
-        await page.getByLabel('Cell C1', { exact: true }).click()
-        await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('3')
+        // Drag the fill handle down to A6, then confirm the projection
+        // landed (A3 = 3). The whole drag is retried via toPass because a
+        // single handle→A6 mousemove can be dropped under CI load — leaving
+        // the cells empty with no way for a later assertion to recover. Each
+        // attempt re-reads the boxes fresh (coords can go stale if the grid
+        // reflows) and re-asserts; toPass stops as soon as the fill lands.
+        await expect(async () => {
+            const handleBox = await handle.boundingBox()
+            const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
+            if (handleBox == null || a6Box == null) throw new Error('handle/A6 rects missing')
+            await page.mouse.move(
+                handleBox.x + handleBox.width / 2,
+                handleBox.y + handleBox.height / 2
+            )
+            await page.mouse.down()
+            await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, {
+                steps: 10,
+            })
+            await page.mouse.up()
+            // Click off the selection so the projected values commit.
+            await page.getByLabel('Cell C1', { exact: true }).click()
+            await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('3')
+        }).toPass()
 
         // Undo via the toolbar button. The keyboard shortcut would
         // also work, but the toolbar path is what the existing
