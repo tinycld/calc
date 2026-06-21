@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    # TEMPORARY: also run on this validation branch so CI exercises the shared
-    # build action before tinycld#74 merges. Revert to `branches: [main]`.
-    branches: [main, ci/static-serve-and-default-timeouts]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -30,10 +28,7 @@ jobs:
           path: ws/${{ env.PACKAGE }}
       - name: Assemble workspace (app + core + drive)
         working-directory: ws
-        # TEMPORARY: pin the tinycld member to the e2e-static-serve branch so this
-        # picks up the shared configure-test-env action that builds the web bundle.
-        # Revert to plain `--with drive` once tinycld#74 merges to main.
-        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive --with tinycld@e2e-static-serve
+        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive
       - uses: actions/setup-node@v5
         with:
           node-version-file: ws/.node-version
@@ -56,10 +51,7 @@ jobs:
           path: ws/${{ env.PACKAGE }}
       - name: Assemble workspace (app + core + drive)
         working-directory: ws
-        # TEMPORARY: pin the tinycld member to the e2e-static-serve branch so this
-        # picks up the shared configure-test-env action that builds the web bundle.
-        # Revert to plain `--with drive` once tinycld#74 merges to main.
-        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive --with tinycld@e2e-static-serve
+        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive
       - uses: actions/setup-node@v5
         with:
           node-version-file: ws/.node-version
