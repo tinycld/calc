@@ -8,13 +8,17 @@
 // RN's FormData polyfill turns into the multipart file part.
 
 import type { UploadBody } from '@tinycld/drive/lib/upload-to-drive'
-import * as FileSystem from 'expo-file-system'
+// SDK 55 moved the URI-string file API (writeAsStringAsync, cacheDirectory,
+// EncodingType) to the `/legacy` entry; the new File/Directory API is a
+// different shape with no cacheDirectory string, so the bare import returns
+// undefined for it and this throws "no writable directory available". The
+// legacy surface is exactly what writing the seed bytes here needs.
+import * as FileSystem from 'expo-file-system/legacy'
 import { XLSX_MIME_TYPE } from '../types'
 import { BLANK_WORKBOOK_BASE64 } from './blank-workbook.bytes'
 
-// Cast through unknown — the legacy/modern split in expo-file-system
-// surfaces slightly different field shapes per release (mirrors the
-// pattern in lib/csv/download.native.ts).
+// Cast through unknown — expo-file-system's release-to-release field shapes
+// differ; the legacy entry still exposes the surface used below.
 const fileSystem = FileSystem as unknown as {
     cacheDirectory?: string | null
     documentDirectory?: string | null

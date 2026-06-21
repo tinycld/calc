@@ -174,7 +174,9 @@ async function readFileText(file: File): Promise<string> {
     if (typeof file.text === 'function') return file.text()
     const uri = (file as unknown as { uri?: string }).uri
     if (!uri) throw new Error('readFileText: picked file has neither .text() nor a uri')
-    const fs = await import('expo-file-system')
+    // SDK 55 moved readAsStringAsync to the `/legacy` entry; the new default
+    // export has no such method, so the bare import would read undefined.
+    const fs = await import('expo-file-system/legacy')
     const reader = fs as unknown as { readAsStringAsync: (uri: string) => Promise<string> }
     return reader.readAsStringAsync(uri)
 }
