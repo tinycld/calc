@@ -1,4 +1,7 @@
-import * as FileSystem from 'expo-file-system'
+// SDK 55 moved the URI-string file API (writeAsStringAsync, cacheDirectory) to
+// the `/legacy` entry; the bare import's new File/Directory API has no
+// cacheDirectory string, so it would throw "no writable directory available".
+import * as FileSystem from 'expo-file-system/legacy'
 import * as Sharing from 'expo-sharing'
 
 // downloadCsv (native) writes the CSV text to a file in the platform's

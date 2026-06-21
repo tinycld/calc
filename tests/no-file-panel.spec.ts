@@ -49,11 +49,13 @@ test.describe('Calc No-File panel', () => {
         })
 
         // The upload card hides its <input type="file"> behind a label
-        // wrapper; setInputFiles targets the input directly. The fixture
-        // is the seeded tests/assets/tiny.xlsx (10-row people list with
+        // wrapper; target the panel's input by testid — a bare
+        // input[type="file"] selector also matches frozen sibling screens the
+        // app shell keeps mounted (freezeOnBlur), tripping strict mode. The
+        // fixture is the seeded tests/assets/tiny.xlsx (10-row people list with
         // distinctive cell values like 'Dulce' and 'Hashimoto').
         const fixturePath = join(import.meta.dirname, 'assets', 'tiny.xlsx')
-        await page.locator('input[type="file"]').setInputFiles(fixturePath)
+        await page.getByTestId('nofile-upload-input').setInputFiles(fixturePath)
 
         // Single .xlsx upload skips the CSV preview dialog and routes
         // straight to the editor.
