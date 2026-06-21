@@ -27,7 +27,6 @@ import {
 } from '../../lib/selection-range'
 import { columnLabel, formatCell } from '../../lib/workbook-types'
 import type { FormulaSpecialKey } from '../FormulaBar'
-import { FORMULA_BAR_ACCESSORY_ID } from '../formula-accessory-id'
 import { CommentIndicator } from './CommentIndicator'
 import { applyFormatPainterToDest, locateCellAtGridCoord } from './style-helpers'
 
@@ -636,7 +635,6 @@ function CellEditor({
             onBlur={onSubmit}
             onFocus={onFocus}
             onKeyPress={onKeyPress}
-            inputAccessoryViewID={Platform.OS === 'ios' ? FORMULA_BAR_ACCESSORY_ID : undefined}
             style={{
                 position: 'absolute',
                 left,

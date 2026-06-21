@@ -64,7 +64,6 @@ import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
 import { SortDialog } from './grid/SortDialog'
 import { applyFormatPainterToDest, readCellStyle } from './grid/style-helpers'
-import { KeyboardAccessoryHost } from './KeyboardAccessoryHost'
 import { MenuBar } from './menubar/MenuBar'
 import { NameBox } from './NameBox'
 import { NamedRangesDialog } from './named-ranges/NamedRangesDialog'
@@ -769,10 +768,6 @@ function GridInner({
             <FindReplaceDialogGate actions={findActions} />
             <ConditionalFormatPanel doc={doc} sheetId={sheetId} readOnly={readOnly} />
             <NamedRangesDialog doc={doc} />
-            <KeyboardAccessoryHost
-                onSpecialKey={suggestions.onSpecialKey}
-                onCancel={formulaBar.onCancel}
-            />
         </View>
     )
 }
