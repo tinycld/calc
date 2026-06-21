@@ -29,9 +29,12 @@ test.describe('Calc — Spreadsheet templates', () => {
 
         await exportAsTemplate(page)
 
-        // Open the picker from the index and pick the just-created template.
-        await navigateToPackage(page, 'calc')
-        await page.getByRole('button', { name: 'From template…' }).click()
+        // Export keeps us on the current workbook (no navigation). Open the
+        // picker in-app from the File menu — a navigateToPackage / goto
+        // would tear down the SPA and cancel the on-demand drive_items
+        // fetch the picker depends on.
+        await page.getByRole('button', { name: 'File', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'New from template…' }).click()
 
         const dialog = page.getByTestId('template-picker-dialog')
         await expect(dialog).toBeVisible()
