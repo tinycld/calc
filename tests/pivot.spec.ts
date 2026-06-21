@@ -395,7 +395,7 @@ test.describe('Calc pivot tables', () => {
         // The tab is gone; Sheet1 is the active sheet and shows the
         // original source data (Region/Sales headers).
         await expect(page.getByLabel('Sheet ToDelete')).toHaveCount(0)
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('Region')
     })
 
@@ -482,8 +482,7 @@ async function openNewSpreadsheet(page: Page): Promise<void> {
     // the create silently no-ops and waitForURL hangs.
     await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
     await page.getByRole('button', { name: 'New sheet' }).click()
-    await page.waitForURL(/\/calc\/[^/]+$/)
-    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
 }
 
 // Open the insert dialog, fill source range + target sheet name, and

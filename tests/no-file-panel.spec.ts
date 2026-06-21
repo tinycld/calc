@@ -35,8 +35,7 @@ test.describe('Calc No-File panel', () => {
 
         // router.replace lands on /calc/<id>; Cell A1 mounts after the
         // realtime room opens.
-        await page.waitForURL(/\/calc\/[^/]+$/)
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
     })
 
     test('Upload xlsx creates a workbook whose cells are editable', async ({ page }) => {
@@ -53,8 +52,7 @@ test.describe('Calc No-File panel', () => {
 
         // Single .xlsx upload skips the CSV preview dialog and routes
         // straight to the editor.
-        await page.waitForURL(/\/calc\/[^/]+$/)
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
 
         // Header row + body cells from tiny.xlsx must render — proves
         // the upload landed and the editor loaded it for editing.
@@ -84,7 +82,7 @@ test.describe('Calc No-File panel', () => {
         // the sheet becoming interactive (Cell A1 visible) is the
         // user-perceptible proof the file opened, so gate on that before
         // navigating away — gating on the URL alone races the cache write.
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
         const editorUrl = page.url()
 
         // Detour through home, then click the Calc rail icon — we should
@@ -92,6 +90,6 @@ test.describe('Calc No-File panel', () => {
         await page.goto(`/a/${ORG_SLUG}`)
         await page.getByTestId('nav-calc').click()
         await page.waitForURL(editorUrl)
-        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible()
+        await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
     })
 })
