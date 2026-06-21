@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +15,18 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/xuri/excelize/v2"
 
+	"tinycld.org/core/previewqueue"
 	"tinycld.org/core/realtime"
+	"tinycld.org/core/thumbnails/textpreview"
+)
+
+// Preview region dimensions: the top-left block of the first sheet we
+// hand to the thumbnail renderer. Kept small so the preview reads as a
+// glanceable snippet, not a full re-render.
+const (
+	previewGridRows    = 12
+	previewGridCols    = 6
+	previewCellMaxRune = 14
 )
 
 // driveItemsCollection is the PocketBase collection where spreadsheet
@@ -93,10 +105,158 @@ func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string, loadC
 	item.Set("file", f)
 	item.Set("size", len(updatedBytes))
 
+	// Compute preview hashes + page model from the snapshot and stash a
+	// payload for the async render hook BEFORE saving. The hashes let the
+	// generic drive save-hook skip thumbnail/index regeneration when the
+	// visible region and searchable text are unchanged.
+	grid, gridString := buildPreviewGrid(snap)
+	allCellsPlaintext := buildPlaintext(snap)
+	regionHash := textpreview.Hash(gridString)
+	indexHash := textpreview.Hash(allCellsPlaintext)
+	item.Set("thumb_region_hash", regionHash)
+	item.Set("index_hash", indexHash)
+	previewqueue.Stash(driveItemID, previewqueue.Payload{
+		Plaintext:  allCellsPlaintext,
+		RegionHash: regionHash,
+		IndexHash:  indexHash,
+		Page:       textpreview.PageModel{Grid: grid},
+	})
+
 	if err := app.Save(item); err != nil {
 		return fmt.Errorf("calc: save drive_items %s: %w", driveItemID, err)
 	}
 	return nil
+}
+
+// cellDisplayString returns the human-readable text for a cell, used to
+// build both the thumbnail grid and the search index. It prefers the
+// doc's cached Display string (already formatted on the TS side), then
+// falls back to the typed raw scalar, then the formula source, so a
+// freshly-typed cell with no cached display still contributes text.
+func cellDisplayString(c CellEntry) string {
+	if c.Display != "" {
+		return c.Display
+	}
+	switch {
+	case c.RawString != "":
+		return c.RawString
+	case c.RawNumber != nil:
+		return strconv.FormatFloat(*c.RawNumber, 'f', -1, 64)
+	case c.RawBool != nil:
+		return strconv.FormatBool(*c.RawBool)
+	case c.Formula != "":
+		return c.Formula
+	}
+	return ""
+}
+
+// truncateRunes shortens s to at most n runes (not bytes), so multibyte
+// content isn't cut mid-rune.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
+}
+
+// buildPreviewGrid extracts the top-left previewGridRows×previewGridCols
+// block of the FIRST sheet (slice position 0) as a textpreview.GridModel,
+// plus a deterministic row-major string of that block for region hashing.
+//
+// Rows/Cols in the returned model are the actual extents used (the
+// largest populated 1-based row/col within the capped block), so an empty
+// sheet yields a 0×0 grid. Missing cells render as empty strings. Each
+// cell string is truncated to previewCellMaxRune runes.
+func buildPreviewGrid(snap YDocSnapshot) (*textpreview.GridModel, string) {
+	if len(snap.Sheets) == 0 {
+		return &textpreview.GridModel{}, ""
+	}
+	firstSheetID := snap.Sheets[0].ID
+
+	// block[r][c] holds the truncated display string for 1-based row r+1,
+	// col c+1 within the capped region.
+	block := make([][]string, previewGridRows)
+	for r := range block {
+		block[r] = make([]string, previewGridCols)
+	}
+
+	usedRows, usedCols := 0, 0
+	for _, cell := range snap.Cells {
+		if cell.SheetID != firstSheetID {
+			continue
+		}
+		if cell.Row < 1 || cell.Row > previewGridRows || cell.Col < 1 || cell.Col > previewGridCols {
+			continue
+		}
+		s := truncateRunes(cellDisplayString(cell), previewCellMaxRune)
+		if s == "" {
+			continue
+		}
+		block[cell.Row-1][cell.Col-1] = s
+		if cell.Row > usedRows {
+			usedRows = cell.Row
+		}
+		if cell.Col > usedCols {
+			usedCols = cell.Col
+		}
+	}
+
+	cells := make([][]string, usedRows)
+	for r := 0; r < usedRows; r++ {
+		cells[r] = make([]string, usedCols)
+		copy(cells[r], block[r][:usedCols])
+	}
+
+	grid := &textpreview.GridModel{Rows: usedRows, Cols: usedCols, Cells: cells}
+
+	// Deterministic canonical string: row-major, cells tab-separated,
+	// rows newline-separated. Stable across saves so the region hash only
+	// changes when the visible block changes.
+	var sb strings.Builder
+	for r := 0; r < usedRows; r++ {
+		if r > 0 {
+			sb.WriteByte('\n')
+		}
+		for c := 0; c < usedCols; c++ {
+			if c > 0 {
+				sb.WriteByte('\t')
+			}
+			sb.WriteString(cells[r][c])
+		}
+	}
+	return grid, sb.String()
+}
+
+// buildPlaintext joins every populated cell's display string across all
+// sheets in deterministic order (sheets in snapshot order; cells in
+// row-major order within each sheet) into a single newline-separated
+// searchable blob for the index hash + search index.
+func buildPlaintext(snap YDocSnapshot) string {
+	// Group cells by sheet id, preserving snapshot sheet order, then sort
+	// each group row-major so the output is deterministic regardless of
+	// the snapshot's cell slice ordering.
+	cellsBySheet := make(map[string][]CellEntry, len(snap.Sheets))
+	for _, cell := range snap.Cells {
+		cellsBySheet[cell.SheetID] = append(cellsBySheet[cell.SheetID], cell)
+	}
+
+	var lines []string
+	for _, sheet := range snap.Sheets {
+		group := cellsBySheet[sheet.ID]
+		sort.Slice(group, func(i, j int) bool {
+			if group[i].Row != group[j].Row {
+				return group[i].Row < group[j].Row
+			}
+			return group[i].Col < group[j].Col
+		})
+		for _, cell := range group {
+			if s := cellDisplayString(cell); s != "" {
+				lines = append(lines, s)
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // serializeWorkbook is the model-only serialization path: build a fresh
