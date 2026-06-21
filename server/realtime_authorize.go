@@ -68,6 +68,7 @@ func registerRealtime(app *pocketbase.PocketBase) {
 		OnDocUpdate:     coordinator.OnDocUpdate,
 		OnDocUpdateSeq:  coordinator.NoteSeq,
 		OnEmpty:         coordinator.OnRoomEmpty,
+		ForceFlush:      coordinator.FlushNow,
 		OnConnect:       makeOnConnect(app),
 		// Server-side write gate: drop mutations from read-only
 		// connections (viewer members; anon viewers once admitted). This
