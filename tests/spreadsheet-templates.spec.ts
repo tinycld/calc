@@ -47,15 +47,14 @@ test.describe('Calc — Spreadsheet templates', () => {
         await page.waitForURL(new RegExp(`/a/${ORG_SLUG}/calc/[^/]+`))
         await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
     })
-
-    test('New from template… in the File menu opens the picker', async ({ page }) => {
-        await navigateToPackage(page, 'calc')
-        await openNewSpreadsheet(page)
-        await page.getByRole('button', { name: 'File', exact: true }).click()
-        await page.getByRole('menuitem', { name: 'New from template…' }).click()
-        await expect(page.getByTestId('template-picker-dialog')).toBeVisible()
-    })
 })
+
+// Note: the "New from template…" entry points (File menu + index trigger)
+// are hidden until the org has at least one `.tmpl.xlsx`, so the
+// round-trip test above is what exercises the visible path. The
+// hidden-when-empty behavior is covered deterministically by the
+// useHasTemplates unit test (the shared e2e DB can't guarantee a
+// template-free org once another test has exported one).
 
 async function renameWorkbook(page: Page, name: string): Promise<void> {
     await page.getByRole('button', { name: 'File', exact: true }).click()
