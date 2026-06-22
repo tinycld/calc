@@ -2,10 +2,16 @@ import { DocumentTitle } from '@tinycld/core/components/DocumentTitle'
 import { captureException } from '@tinycld/core/lib/errors'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useToastStore } from '@tinycld/core/lib/stores/toast-store'
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { NoFilePanel } from '@tinycld/drive/components/NoFilePanel'
+import { TemplatePickerDialog } from '@tinycld/drive/components/TemplatePickerDialog'
+import { useCopyDriveItem } from '@tinycld/drive/lib/copy-drive-item'
+import { fromTemplateName, TEMPLATE_EXTENSIONS } from '@tinycld/drive/lib/template-naming'
 import { useCreateDriveItem } from '@tinycld/drive/lib/upload-to-drive'
 import { router } from 'expo-router'
+import { LayoutTemplate } from 'lucide-react-native'
 import { useCallback, useState } from 'react'
+import { Pressable, Text, View } from 'react-native'
 import { CsvImportDialog } from '../components/CsvImportDialog'
 import { blankWorkbookBody } from '../lib/blank-workbook'
 import { useCsvImportStore } from '../lib/csv/import-store'
@@ -14,9 +20,32 @@ import { XLSX_MIME_TYPE } from '../types'
 export default function CalcIndex() {
     const orgHref = useOrgHref()
     const create = useCreateDriveItem()
+    const copyTemplate = useCopyDriveItem()
     const setPendingImport = useCsvImportStore(s => s.set)
     const addToast = useToastStore(s => s.addToast)
     const [pickedCsv, setPickedCsv] = useState<{ text: string; name: string } | null>(null)
+    const [isPickerOpen, setPickerOpen] = useState(false)
+
+    // "New from template" copies a `.tmpl.xlsx` file into a fresh
+    // workbook (named after the template minus its `.tmpl` marker) and
+    // opens it; the server bootstraps the room from the copied source.
+    const handlePickTemplate = useCallback(
+        (item: { id: string; name: string }) => {
+            copyTemplate.mutate(
+                {
+                    sourceItemId: item.id,
+                    newName: fromTemplateName(item.name, TEMPLATE_EXTENSIONS.xlsx),
+                },
+                {
+                    onSuccess: result => {
+                        setPickerOpen(false)
+                        router.replace(orgHref('calc/[id]', { id: result.itemId }))
+                    },
+                }
+            )
+        },
+        [copyTemplate, orgHref]
+    )
 
     const handleCreateNew = useCallback(() => {
         void (async () => {
@@ -70,7 +99,20 @@ export default function CalcIndex() {
                 accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
                 onCreateNew={handleCreateNew}
                 onUpload={handleUpload}
-                isPending={create.isPending}
+                isPending={create.isPending || copyTemplate.isPending}
+            />
+            <View className="absolute right-6 top-6">
+                <TemplatePickerTrigger
+                    onPress={() => setPickerOpen(true)}
+                    disabled={create.isPending || copyTemplate.isPending}
+                />
+            </View>
+            <TemplatePickerDialog
+                open={isPickerOpen}
+                extension={TEMPLATE_EXTENSIONS.xlsx}
+                onClose={() => setPickerOpen(false)}
+                onPick={handlePickTemplate}
+                isPending={copyTemplate.isPending}
             />
             <CsvImportDialog
                 isOpen={pickedCsv != null}
@@ -82,6 +124,29 @@ export default function CalcIndex() {
                 }}
             />
         </>
+    )
+}
+
+interface TemplatePickerTriggerProps {
+    onPress: () => void
+    disabled?: boolean
+}
+
+// Opens the drive-backed template picker (lists `.tmpl.xlsx` files).
+// Positioned top-right, mirroring text's index trigger.
+function TemplatePickerTrigger({ onPress, disabled }: TemplatePickerTriggerProps) {
+    const foreground = useThemeColor('foreground')
+    return (
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="From template…"
+            onPress={onPress}
+            disabled={disabled}
+            className="flex-row items-center gap-2 px-3 py-2 rounded-md border border-border bg-background hover:border-foreground/40 disabled:opacity-50"
+        >
+            <LayoutTemplate size={16} color={foreground} />
+            <Text className="text-sm font-medium text-foreground">From template…</Text>
+        </Pressable>
     )
 }
 

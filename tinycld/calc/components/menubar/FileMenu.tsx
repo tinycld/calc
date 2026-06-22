@@ -3,6 +3,14 @@ import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { ConfirmDialog } from '@tinycld/core/ui/ConfirmDialog'
 import { Menu, MenuBarMenu, MenuShortcut, Separator } from '@tinycld/core/ui/menubar'
 import { PromptDialog } from '@tinycld/core/ui/PromptDialog'
+import { TemplatePickerDialog } from '@tinycld/drive/components/TemplatePickerDialog'
+import { useCopyDriveItem } from '@tinycld/drive/lib/copy-drive-item'
+import {
+    fromTemplateName,
+    isTemplateName,
+    TEMPLATE_EXTENSIONS,
+    toTemplateName,
+} from '@tinycld/drive/lib/template-naming'
 import { router } from 'expo-router'
 import { lazy, Suspense, useState } from 'react'
 import type { MenuBarProps } from './MenuBar'
@@ -21,11 +29,40 @@ const ShareDialogConnected = lazy(() => import('@tinycld/drive/components/ShareD
 export function FileMenu(props: MenuBarProps) {
     const orgHref = useOrgHref()
     const { capabilities } = useEditorMount()
+    const copyTemplate = useCopyDriveItem()
     const [isSaveVersionOpen, setSaveVersionOpen] = useState(false)
     const [isCopyOpen, setCopyOpen] = useState(false)
     const [isRenameOpen, setRenameOpen] = useState(false)
     const [isTrashOpen, setTrashOpen] = useState(false)
     const [isShareOpen, setShareOpen] = useState(false)
+    const [isTemplatePickerOpen, setTemplatePickerOpen] = useState(false)
+
+    // "New from template" copies a `.tmpl.xlsx` file into a fresh workbook
+    // and opens it — same flow as the index-screen picker.
+    const handlePickTemplate = (item: { id: string; name: string }) => {
+        copyTemplate.mutate(
+            {
+                sourceItemId: item.id,
+                newName: fromTemplateName(item.name, TEMPLATE_EXTENSIONS.xlsx),
+            },
+            {
+                onSuccess: result => {
+                    setTemplatePickerOpen(false)
+                    router.push(orgHref('calc/[id]', { id: result.itemId }))
+                },
+            }
+        )
+    }
+
+    // "Export as template" reuses the folder-picker copy flow (which
+    // force-flushes the live room first), saving the current workbook as a
+    // `.tmpl.xlsx`. Hidden when it's already a template.
+    const isAlreadyTemplate = isTemplateName(props.workbookName, TEMPLATE_EXTENSIONS.xlsx)
+    const handleExportTemplate = () => {
+        props.fileActions.exportAsTemplate(
+            toTemplateName(props.workbookName, TEMPLATE_EXTENSIONS.xlsx)
+        )
+    }
     // The CSV import flow lives on the calc index screen (it owns the
     // file-picker and the staged-rows handoff via `setPendingImport`).
     // From the detail screen we just bounce back to the index — opening
@@ -53,6 +90,9 @@ export function FileMenu(props: MenuBarProps) {
                 <Menu.Item onPress={() => router.push(orgHref('calc'))}>
                     <Menu.ItemTitle>New spreadsheet</Menu.ItemTitle>
                 </Menu.Item>
+                <Menu.Item onPress={() => setTemplatePickerOpen(true)}>
+                    <Menu.ItemTitle>New from template…</Menu.ItemTitle>
+                </Menu.Item>
                 <Menu.Item onPress={() => router.push(orgHref('drive'))}>
                     <Menu.ItemTitle>Open</Menu.ItemTitle>
                 </Menu.Item>
@@ -62,6 +102,11 @@ export function FileMenu(props: MenuBarProps) {
                 <Menu.Item onPress={() => setCopyOpen(true)}>
                     <Menu.ItemTitle>Make a copy</Menu.ItemTitle>
                 </Menu.Item>
+                {!isAlreadyTemplate && (
+                    <Menu.Item onPress={handleExportTemplate}>
+                        <Menu.ItemTitle>Export as template…</Menu.ItemTitle>
+                    </Menu.Item>
+                )}
                 {capabilities.canUseFileActions && (
                     <Menu.Item onPress={() => setShareOpen(true)}>
                         <Menu.ItemTitle>Share</Menu.ItemTitle>
@@ -105,6 +150,13 @@ export function FileMenu(props: MenuBarProps) {
                     <MenuShortcut keys="⌘P" />
                 </Menu.Item>
             </MenuBarMenu>
+            <TemplatePickerDialog
+                open={isTemplatePickerOpen}
+                extension={TEMPLATE_EXTENSIONS.xlsx}
+                onClose={() => setTemplatePickerOpen(false)}
+                onPick={handlePickTemplate}
+                isPending={copyTemplate.isPending}
+            />
             <SaveVersionDialog
                 isOpen={isSaveVersionOpen}
                 onClose={() => setSaveVersionOpen(false)}

@@ -17,13 +17,18 @@ export function useWorkbookFileActions(workbookId: string): WorkbookFileActions 
     const onTrashed = useCallback(() => {
         router.replace(orgHref('calc'))
     }, [orgHref])
-    const actions = useDriveItemFileActions({ itemId: workbookId, onTrashed })
+    const actions = useDriveItemFileActions({
+        itemId: workbookId,
+        onTrashed,
+        roomKind: 'calc',
+    })
     // Guests (no org membership) can't rename/trash/copy/open-in-drive.
     // Return inert handlers so any still-mounted control is a no-op.
     if (!capabilities.canUseFileActions) {
         return {
             rename: () => {},
             makeCopy: () => {},
+            exportAsTemplate: () => {},
             moveToTrash: () => {},
             openDriveDetails: () => {},
         }
