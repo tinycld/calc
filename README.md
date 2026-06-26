@@ -76,10 +76,6 @@ Editing features:
 - **Print** (`lib/print/`) — dedicated render pipeline that
   paginates the active sheet for browser print on web and the iOS
   print sheet on iPad
-- iOS **soft-keyboard accessory** — Tab / Enter / Esc / ▲ / ▼ / fx
-  buttons that sit above the keyboard on iPad
-  (`KeyboardAccessoryHost.ios.tsx`,
-  `FormulaBarKeyboardAccessory.tsx`)
 - Landing panel (**No-File panel**) — when the workspace has no
   last-opened workbook, the rail surfaces **New sheet** / **Upload
   files** / **Recent files**; otherwise the rail deep-links straight
@@ -109,7 +105,6 @@ truth that survives across sessions.
 | Fill handle (drag corner to autofill)| ✅  | ✅   |
 | Context menus                        | right-click | long-press |
 | Keyboard shortcuts                   | ✅  | external keyboard only |
-| Soft-keyboard accessory (Tab/Enter/Esc/▲/▼/fx) | n/a | ✅ |
 | CSV export                           | browser download | iOS share sheet |
 | Print                                | browser print | iOS print sheet |
 | Realtime collaboration               | ✅  | ✅   |
@@ -438,15 +433,14 @@ tinycld/calc/
         index.tsx      workbook list + "new spreadsheet"
         [id].tsx       editor — opens room, mounts Grid + SheetTabs
     components/
-        Grid.tsx, Body, Cell, CellContextMenu, ColumnHeader, RowHeader,
-        CornerCell, CommentPopover, CommentIndicator,
-        CutMarchingAntsOverlay, Toolbar (+ submenus), FormulaBar,
-        SheetTabs, CalcPreview
+        Grid.tsx, Toolbar (+ submenus), FormulaBar, SheetTabs, CalcPreview
+        grid/
+            Body, Cell, CellContextMenu, ColumnHeader, RowHeader,
+            CornerCell, CommentPopover, CommentIndicator,
+            CutMarchingAntsOverlay
         menubar/
-            MenuBar.tsx, MenuBarTrigger.tsx, MenuShortcut.tsx,
-            FileMenu, EditMenu, ViewMenu, FormatMenu, DataMenu, HelpMenu
-        dialogs/
-            FunctionListDialog.tsx
+            MenuBar.tsx, FileMenu, EditMenu, ViewMenu, FormatMenu,
+            DataMenu, HelpMenu
     hooks/
         use-realtime.ts            calc-flavored useRealtimeRoom
         use-workbook-context.tsx   provider with doc + awareness
@@ -461,7 +455,6 @@ tinycld/calc/
         use-column-resize.ts, use-row-resize.ts
         use-calc-shortcuts.ts      keyboard handler + shortcut docs
         use-clear-formatting.ts    wipe cell styles in a range (⌘\)
-        use-menu-dialogs-store.ts  zustand for Function list / Shortcuts dialogs
         use-workbook-file-actions.ts  rename / trash / details from File menu
     lib/
         workbook-types.ts          CellKind, CellStyle, formatCell, PivotDefinition
