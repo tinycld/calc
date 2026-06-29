@@ -464,7 +464,7 @@ tinycld/calc/
         cell-input.ts              parse a typed cell value into kind + raw
         structural-mutations.ts    insert/delete row/col (in a Y.Doc transaction)
         sort.ts, filter.ts, merge.ts, selection-range.ts
-        normalize-color.ts, pluralize.ts
+        pluralize.ts
         formula/
             bridge.ts              HyperFormula ↔ Y.Doc mirror
             rewrite-on-structural-mutation.ts
