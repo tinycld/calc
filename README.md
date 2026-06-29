@@ -46,6 +46,10 @@ Editing features:
   switches between extend and overwrite on web
 - Sort and filter — single- or multi-column sort, filter banner with
   per-column predicates (`lib/sort.ts`, `lib/filter.ts`)
+- **Named ranges** — assign workbook-defined names to a cell, range,
+  or constant and use them in formulas; managed from **Data → Named
+  ranges** or the right-click **Define name from selection** action
+  (`lib/named-ranges/`, `hooks/use-named-ranges.ts`)
 - **Conditional formatting** — rule-based cell highlighting
   (`lib/conditional-format/`); rules round-trip through the xlsx
   conditional-format XML on save
@@ -146,8 +150,8 @@ A Sheets-style menubar sits above the toolbar:
 - **Format** — Number (preset registry), Text (Bold / Italic / Underline /
   Strikethrough with active-state check), Alignment (Left / Center / Right),
   Font size, Merge cells, Conditional formatting, Clear formatting (⌘\\).
-- **Data** — Sort range, Create / Remove filter. (Pivot tables are
-  created from a toolbar button, not the Data menu.)
+- **Data** — Sort range, Create / Remove filter, Named ranges. (Pivot
+  tables are created from a toolbar button, not the Data menu.)
 - **Help** — Search help (⌘/), Keyboard shortcuts, Function list (every
   HyperFormula function name), Browse calc help (opens the package's
   topic index).
