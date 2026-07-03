@@ -8,19 +8,19 @@ import { TemplatePickerDialog } from '@tinycld/drive/components/TemplatePickerDi
 import { useHasTemplates } from '@tinycld/drive/hooks/use-template-items'
 import { useCopyDriveItem } from '@tinycld/drive/lib/copy-drive-item'
 import { fromTemplateName, TEMPLATE_EXTENSIONS } from '@tinycld/drive/lib/template-naming'
-import { useCreateDriveItem } from '@tinycld/drive/lib/upload-to-drive'
+import { useCreateBlankDriveItem, useCreateDriveItem } from '@tinycld/drive/lib/upload-to-drive'
 import { router } from 'expo-router'
 import { LayoutTemplate } from 'lucide-react-native'
 import { useCallback, useState } from 'react'
 import { Pressable, Text, View } from 'react-native'
 import { CsvImportDialog } from '../components/CsvImportDialog'
-import { blankWorkbookBody } from '../lib/blank-workbook'
 import { useCsvImportStore } from '../lib/csv/import-store'
 import { XLSX_MIME_TYPE } from '../types'
 
 export default function CalcIndex() {
     const orgHref = useOrgHref()
     const create = useCreateDriveItem()
+    const createBlank = useCreateBlankDriveItem()
     const copyTemplate = useCopyDriveItem()
     const setPendingImport = useCsvImportStore(s => s.set)
     const addToast = useToastStore(s => s.addToast)
@@ -51,14 +51,13 @@ export default function CalcIndex() {
 
     const handleCreateNew = useCallback(() => {
         void (async () => {
-            const result = await create.mutateAsync({
-                body: await blankWorkbookBody(),
+            const result = await createBlank.mutateAsync({
                 name: 'Untitled.xlsx',
                 mimeType: XLSX_MIME_TYPE,
             })
             router.replace(orgHref('calc/[id]', { id: result.itemId }))
         })()
-    }, [create, orgHref])
+    }, [createBlank, orgHref])
 
     const handleUpload = useCallback(
         (files: File[]) => {
@@ -79,15 +78,14 @@ export default function CalcIndex() {
             setPickedCsv(null)
             if (rows.length === 0) return
             const baseName = stripCsvExtension(filename) || 'Imported'
-            const result = await create.mutateAsync({
-                body: await blankWorkbookBody(),
+            const result = await createBlank.mutateAsync({
                 name: `${baseName}.xlsx`,
                 mimeType: XLSX_MIME_TYPE,
             })
             setPendingImport(result.itemId, { rows, mode: 'new-sheet' })
             router.replace(orgHref('calc/[id]', { id: result.itemId }))
         },
-        [pickedCsv, create, orgHref, setPendingImport]
+        [pickedCsv, createBlank, orgHref, setPendingImport]
     )
 
     return (
