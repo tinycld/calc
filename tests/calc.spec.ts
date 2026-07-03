@@ -1701,8 +1701,14 @@ test.describe('Calc CSV import/export', () => {
 
         await page.getByRole('button', { name: 'File', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Download', exact: true }).hover()
+        // Wait for the Download submenu to actually open before clicking into it.
+        // Hovering only *starts* the flyout; on a slow CI runner the click can
+        // otherwise land before the submenu paints and silently no-op, hanging
+        // the download wait. Same guard the menubar-file spec uses.
+        const csvItem = page.getByRole('menuitem', { name: 'Download as CSV (current sheet)' })
+        await expect(csvItem).toBeVisible()
         const downloadPromise = page.waitForEvent('download')
-        await page.getByRole('menuitem', { name: 'Download as CSV (current sheet)' }).click()
+        await csvItem.click()
         const download = await downloadPromise
         expect(download.suggestedFilename()).toMatch(/\.csv$/)
 
