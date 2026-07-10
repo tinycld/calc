@@ -17,8 +17,14 @@ export interface ReplyArgs extends AddCommentArgs {
 
 // Calc-side comment mutations. Closes over the calc_comments collection
 // and shapes the insert with the cell anchor (sheet_id / row / col).
+// Wired with the shared comment_mentions collection so any
+// `[[@user_org_id]]` token in the body yields a notify-triggering row
+// alongside the comment insert.
 export function useCommentMutations() {
-    const [calcCommentsCollection] = useStore('calc_comments')
+    const [calcCommentsCollection, commentMentionsCollection] = useStore(
+        'calc_comments',
+        'comment_mentions'
+    )
     const { identity } = useEditorMount()
 
     return useBaseCommentMutations<
@@ -35,6 +41,10 @@ export function useCommentMutations() {
             row: args.row,
             col: args.col,
         }),
+        mentions: {
+            commentCollection: 'calc_comments',
+            insertMention: row => commentMentionsCollection.insert(row),
+        },
         // commentor+ roles always have userOrgId; author_name resolves from
         // displayName so email is unused here.
         identity: {
