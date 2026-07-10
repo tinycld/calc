@@ -8,6 +8,7 @@ import { CommentDrawer, type CommentDrawerGroup } from '@tinycld/core/ui/comment
 import { useMemo } from 'react'
 import { useCommentMutations } from '../../hooks/use-comment-mutations'
 import { useGridStoreApi } from '../../hooks/use-grid-store'
+import { useMentionSuggestions } from '../../hooks/use-mention-suggestions'
 import type { CommentRow } from '../../lib/comments'
 import { columnLabel } from '../../lib/workbook-types'
 
@@ -48,6 +49,7 @@ export function CalcCommentDrawer({
 
     const { userOrgId } = useCurrentRole()
     const { reply, editBody, resolve, reopen, remove } = useCommentMutations()
+    const mentionSuggestions = useMentionSuggestions(userOrgId)
     const gridStore = useGridStoreApi()
 
     const sheetNameById = useMemo(() => {
@@ -97,6 +99,7 @@ export function CalcCommentDrawer({
             onDelete={id => remove.mutate({ id })}
             onResolve={id => resolve.mutate({ id })}
             onReopen={id => reopen.mutate({ id })}
+            mentionSuggestions={mentionSuggestions}
         />
     )
 }
