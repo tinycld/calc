@@ -1,8 +1,39 @@
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 import { login, navigateToPackage, ORG_SLUG } from '../../tinycld/tests/e2e/helpers'
+
+// Drag the selection fill-handle (the small dot at the bottom-right of the
+// current selection) onto a destination cell. The handle is a ~12px target
+// that repaints whenever the selection changes, so the previous approach —
+// read handle.boundingBox(), then raw mouse.move() to its center — raced the
+// grid reflow: a few-pixel-stale coordinate landed the mouse.down() on empty
+// grid, no fill drag started, and the cells stayed empty (the dominant flake
+// on calc.spec.ts:779 under CI load). handle.hover() instead auto-waits for
+// the handle to be visible + stable + actionable and positions the pointer at
+// its action point at press time, so the grab can't miss. The down→move→up
+// motion is preserved because the overlay drives fill mode off raw pointer
+// events, not a single drag gesture. Pass shift for the extend-selection path.
+async function dragFillHandleTo(page: Page, destLabel: string, opts?: { shift?: boolean }) {
+    const handle = page.getByLabel('Selection handle', { exact: true })
+    await expect(handle).toBeVisible()
+    const destCell = page.getByLabel(destLabel, { exact: true })
+    await expect(destCell).toBeVisible()
+    const destBox = await destCell.boundingBox()
+    if (destBox == null) throw new Error(`${destLabel} has no box`)
+
+    if (opts?.shift) await page.keyboard.down('Shift')
+    // hover() moves the pointer onto the handle's action point, auto-waiting
+    // for it to settle — this is the grab that used to miss.
+    await handle.hover()
+    await page.mouse.down()
+    await page.mouse.move(destBox.x + destBox.width / 2, destBox.y + destBox.height / 2, {
+        steps: 10,
+    })
+    await page.mouse.up()
+    if (opts?.shift) await page.keyboard.up('Shift')
+}
 
 test.describe('Calc', () => {
     test.beforeEach(async ({ page }) => {
@@ -624,25 +655,11 @@ test.describe('Calc', () => {
 
         // The handle now paints at the bottom-right of A2 (the end
         // of the range). Drag it down to A6 → destRange = A1:A6,
-        // direction locks to 'down' (dRow > dCol). Retried via toPass: a
-        // single handle→A6 mousemove can be dropped under CI load, leaving
-        // the cells empty with no recovery path. Re-read boxes each attempt
-        // (coords go stale if the grid reflows) and gate on A3=3 landing.
-        const handle = page.getByLabel('Selection handle', { exact: true })
-        await expect(handle).toBeVisible()
+        // direction locks to 'down' (dRow > dCol). Still retried via toPass
+        // as a belt-and-braces guard, but dragFillHandleTo's hover-based grab
+        // makes each attempt land reliably rather than racing a stale box.
         await expect(async () => {
-            const handleBox = await handle.boundingBox()
-            const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
-            if (handleBox == null || a6Box == null) throw new Error('handle/A6 rects missing')
-            await page.mouse.move(
-                handleBox.x + handleBox.width / 2,
-                handleBox.y + handleBox.height / 2
-            )
-            await page.mouse.down()
-            await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, {
-                steps: 10,
-            })
-            await page.mouse.up()
+            await dragFillHandleTo(page, 'Cell A6')
             // Move selection away so a re-click lands as "select" and the
             // cell text reflects the committed value.
             await page.getByLabel('Cell C1', { exact: true }).click()
@@ -674,18 +691,7 @@ test.describe('Calc', () => {
         // automatically — re-clicking B1 here would trigger the
         // "second click on selected cell opens editor" gesture and
         // hide the handle, so we go straight to grabbing it.
-        const handle = page.getByLabel('Selection handle', { exact: true })
-        await expect(handle).toBeVisible()
-        const handleBox = await handle.boundingBox()
-        if (handleBox == null) throw new Error('selection handle has no box')
-
-        const b3Box = await page.getByLabel('Cell B3', { exact: true }).boundingBox()
-        if (b3Box == null) throw new Error('B3 has no box')
-
-        await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
-        await page.mouse.down()
-        await page.mouse.move(b3Box.x + b3Box.width / 2, b3Box.y + b3Box.height / 2, { steps: 10 })
-        await page.mouse.up()
+        await dragFillHandleTo(page, 'Cell B3')
 
         // Move selection away so re-clicking each destination lands
         // as a plain select (not select-then-edit).
@@ -727,23 +733,10 @@ test.describe('Calc', () => {
         await page.mouse.move(a2Box.x + a2Box.width / 2, a2Box.y + a2Box.height / 2, { steps: 8 })
         await page.mouse.up()
 
-        const handle = page.getByLabel('Selection handle', { exact: true })
-        await expect(handle).toBeVisible()
-        const handleBox = await handle.boundingBox()
-        if (handleBox == null) throw new Error('selection handle has no box')
-
-        const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
-        if (a6Box == null) throw new Error('A6 has no box')
-
         // Hold shift for the entire drag — the overlay re-checks
-        // ev.shiftKey on each pointermove, so the modifier must
-        // stay held across down/move/up.
-        await page.keyboard.down('Shift')
-        await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
-        await page.mouse.down()
-        await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, { steps: 10 })
-        await page.mouse.up()
-        await page.keyboard.up('Shift')
+        // ev.shiftKey on each pointermove, so dragFillHandleTo keeps the
+        // modifier held across down/move/up.
+        await dragFillHandleTo(page, 'Cell A6', { shift: true })
 
         // Move selection away so the cell text isn't masked by the
         // selection ring's overlay (it isn't, but click-away makes
@@ -805,28 +798,11 @@ test.describe('Calc', () => {
         await page.mouse.move(a2Box.x + a2Box.width / 2, a2Box.y + a2Box.height / 2, { steps: 8 })
         await page.mouse.up()
 
-        const handle = page.getByLabel('Selection handle', { exact: true })
-        await expect(handle).toBeVisible()
-
         // Drag the fill handle down to A6, then confirm the projection
-        // landed (A3 = 3). The whole drag is retried via toPass because a
-        // single handle→A6 mousemove can be dropped under CI load — leaving
-        // the cells empty with no way for a later assertion to recover. Each
-        // attempt re-reads the boxes fresh (coords can go stale if the grid
-        // reflows) and re-asserts; toPass stops as soon as the fill lands.
+        // landed (A3 = 3). Retried via toPass as a guard; dragFillHandleTo's
+        // hover-based grab lands reliably instead of racing a stale box.
         await expect(async () => {
-            const handleBox = await handle.boundingBox()
-            const a6Box = await page.getByLabel('Cell A6', { exact: true }).boundingBox()
-            if (handleBox == null || a6Box == null) throw new Error('handle/A6 rects missing')
-            await page.mouse.move(
-                handleBox.x + handleBox.width / 2,
-                handleBox.y + handleBox.height / 2
-            )
-            await page.mouse.down()
-            await page.mouse.move(a6Box.x + a6Box.width / 2, a6Box.y + a6Box.height / 2, {
-                steps: 10,
-            })
-            await page.mouse.up()
+            await dragFillHandleTo(page, 'Cell A6')
             // Click off the selection so the projected values commit.
             await page.getByLabel('Cell C1', { exact: true }).click()
             await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('3')
