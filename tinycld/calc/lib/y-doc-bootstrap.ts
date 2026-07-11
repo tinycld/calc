@@ -293,6 +293,27 @@ function toYRaw(raw: CellStyle | CellRaw | Date | undefined): CellRaw {
     return null
 }
 
+// numberFromYRaw recovers a numeric value from a `raw` read out of the
+// Y.Doc, or null when it isn't numeric. It understands three shapes:
+//   - a native number (the TS bootstrap and formula writeback path)
+//   - a single-element array wrapping a number — the form the Go
+//     server bootstrap writes for FRACTIONAL numbers, because y-crdt's
+//     Go TypeMapSet accepts only int for a bare number and drops a bare
+//     float64 (see server/bootstrap.go normalizeRawForY). The wrapper
+//     keeps the value numeric end-to-end instead of degrading it to text.
+//   - a numeric-looking string (legacy docs bootstrapped before the
+//     wrapper existed, where a fractional number was stringified)
+// Returns null for anything non-finite so callers can null out the cell.
+export function numberFromYRaw(rawRaw: unknown): number | null {
+    if (typeof rawRaw === 'number') return Number.isFinite(rawRaw) ? rawRaw : null
+    if (Array.isArray(rawRaw) && rawRaw.length === 1) return numberFromYRaw(rawRaw[0])
+    if (typeof rawRaw === 'string') {
+        const n = Number(rawRaw)
+        return Number.isFinite(n) ? n : null
+    }
+    return null
+}
+
 // readYCell is the canonical reader for one cell's value out of the
 // Y.Doc. Legacy cells (written before the typed-cell schema) have no
 // `kind` key; the reader synthesizes `kind: 'string'` and coerces
@@ -315,8 +336,7 @@ export function readYCell(cell: Y.Map<unknown>): YCellValue {
     let raw: CellRaw
     switch (kind) {
         case 'number':
-            raw = typeof rawRaw === 'number' ? rawRaw : Number(rawRaw)
-            if (typeof raw === 'number' && !Number.isFinite(raw)) raw = null
+            raw = numberFromYRaw(rawRaw)
             break
         case 'boolean':
             raw = typeof rawRaw === 'boolean' ? rawRaw : null
@@ -324,16 +344,15 @@ export function readYCell(cell: Y.Map<unknown>): YCellValue {
         case 'date':
             raw = typeof rawRaw === 'string' ? rawRaw : null
             break
-        case 'formula':
+        case 'formula': {
             // Cached scalar may be string/number/boolean/null. Trust
             // whatever was written; null means "no cached value yet".
-            raw =
-                typeof rawRaw === 'string' ||
-                typeof rawRaw === 'number' ||
-                typeof rawRaw === 'boolean'
-                    ? rawRaw
-                    : null
+            // Unwrap the fractional-number array form too, so a cached
+            // fractional result reads back as a number.
+            const asNumber = numberFromYRaw(rawRaw)
+            raw = typeof rawRaw === 'string' || typeof rawRaw === 'boolean' ? rawRaw : asNumber
             break
+        }
         case 'string':
             // Legacy cells written before kind existed wrote `raw` as a
             // string; new string cells likewise carry strings. Coerce
