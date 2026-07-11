@@ -12,7 +12,7 @@ import * as Y from 'yjs'
 import type { CellRange } from '../hooks/grid-store'
 import { ROW_HEIGHTS_KEY } from './dimensions'
 import { yCellKey } from './y-cell-key'
-import { CELLS_MAP, SHEETS_MAP } from './y-doc-bootstrap'
+import { CELLS_MAP, numberFromYRaw, SHEETS_MAP } from './y-doc-bootstrap'
 
 export type FilterCondition =
     | { op: 'gt'; values: string[] }
@@ -55,13 +55,9 @@ function readCellNumber(doc: Y.Doc, sheetId: string, row: number, col: number): 
     const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
     const cell = cellsMap.get(yCellKey(sheetId, row, col))
     if (cell == null) return null
-    const raw = cell.get('raw')
-    if (typeof raw === 'number') return raw
-    if (typeof raw === 'string') {
-        const n = Number(raw)
-        return Number.isFinite(n) ? n : null
-    }
-    return null
+    // Handles native numbers, the single-element array wrapper the Go
+    // bootstrap writes for fractional numbers, and legacy numeric strings.
+    return numberFromYRaw(cell.get('raw'))
 }
 
 // Numeric-aware single-value comparator for gt/lt. Falls back to

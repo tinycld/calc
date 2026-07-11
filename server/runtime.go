@@ -284,24 +284,18 @@ func collectCells(cellsMap *ycrdt.YMap) ([]CellEntry, error) {
 		switch raw := cellMap.Get("raw").(type) {
 		case string:
 			entry.RawString = raw
-		case float64:
-			n := raw
-			entry.RawNumber = &n
-		case float32:
-			n := float64(raw)
-			entry.RawNumber = &n
-		case int:
-			n := float64(raw)
-			entry.RawNumber = &n
-		case int32:
-			n := float64(raw)
-			entry.RawNumber = &n
-		case int64:
-			n := float64(raw)
-			entry.RawNumber = &n
 		case bool:
 			b := raw
 			entry.RawBool = &b
+		default:
+			// Numeric raws arrive either as a bare int (whole numbers)
+			// or as the single-element ArrayAny wrapper the bootstrap
+			// writes for fractional floats (see normalizeCellRawForY).
+			// unwrapYRawNumber handles both so a fractional value stays
+			// numeric rather than degrading to text.
+			if n, ok := unwrapYRawNumber(raw); ok {
+				entry.RawNumber = &n
+			}
 		}
 		if d, ok := cellMap.Get("display").(string); ok {
 			entry.Display = d

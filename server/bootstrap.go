@@ -782,7 +782,7 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 				}
 				cell := ycrdt.NewYMap(nil)
 				cell.Set("kind", value.Kind)
-				cell.Set("raw", normalizeRawForY(value.Raw))
+				cell.Set("raw", normalizeCellRawForY(value.Raw))
 				cell.Set("display", value.Display)
 				if value.Formula != "" {
 					cell.Set("formula", value.Formula)
@@ -826,11 +826,15 @@ func parseLocalCellKey(key string) (int, int, bool) {
 // recognizes a narrow set of types: string, bool, int (its `Number`
 // alias), float32/float64 are NOT accepted by direct Set even though
 // they ARE on the binary-update encode path.
+//
+// This is the STYLE/OPAQUE-leaf normalizer: fractional floats become a
+// numeric string that the corresponding decoders (coerceNumericStringLeaves
+// for style, JSON re-marshal for the opaque conditional-format blob)
+// already parse back into a number. The cell-raw path uses
+// normalizeCellRawForY instead, which keeps the value genuinely numeric.
 //   - whole-number float64 → int (the only numeric Set supports)
-//   - fractional float64 → string (lossy display fallback; the
-//     remaining float→int gap is rare in xlsx imports and a future
-//     "go through binary update" rework is the right fix when it
-//     starts mattering)
+//   - fractional float64 → numeric string (round-tripped by the leaf
+//     decoders above)
 //   - bool / string / nil pass through
 func normalizeRawForY(v any) any {
 	switch x := v.(type) {
@@ -850,6 +854,61 @@ func normalizeRawForY(v any) any {
 	default:
 		return fmt.Sprintf("%v", x)
 	}
+}
+
+// normalizeCellRawForY is the cell-`raw` variant of normalizeRawForY. It
+// differs in exactly one case: a FRACTIONAL float64 is boxed into a
+// single-element ArrayAny{float64} instead of being stringified.
+//
+// TypeMapSet's content_any path accepts a narrow set of top-level types
+// (string, bool, int, Object, ArrayAny) and silently DROPS a bare
+// float64 — its type switch has no float case, and the prelim value is
+// re-Set through TypeMapSet on Integrate, so the key never lands. But
+// float64 IS supported on the binary WriteAny/ReadAny path (type byte
+// 123), and the contents of an ArrayAny go through WriteAny. So the
+// single-element array is the smallest wrapper that keeps the number
+// genuinely NUMERIC end-to-end — fixing a fractional numeric cell
+// silently degrading to text on realtime bootstrap (which then reads
+// back as a string and breaks SUM/arithmetic on the server snapshot).
+// Read back with unwrapYRawNumber (server) / numberFromYRaw (client).
+//
+// A single-element array is chosen over an Object wrapper because it also
+// coerces gracefully via JS `Number([13.5]) === 13.5` for any reader that
+// predates the wrapper.
+func normalizeCellRawForY(v any) any {
+	if f, ok := v.(float64); ok && f != float64(int(f)) {
+		return ycrdt.ArrayAny{f}
+	}
+	return normalizeRawForY(v)
+}
+
+// unwrapYRawNumber recovers a numeric value from a `raw` read out of the
+// doc, returning (n, true) when the value is numeric. It handles both
+// the wrapped fractional form written by normalizeCellRawForY (a
+// single-element ArrayAny holding a float) and the bare int Set writes
+// for whole numbers. It does NOT coerce numeric-looking strings — a
+// string raw stays a string here so legacy-string handling continues to
+// route through the existing kind-aware fallback in cellValueForExcelize.
+func unwrapYRawNumber(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case ycrdt.ArrayAny:
+		// ycrdt.ArrayAny is an alias for []any; this case matches both
+		// the wrapper we write and any equivalent decoded slice.
+		if len(v) == 1 {
+			return unwrapYRawNumber(v[0])
+		}
+	}
+	return 0, false
 }
 
 // buildStyleYMapFromStyle converts a *CellStyle (the JSON-tagged Go
