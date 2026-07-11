@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"sort"
 	"strconv"
@@ -339,7 +340,8 @@ func writePivots(f *excelize.File, pivots []PivotDefinitionDTO) {
 			PivotTableStyleName: p.StyleName,
 		}
 		if err := f.AddPivotTable(opts); err != nil {
-			fmt.Printf("calc: AddPivotTable %q: %v\n", p.ID, err)
+			slog.Warn("calc: AddPivotTable failed; skipping pivot",
+				"pivotID", p.ID, "err", err)
 			continue
 		}
 	}

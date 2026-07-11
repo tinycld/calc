@@ -27,6 +27,7 @@
     "peerDependencies": {
         "@tanstack/db": ">=0.6",
         "@tanstack/react-db": ">=0.1",
+        "@tinycld/drive": ">=0.2.0 <0.3.0",
         "expo-clipboard": ">=55.0.0",
         "expo-file-system": "~55.0.19",
         "expo-print": "^55.0.14",
