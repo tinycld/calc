@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from '@playwright/test'
 import { clickSidebarItem, login, navigateToPackage } from '../../tinycld/tests/e2e/helpers'
 
 // Drag the selection fill-handle (the small dot at the bottom-right of the
@@ -33,6 +33,29 @@ async function dragFillHandleTo(page: Page, destLabel: string, opts?: { shift?: 
     })
     await page.mouse.up()
     if (opts?.shift) await page.keyboard.up('Shift')
+}
+
+// Drag a column/row resize handle by deltaX pixels. Same class of flake as the
+// fill-handle above: the resize handle is a tiny transparent target straddling
+// a header's edge, and the grid reflows between the boundingBox() read and the
+// press. The previous approach — read box, then raw mouse.move(center) +
+// mouse.down() — landed the mousedown a few pixels off the handle under CI
+// load, so no resize gesture started and the width assertions timed out.
+// handle.hover() auto-waits for the handle to be visible + stable + actionable
+// and positions the pointer at its action point at press time, so the grab
+// can't miss. We still read the box, but only to compute the *destination* x
+// (handle center + deltaX) for the drag move — the grab itself is the hover.
+async function dragResizeHandle(page: Page, handle: Locator, deltaX: number) {
+    // hover() moves the pointer onto the handle's action point, auto-waiting
+    // for it to settle — this is the grab that used to miss.
+    await handle.hover()
+    const box = await handle.boundingBox()
+    if (box == null) throw new Error('resize handle has no box')
+    const centerY = box.y + box.height / 2
+    const destX = box.x + box.width / 2 + deltaX
+    await page.mouse.down()
+    await page.mouse.move(destX, centerY, { steps: 5 })
+    await page.mouse.up()
 }
 
 test.describe('Calc', () => {
@@ -139,16 +162,12 @@ test.describe('Calc', () => {
 
         // The resize handle is a transparent absolute element straddling
         // the right edge of column A. We can locate it by the cursor
-        // style react-native-web emits inline.
-        const handles = page.locator('div[style*="cursor: col-resize"]')
-        const aHandle = handles.first()
-        await aHandle.waitFor({ state: 'attached' })
-        const box = await aHandle.boundingBox()
-        if (box == null) throw new Error('resize handle has no box')
-        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-        await page.mouse.down()
-        await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2, { steps: 5 })
-        await page.mouse.up()
+        // style react-native-web emits inline. Grab it via dragResizeHandle,
+        // whose hover-based grab targets the handle's action point at press
+        // time — a stale-boundingBox mouse.down() used to land off the tiny
+        // reflowing handle under CI load, so no resize started.
+        const aHandle = page.locator('div[style*="cursor: col-resize"]').first()
+        await dragResizeHandle(page, aHandle, 100)
 
         const after = await readHeaderRects(page)
         if (before.A && after.A) {
@@ -169,10 +188,9 @@ test.describe('Calc', () => {
         const before = await readHeaderRects(page)
         expect(before.A).not.toBeNull()
 
-        const handles = page.locator('div[style*="cursor: col-resize"]')
-        const aHandle = handles.first()
-        const box = await aHandle.boundingBox()
-        if (box == null) throw new Error('resize handle has no box')
+        // dblclick() auto-waits for the handle to be actionable and targets
+        // its action point at click time, so no pre-read boundingBox is needed.
+        const aHandle = page.locator('div[style*="cursor: col-resize"]').first()
         await aHandle.dblclick()
 
         const after = await readHeaderRects(page)
