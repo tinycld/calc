@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import type * as Y from 'yjs'
 import type { FormulaSpecialKey } from '../../components/FormulaBar'
 import { HEADER_HEIGHT, ROW_HEADER_WIDTH } from '../../components/grid/constants'
@@ -87,15 +87,18 @@ export function useGridSuggestions({
         return filterSuggestions(functionNames, namedRangeNames, t.token)
     }, [editSession, functionNames, namedRangeNames, store])
 
-    // Reset suggestionIndex whenever the items list identity changes
-    // — the user is now looking at a different list and starting from
-    // 0 is the expected UX. The source-of-truth for items lives
-    // outside the store (functionNames + draft), so a useEffect bridge
-    // is the right tool.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: items array identity is the trigger
-    useEffect(() => {
+    // Reset suggestionIndex whenever the items list identity changes —
+    // the user is now looking at a different list and starting from 0 is
+    // the expected UX. Done during render (React's sanctioned "adjust
+    // state when an input changes" pattern) rather than an effect: the
+    // index lives in the shared store, and a ref tracks the previous
+    // items identity so the reset fires exactly on change, not on every
+    // render.
+    const prevItemsRef = useRef(items)
+    if (prevItemsRef.current !== items) {
+        prevItemsRef.current = items
         store.getState().setSuggestionIndex(0)
-    }, [items, store])
+    }
 
     // Mirror the latest items into a ref so onSpecialKey can be a
     // stable identity. Without this, items would be a dep of
