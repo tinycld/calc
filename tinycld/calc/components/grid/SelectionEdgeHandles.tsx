@@ -14,6 +14,7 @@ import { useDragGesture } from '@tinycld/core/lib/gestures'
 import { useRef } from 'react'
 import { Platform, View } from 'react-native'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
+import { HANDLE_BORDER_WHITE, SELECTION_GREEN } from '../../lib/grid-colors'
 import { primaryRange } from '../../lib/selection-range'
 import { computeHandlePositions } from './selection-edge-handles-math'
 import { locateCellAtGridCoord } from './style-helpers'
@@ -121,9 +122,9 @@ function Handle({ x, y, colOffsets, rowOffsets, store }: HandleProps) {
                 width: HANDLE_SIZE,
                 height: HANDLE_SIZE,
                 borderRadius: HANDLE_SIZE / 2,
-                backgroundColor: '#22a06b',
+                backgroundColor: SELECTION_GREEN,
                 borderWidth: 2,
-                borderColor: '#ffffff',
+                borderColor: HANDLE_BORDER_WHITE,
             }}
             hitSlop={{
                 top: HANDLE_HIT_SLOP,

@@ -1,5 +1,11 @@
 import { View } from 'react-native'
 import { useFindStore } from '../../hooks/find/use-find-store-context'
+import {
+    FIND_MATCH_CURRENT_BG,
+    FIND_MATCH_CURRENT_BORDER,
+    FIND_MATCH_OTHER_BG,
+    FIND_MATCH_OTHER_BORDER,
+} from '../../lib/grid-colors'
 
 interface FindMatchOverlayProps {
     sheetId: string
@@ -42,9 +48,9 @@ export function FindMatchOverlay({ sheetId, colOffsets, rowOffsets }: FindMatchO
                     top,
                     width,
                     height,
-                    backgroundColor: isCurrent ? '#fde68a' : '#fef3c780',
+                    backgroundColor: isCurrent ? FIND_MATCH_CURRENT_BG : FIND_MATCH_OTHER_BG,
                     borderWidth: isCurrent ? 2 : 1,
-                    borderColor: isCurrent ? '#d97706' : '#fbbf24',
+                    borderColor: isCurrent ? FIND_MATCH_CURRENT_BORDER : FIND_MATCH_OTHER_BORDER,
                 }}
             />
         )

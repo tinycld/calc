@@ -16,6 +16,7 @@ import {
     NATIVE_HANDLE_HIT_SLOP,
 } from '../../hooks/use-column-resize'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
+import { SELECTION_GREEN } from '../../lib/grid-colors'
 import { primaryAnchor } from '../../lib/selection-range'
 import { columnLabel } from '../../lib/workbook-types'
 import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT } from './constants'
@@ -409,7 +410,7 @@ function appendHeaderCells(
                         // border) when not dragged so it doesn't compete
                         // with the column-divider line that's already
                         // there.
-                        backgroundColor: isDraggingThis ? '#22a06b' : 'transparent',
+                        backgroundColor: isDraggingThis ? SELECTION_GREEN : 'transparent',
                         // biome-ignore lint/suspicious/noExplicitAny: web-only cursor key on RN ViewStyle
                     } as any
                 }

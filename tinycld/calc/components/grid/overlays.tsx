@@ -7,6 +7,14 @@ import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
 import type { RowDragState } from '../../hooks/use-row-resize'
 import { useWorkbook } from '../../hooks/use-workbook-context'
+import {
+    HANDLE_BORDER_WHITE,
+    REF_DRAG_BLUE,
+    REF_DRAG_BLUE_TINT,
+    SELECTION_GREEN,
+    SELECTION_GREEN_DARK,
+    SELECTION_GREEN_TINT,
+} from '../../lib/grid-colors'
 import { expandRangeOverMergeList, type MergeRange } from '../../lib/merge'
 import { isDisjoint, primaryAnchor, primaryRange } from '../../lib/selection-range'
 import { locateCellAtGridCoord } from './style-helpers'
@@ -113,7 +121,7 @@ export function LocalSelectionOverlay({
                     width,
                     height,
                     borderWidth: 2,
-                    borderColor: '#22a06b',
+                    borderColor: SELECTION_GREEN,
                 }}
             />
         )
@@ -164,7 +172,7 @@ export function LocalSelectionOverlay({
                         width: anchorWidth,
                         height: anchorHeight,
                         borderWidth: 2,
-                        borderColor: '#1a8757',
+                        borderColor: SELECTION_GREEN_DARK,
                         backgroundColor: 'rgba(255, 255, 255, 0.0)',
                     }}
                 />
@@ -215,8 +223,8 @@ export function RefDragOverlay({ colOffsets, rowOffsets }: RefDragOverlayProps) 
                 width,
                 height,
                 borderWidth: 2,
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.10)',
+                borderColor: REF_DRAG_BLUE,
+                backgroundColor: REF_DRAG_BLUE_TINT,
             }}
         />
     )
@@ -287,8 +295,8 @@ export function FillPreviewOverlay({ colOffsets, rowOffsets }: FillPreviewOverla
                 height,
                 borderWidth: 2,
                 borderStyle: 'dashed',
-                borderColor: '#22a06b',
-                backgroundColor: 'rgba(34, 160, 107, 0.10)',
+                borderColor: SELECTION_GREEN,
+                backgroundColor: SELECTION_GREEN_TINT,
             }}
         />
     )
@@ -375,7 +383,7 @@ export function ResizePreviewLine({
                 top: 0,
                 width: 2,
                 height: contentHeight,
-                backgroundColor: '#22a06b',
+                backgroundColor: SELECTION_GREEN,
                 opacity: 0.7,
             }}
         />
@@ -406,7 +414,7 @@ export function RowResizePreviewLine({
                 top: top - 1,
                 width: contentWidth,
                 height: 2,
-                backgroundColor: '#22a06b',
+                backgroundColor: SELECTION_GREEN,
                 opacity: 0.7,
             }}
         />
@@ -575,9 +583,9 @@ export function SelectionHandleOverlay({
                     top,
                     width: HANDLE_SIZE,
                     height: HANDLE_SIZE,
-                    backgroundColor: '#22a06b',
+                    backgroundColor: SELECTION_GREEN,
                     borderWidth: 1,
-                    borderColor: '#ffffff',
+                    borderColor: HANDLE_BORDER_WHITE,
                     // Web-only cursor affordance — RN-Web forwards
                     // unknown style keys to inline CSS. Native has no
                     // cursor concept; the hit slop carries discovery
