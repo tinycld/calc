@@ -1,4 +1,5 @@
 import type * as Y from 'yjs'
+import type { CellKind } from '../workbook-types'
 import { formatCell } from '../workbook-types'
 import { yCellKey } from '../y-cell-key'
 import { CELLS_MAP, readYCell } from '../y-doc-bootstrap'
@@ -18,6 +19,18 @@ import { CELLS_MAP, readYCell } from '../y-doc-bootstrap'
 //
 // Line terminator is CRLF per RFC 4180. Quoting wraps any field that
 // contains the delimiter, `"`, `\r`, or `\n`; embedded `"` are doubled.
+//
+// CSV / formula injection: a cell whose text begins with `=`, `+`, `-`,
+// `@`, TAB, or CR is interpreted as a FORMULA by Excel / Google Sheets
+// when the exported file is opened, so a payload like `=cmd|'/c calc'!A1`
+// or `=HYPERLINK(...)` executes on the victim's machine. We neutralize
+// this per OWASP guidance by prefixing a single quote `'` (forcing the
+// spreadsheet to treat the value as text) BEFORE the RFC-4180 quoting
+// runs, so the `'` lands inside the quoted field when quoting applies.
+// Neutralization is gated on the cell KIND: only text-bearing cells
+// (`string` and `formula`) can carry an attacker-controlled leading
+// character, so number / boolean / date cells are never touched and a
+// legitimate `-5` exports unchanged.
 
 export type CsvDelimiter = ',' | '\t' | ';'
 
@@ -76,6 +89,14 @@ export function serializeSheetToCsv(
 
 function renderCsvCell(cell: Y.Map<unknown>, useDisplay: boolean): string {
     const snap = readYCell(cell)
+    const text = renderCsvCellText(snap, useDisplay)
+    return neutralizeFormulaInjection(text, snap.kind)
+}
+
+function renderCsvCellText(
+    snap: { kind: CellKind; raw: unknown; display?: string },
+    useDisplay: boolean
+): string {
     if (useDisplay) return snap.display ?? ''
     // Raw mode: emit the scalar without numFmt formatting. Formula
     // cells with no cached value emit empty (the formula text itself
@@ -84,6 +105,36 @@ function renderCsvCell(cell: Y.Map<unknown>, useDisplay: boolean): string {
     if (typeof snap.raw === 'boolean') return snap.raw ? 'TRUE' : 'FALSE'
     if (typeof snap.raw === 'number') return formatCell('number', snap.raw)
     return String(snap.raw)
+}
+
+// Characters that, when leading a cell, make Excel / Google Sheets
+// evaluate the cell as a formula on open — the OWASP CSV-injection set.
+const DANGEROUS_LEADING = new Set(['=', '+', '-', '@', '\t', '\r'])
+
+// neutralizeFormulaInjection prefixes a single quote `'` to a field
+// whose first character would trigger formula evaluation, so the
+// spreadsheet app treats it as literal text. Applied BEFORE CSV
+// quoting so the `'` sits inside the quoted field when quoting runs.
+//
+// Gating: only `string` and `formula` cells carry attacker-controlled
+// text, so number / boolean / date cells are returned untouched (a
+// legitimate `-5` numeric cell must not become the text `'-5`). As a
+// defence-in-depth belt for the text kinds, a leading `-`/`+` that
+// forms a plain number (e.g. a numeric-looking string cell) is also
+// left alone — a pure number can't be a formula, and the real vectors
+// there are `=` / `@` / TAB / CR. `=` / `@` / TAB / CR always
+// neutralize regardless of numeric shape.
+export function neutralizeFormulaInjection(field: string, kind?: CellKind): string {
+    if (field === '') return field
+    if (kind === 'number' || kind === 'boolean' || kind === 'date') return field
+    const first = field[0]
+    if (!DANGEROUS_LEADING.has(first)) return field
+    if ((first === '-' || first === '+') && isPlainNumber(field)) return field
+    return `'${field}`
+}
+
+function isPlainNumber(field: string): boolean {
+    return field.trim() !== '' && !Number.isNaN(Number(field))
 }
 
 function escapeCsvField(text: string, delimiter: CsvDelimiter): string {

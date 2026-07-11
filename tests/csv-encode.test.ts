@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { setYCell, setYCellStyle } from '../tinycld/calc/hooks/use-y-cell'
-import { serializeSheetToCsv } from '../tinycld/calc/lib/csv/encode'
+import { neutralizeFormulaInjection, serializeSheetToCsv } from '../tinycld/calc/lib/csv/encode'
 import { SHEETS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
 
 function bootstrapSheet(doc: Y.Doc, sheetId = 'sheet1', name = 'Sheet1'): void {
@@ -106,5 +106,82 @@ describe('serializeSheetToCsv', () => {
         const doc = new Y.Doc()
         bootstrapSheet(doc)
         expect(serializeSheetToCsv(doc, 'sheet1')).toBe('')
+    })
+
+    it('neutralizes formula-injection payloads in exported text cells', () => {
+        const doc = new Y.Doc()
+        bootstrapSheet(doc)
+        // These land as `string` cells (not number/date/boolean/formula
+        // — inferCellInput classifies `=…` as a formula, handled below).
+        setYCell(doc, 'sheet1', 1, 1, '+cmd|calc')
+        setYCell(doc, 'sheet1', 1, 2, '@SUM(A1)')
+        setYCell(doc, 'sheet1', 2, 1, '-cmd|calc') // dangerous text, not a number
+        setYCell(doc, 'sheet1', 2, 2, 'hello') // ordinary text — untouched
+
+        const csv = serializeSheetToCsv(doc, 'sheet1')
+        const rows = csv.split('\r\n')
+        expect(rows[0]).toBe("'+cmd|calc,'@SUM(A1)")
+        expect(rows[1]).toBe("'-cmd|calc,hello")
+    })
+
+    it('neutralizes a formula cell so Excel does not re-execute it on open', () => {
+        const doc = new Y.Doc()
+        bootstrapSheet(doc)
+        // inferCellInput classifies a leading `=` as kind 'formula';
+        // its display (with no cached result) is the formula text, which
+        // Excel would evaluate on open unless neutralized.
+        setYCell(doc, 'sheet1', 1, 1, '=cmd|calc')
+        const csv = serializeSheetToCsv(doc, 'sheet1')
+        expect(csv).toBe("'=cmd|calc")
+    })
+
+    it('does NOT prefix legitimate numeric cells (negative / decimal)', () => {
+        const doc = new Y.Doc()
+        bootstrapSheet(doc)
+        setYCell(doc, 'sheet1', 1, 1, '-5')
+        setYCell(doc, 'sheet1', 1, 2, '3.14')
+        const csv = serializeSheetToCsv(doc, 'sheet1')
+        expect(csv).toBe('-5,3.14')
+    })
+
+    it("treats a `'=1+1` text literal as a neutralized string cell", () => {
+        const doc = new Y.Doc()
+        bootstrapSheet(doc)
+        // Apostrophe-prefixed input forces a string cell whose value is
+        // `=1+1` — a formula-shaped string that must be neutralized.
+        setYCell(doc, 'sheet1', 1, 1, "'=1+1")
+        const csv = serializeSheetToCsv(doc, 'sheet1')
+        expect(csv).toBe("'=1+1")
+    })
+})
+
+describe('neutralizeFormulaInjection', () => {
+    it('prefixes a single quote before dangerous leading characters', () => {
+        expect(neutralizeFormulaInjection('=cmd')).toBe("'=cmd")
+        expect(neutralizeFormulaInjection('+cmd')).toBe("'+cmd")
+        expect(neutralizeFormulaInjection('@SUM(A1)')).toBe("'@SUM(A1)")
+        expect(neutralizeFormulaInjection('-cmd')).toBe("'-cmd")
+        expect(neutralizeFormulaInjection('\tstart')).toBe("'\tstart")
+        expect(neutralizeFormulaInjection('\rstart')).toBe("'\rstart")
+    })
+
+    it('leaves ordinary and empty fields unchanged', () => {
+        expect(neutralizeFormulaInjection('hello')).toBe('hello')
+        expect(neutralizeFormulaInjection('')).toBe('')
+        expect(neutralizeFormulaInjection('a=b')).toBe('a=b')
+    })
+
+    it('does not prefix a leading -/+ that forms a plain number', () => {
+        expect(neutralizeFormulaInjection('-5')).toBe('-5')
+        expect(neutralizeFormulaInjection('+42')).toBe('+42')
+        expect(neutralizeFormulaInjection('-3.14')).toBe('-3.14')
+        // but a dangerous `=`/`@` leading a number-ish string still neutralizes
+        expect(neutralizeFormulaInjection('=5')).toBe("'=5")
+    })
+
+    it('never touches number / boolean / date cells regardless of leading char', () => {
+        expect(neutralizeFormulaInjection('-5', 'number')).toBe('-5')
+        expect(neutralizeFormulaInjection('2024-01-15', 'date')).toBe('2024-01-15')
+        expect(neutralizeFormulaInjection('TRUE', 'boolean')).toBe('TRUE')
     })
 })
