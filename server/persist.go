@@ -329,7 +329,7 @@ func writePivots(f *excelize.File, pivots []PivotDefinitionDTO) {
 		}
 		opts := &excelize.PivotTableOptions{
 			DataRange:           p.SourceRange,
-			PivotTableRange:     fmt.Sprintf("%s!A1:Z200", p.TargetSheetName),
+			PivotTableRange:     pivotTableRange(f, p),
 			Rows:                toExcelizeFields(p.Rows, false, ""),
 			Columns:             toExcelizeFields(p.Cols, false, ""),
 			Data:                toExcelizeValueFields(p.Values),
@@ -343,6 +343,283 @@ func writePivots(f *excelize.File, pivots []PivotDefinitionDTO) {
 			continue
 		}
 	}
+}
+
+// pivotTableRange derives the A1 output range for a pivot from the
+// materialized pivot's ACTUAL dimensions, rather than the old hardcoded
+// "A1:Z200" (which truncated pivots past column Z or row 200). The
+// dimensions are computed exactly as the TS render engine does (see
+// tinycld/calc/lib/pivot/render.ts): a header band, one render-row per
+// distinct row-key tuple (plus subtotals and a grand-total row), and one
+// render-col per distinct col-key tuple times the value count (plus row
+// grand totals). Distinct tuple counts come from the pivot's source data,
+// which is present in the workbook by the time writePivots runs.
+//
+// If the source data can't be read (missing/malformed range, absent
+// sheet), we fall back to the legacy A1:Z200 box so a single unreadable
+// pivot never poisons the save — matching writePivots' "skip, don't
+// fatal" posture.
+func pivotTableRange(f *excelize.File, p PivotDefinitionDTO) string {
+	rowCount, colCount, ok := computePivotDimensions(f, p)
+	if !ok {
+		return fmt.Sprintf("%s!A1:Z200", p.TargetSheetName)
+	}
+	// Guard against a degenerate 0×0 pivot: excelize needs a valid A1
+	// range, and the header band is always at least 1×1.
+	if rowCount < 1 {
+		rowCount = 1
+	}
+	if colCount < 1 {
+		colCount = 1
+	}
+	bottomRight, err := excelize.CoordinatesToCellName(colCount, rowCount)
+	if err != nil {
+		return fmt.Sprintf("%s!A1:Z200", p.TargetSheetName)
+	}
+	return fmt.Sprintf("%s!A1:%s", p.TargetSheetName, bottomRight)
+}
+
+// computePivotDimensions returns the (rowCount, colCount) of the
+// materialized pivot grid, computed from the pivot definition plus the
+// distinct row-/col-key tuples found in its (filtered) source data. The
+// formulas mirror renderPivot in tinycld/calc/lib/pivot/render.ts:
+//
+//	valueCount     = max(1, len(Values))
+//	headerRowCount = len(Cols) + (len(Values) > 1 ? 1 : 0), min 1
+//	headerColCount = len(Rows)
+//	renderRows     = distinct row tuples (+ one subtotal per first-field
+//	                 group when RowSubtotals && len(Rows) >= 2); min 1
+//	renderCols     = distinct col tuples; min 1
+//	rowCount       = headerRowCount + renderRows + (ColGrandTotals ? 1 : 0)
+//	colCount       = headerColCount + renderCols*valueCount
+//	                   + (RowGrandTotals ? valueCount : 0)
+//
+// ok is false when the source data can't be read; the caller then falls
+// back to the legacy range.
+func computePivotDimensions(f *excelize.File, p PivotDefinitionDTO) (rowCount, colCount int, ok bool) {
+	rows, err := readPivotSourceRows(f, p.SourceRange)
+	if err != nil {
+		return 0, 0, false
+	}
+	rows = filterPivotRows(rows, p)
+
+	valueCount := max(1, len(p.Values))
+	headerRowCount := len(p.Cols)
+	if len(p.Values) > 1 {
+		headerRowCount++
+	}
+	if headerRowCount < 1 {
+		headerRowCount = 1
+	}
+	headerColCount := len(p.Rows)
+
+	rowTuples := distinctTuples(rows, p.Rows)
+	colTuples := distinctTuples(rows, p.Cols)
+	renderRows := max(1, len(rowTuples))
+	renderCols := max(1, len(colTuples))
+
+	// Subtotals add one render-row per distinct first-field group, but
+	// only when there are at least two row fields (single-field pivots
+	// have no inner group to subtotal — see buildRenderRows).
+	if p.RowSubtotals && len(p.Rows) >= 2 && len(rowTuples) > 0 {
+		renderRows += distinctFirstFieldGroups(rowTuples)
+	}
+
+	rowCount = headerRowCount + renderRows
+	if p.ColGrandTotals {
+		rowCount++
+	}
+	colCount = headerColCount + renderCols*valueCount
+	if p.RowGrandTotals {
+		colCount += valueCount
+	}
+	return rowCount, colCount, true
+}
+
+// pivotSourceRow is a decoded source data row keyed by header name, so
+// field lookups (by PivotFieldDTO.SourceColumn) match the TS engine,
+// which keys rows by header text.
+type pivotSourceRow map[string]string
+
+// readPivotSourceRows reads the pivot's source range out of the workbook
+// and returns one map per data row (header row excluded), keyed by header
+// name. Cell values are stringified the same way the TS engine keys them
+// (stringifyRaw: raw scalar → string), so distinct-tuple counts match.
+func readPivotSourceRows(f *excelize.File, a1 string) ([]pivotSourceRow, error) {
+	sheet, startCol, startRow, endCol, endRow, err := parsePivotSourceRange(a1)
+	if err != nil {
+		return nil, err
+	}
+	if idx, _ := f.GetSheetIndex(sheet); idx < 0 {
+		return nil, fmt.Errorf("calc: pivot source sheet %q not found", sheet)
+	}
+	headers := make([]string, 0, endCol-startCol+1)
+	for c := startCol; c <= endCol; c++ {
+		ref, err := excelize.CoordinatesToCellName(c, startRow)
+		if err != nil {
+			return nil, err
+		}
+		v, err := f.GetCellValue(sheet, ref)
+		if err != nil {
+			return nil, err
+		}
+		headers = append(headers, v)
+	}
+	out := make([]pivotSourceRow, 0, endRow-startRow)
+	for r := startRow + 1; r <= endRow; r++ {
+		row := make(pivotSourceRow, len(headers))
+		for i, h := range headers {
+			ref, err := excelize.CoordinatesToCellName(startCol+i, r)
+			if err != nil {
+				return nil, err
+			}
+			v, err := f.GetCellValue(sheet, ref)
+			if err != nil {
+				return nil, err
+			}
+			row[h] = v
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+// parsePivotSourceRange splits an A1 range like "Sheet1!A1:F10" or
+// "'Sheet With Spaces'!A1:F10" into its sheet name and 1-based
+// coordinates. Mirrors parseA1Range in tinycld/calc/lib/pivot/range-parse.ts.
+func parsePivotSourceRange(a1 string) (sheet string, startCol, startRow, endCol, endRow int, err error) {
+	bang := sheetSeparatorIndex(a1)
+	if bang < 0 {
+		return "", 0, 0, 0, 0, fmt.Errorf("calc: pivot source range %q missing sheet separator", a1)
+	}
+	sheet = unquotePivotSheet(a1[:bang])
+	rangePart := a1[bang+1:]
+	colon := strings.IndexByte(rangePart, ':')
+	if colon < 0 {
+		return "", 0, 0, 0, 0, fmt.Errorf("calc: pivot source range %q missing ':'", a1)
+	}
+	startCol, startRow, err = excelize.CellNameToCoordinates(rangePart[:colon])
+	if err != nil {
+		return "", 0, 0, 0, 0, err
+	}
+	endCol, endRow, err = excelize.CellNameToCoordinates(rangePart[colon+1:])
+	if err != nil {
+		return "", 0, 0, 0, 0, err
+	}
+	if endRow < startRow || endCol < startCol {
+		return "", 0, 0, 0, 0, fmt.Errorf("calc: pivot source range %q is reversed", a1)
+	}
+	return sheet, startCol, startRow, endCol, endRow, nil
+}
+
+// sheetSeparatorIndex finds the "!" that separates the sheet name from
+// the cell range, ignoring any "!" inside a single-quoted sheet name.
+func sheetSeparatorIndex(s string) int {
+	inQuote := false
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\'':
+			if inQuote && i+1 < len(s) && s[i+1] == '\'' {
+				i++
+				continue
+			}
+			inQuote = !inQuote
+		case '!':
+			if !inQuote {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// unquotePivotSheet strips the surrounding single quotes (and unescapes
+// doubled apostrophes) from a quoted sheet name; returns the name
+// verbatim otherwise.
+func unquotePivotSheet(part string) string {
+	if len(part) >= 2 && strings.HasPrefix(part, "'") && strings.HasSuffix(part, "'") {
+		return strings.ReplaceAll(part[1:len(part)-1], "''", "'")
+	}
+	return part
+}
+
+// filterPivotRows drops rows excluded by the pivot's filter selections,
+// matching applyFilters in tinycld/calc/lib/pivot/aggregate.ts: a filter
+// with a non-empty selection keeps only rows whose value for that column
+// is in the selection set.
+func filterPivotRows(rows []pivotSourceRow, p PivotDefinitionDTO) []pivotSourceRow {
+	if len(p.Filters) == 0 || len(p.FilterSelections) == 0 {
+		return rows
+	}
+	active := make(map[string]map[string]struct{})
+	for _, fld := range p.Filters {
+		sel := p.FilterSelections[fld.SourceColumn]
+		if len(sel) == 0 {
+			continue
+		}
+		allowed := make(map[string]struct{}, len(sel))
+		for _, v := range sel {
+			allowed[v] = struct{}{}
+		}
+		active[fld.SourceColumn] = allowed
+	}
+	if len(active) == 0 {
+		return rows
+	}
+	out := rows[:0]
+	for _, row := range rows {
+		keep := true
+		for col, allowed := range active {
+			if _, in := allowed[row[col]]; !in {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+// distinctTuples returns the set of distinct value-tuples produced by
+// projecting each row onto the given fields, matching the row-/col-key
+// grouping in aggregate.ts. An empty field list yields no tuples (the
+// caller floors the render count at 1, matching the engine's single
+// empty key).
+func distinctTuples(rows []pivotSourceRow, fields []PivotFieldDTO) [][]string {
+	if len(fields) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	out := make([][]string, 0)
+	for _, row := range rows {
+		tuple := make([]string, len(fields))
+		for i, fld := range fields {
+			tuple[i] = row[fld.SourceColumn]
+		}
+		key := strings.Join(tuple, "\x00")
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, tuple)
+	}
+	return out
+}
+
+// distinctFirstFieldGroups counts distinct first-field values among the
+// row tuples — one row subtotal is emitted per such group (buildRenderRows
+// in render.ts groups by the prefix tuple of length 1).
+func distinctFirstFieldGroups(tuples [][]string) int {
+	seen := make(map[string]struct{})
+	for _, t := range tuples {
+		if len(t) == 0 {
+			continue
+		}
+		seen[t[0]] = struct{}{}
+	}
+	return len(seen)
 }
 
 func toExcelizeFields(in []PivotFieldDTO, _ bool, _ string) []excelize.PivotTableField {
