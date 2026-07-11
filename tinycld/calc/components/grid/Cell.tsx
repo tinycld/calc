@@ -19,6 +19,7 @@ import { useYCell } from '../../hooks/use-y-cell'
 import type { ArrowDirection } from '../../lib/cell-key-action'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
 import { cellStyleToRenderProps, mergeCellStyles } from '../../lib/cell-style-render'
+import { SELECTION_GREEN, SELECTION_GREEN_TINT } from '../../lib/grid-colors'
 import {
     computeShiftArrowTarget,
     containsAny,
@@ -480,7 +481,7 @@ export const Cell = memo(function Cell({
     // where typing/formula bar is rooted". Drawn before the cell's own
     // viewStyle so any user-set fill paints over the tint.
     const rangeTintStyle =
-        isInRange && !isSelected ? { backgroundColor: 'rgba(34, 160, 107, 0.10)' } : null
+        isInRange && !isSelected ? { backgroundColor: SELECTION_GREEN_TINT } : null
 
     // onKeyDown is a DOM-only event RN-Web forwards but RN's Pressable
     // type doesn't declare; keep it in a web-only props object (native
@@ -647,7 +648,7 @@ function CellEditor({
                 paddingHorizontal: 4,
                 fontSize: 12,
                 borderWidth: 2,
-                borderColor: '#22a06b',
+                borderColor: SELECTION_GREEN,
                 // Suppress browser default focus ring — the green border
                 // is the only visual cue needed.
                 ...(Platform.OS === 'web' ? ({ outline: 'none' } as object) : null),

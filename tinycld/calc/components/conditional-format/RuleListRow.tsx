@@ -2,10 +2,17 @@
 // range(s), a short human-readable condition summary, and a swatch of
 // the style preview.
 
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Text, View } from 'react-native'
 import type { CFRule } from '../../lib/conditional-format/types'
 
 export function RuleListRow({ rule }: { rule: CFRule }) {
+    // Preview swatch mimics an actual cell: with no rule-set fill/text
+    // color it falls back to the same theme surface/text a real (unstyled)
+    // cell renders — Cell uses bg-background / text-foreground — so the
+    // preview matches the grid in both light and dark mode.
+    const defaultBg = useThemeColor('background')
+    const defaultFg = useThemeColor('foreground')
     const rangeText = rule.ranges.filter(r => r !== '').join(', ') || '—'
     const conditionText = describeCondition(rule)
     const previewBg = rule.style.fill?.fgColor ?? rule.style.fill?.bgColor
@@ -19,14 +26,14 @@ export function RuleListRow({ rule }: { rule: CFRule }) {
                     width: 28,
                     height: 28,
                     borderRadius: 4,
-                    backgroundColor: previewBg ?? '#F3F3F3',
+                    backgroundColor: previewBg ?? defaultBg,
                     alignItems: 'center',
                     justifyContent: 'center',
                 }}
             >
                 <Text
                     style={{
-                        color: previewFg ?? '#000000',
+                        color: previewFg ?? defaultFg,
                         fontWeight: bold ? 'bold' : 'normal',
                         fontStyle: italic ? 'italic' : 'normal',
                         fontSize: 12,

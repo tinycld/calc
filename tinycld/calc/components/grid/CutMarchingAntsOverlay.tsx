@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Platform, View } from 'react-native'
 import { useGridStore } from '../../hooks/use-grid-store'
+import { SELECTION_GREEN_DARK } from '../../lib/grid-colors'
 
 // Paints the "marching ants" outline around the cut/copy source range
 // so the user can see what they've staged for paste. Active whenever
@@ -46,10 +47,10 @@ export function CutMarchingAntsOverlay({ colOffsets, rowOffsets }: CutMarchingAn
     position: absolute;
     pointer-events: none;
     background-image:
-        linear-gradient(90deg, #1a8757 50%, transparent 50%),
-        linear-gradient(90deg, #1a8757 50%, transparent 50%),
-        linear-gradient(0deg, #1a8757 50%, transparent 50%),
-        linear-gradient(0deg, #1a8757 50%, transparent 50%);
+        linear-gradient(90deg, ${SELECTION_GREEN_DARK} 50%, transparent 50%),
+        linear-gradient(90deg, ${SELECTION_GREEN_DARK} 50%, transparent 50%),
+        linear-gradient(0deg, ${SELECTION_GREEN_DARK} 50%, transparent 50%),
+        linear-gradient(0deg, ${SELECTION_GREEN_DARK} 50%, transparent 50%);
     background-size: 8px 2px, 8px 2px, 2px 8px, 2px 8px;
     background-position: 0 0, 0 100%, 0 0, 100% 0;
     background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
@@ -99,7 +100,7 @@ export function CutMarchingAntsOverlay({ colOffsets, rowOffsets }: CutMarchingAn
                 height,
                 borderWidth: 2,
                 borderStyle: 'dashed',
-                borderColor: '#1a8757',
+                borderColor: SELECTION_GREEN_DARK,
             }}
         />
     )

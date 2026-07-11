@@ -16,6 +16,7 @@ import {
     NATIVE_HANDLE_HIT_SLOP,
 } from '../../hooks/use-column-resize'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
+import { SELECTION_GREEN } from '../../lib/grid-colors'
 import { primaryAnchor } from '../../lib/selection-range'
 import { columnLabel } from '../../lib/workbook-types'
 import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT, webCursor } from './constants'
@@ -402,7 +403,7 @@ function appendHeaderCells(
                     // discoverable on hover; flat (no border) when not dragged so
                     // it doesn't compete with the existing column-divider line.
                     ...webCursor('col-resize'),
-                    backgroundColor: isDraggingThis ? '#22a06b' : 'transparent',
+                    backgroundColor: isDraggingThis ? SELECTION_GREEN : 'transparent',
                 }}
             />
         )

@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { View } from 'react-native'
+import { COMMENT_MARKER_AMBER } from '../../lib/grid-colors'
 import { useCommentsContext } from './CommentsContext'
 
 interface CommentIndicatorProps {
@@ -34,7 +35,7 @@ export const CommentIndicator = memo(function CommentIndicator({
                 width: 0,
                 height: 0,
                 borderTopWidth: 8,
-                borderTopColor: '#F9A825',
+                borderTopColor: COMMENT_MARKER_AMBER,
                 borderLeftWidth: 8,
                 borderLeftColor: 'transparent',
             }}

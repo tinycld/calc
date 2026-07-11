@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
 import { Platform, View } from 'react-native'
 import { useGridStore } from '../../hooks/use-grid-store'
+import { FORMAT_PAINTER_BLUE } from '../../lib/grid-colors'
 
 // Paints the marching-ants outline around the format-painter source range
 // while the painter is armed. Cleared automatically after the first
-// click/drag apply. Uses blue (#2563eb) so the ring is visually distinct
-// from the clipboard copy ring.
+// click/drag apply. Uses FORMAT_PAINTER_BLUE so the ring is visually
+// distinct from the clipboard copy ring (which uses the green marching ants).
 
 const PAINTER_STYLE_ID = 'tinycld-calc-painter-ants-style'
 
@@ -37,10 +38,10 @@ export function FormatPainterOverlay({ colOffsets, rowOffsets }: FormatPainterOv
     position: absolute;
     pointer-events: none;
     background-image:
-        linear-gradient(90deg, #2563eb 50%, transparent 50%),
-        linear-gradient(90deg, #2563eb 50%, transparent 50%),
-        linear-gradient(0deg, #2563eb 50%, transparent 50%),
-        linear-gradient(0deg, #2563eb 50%, transparent 50%);
+        linear-gradient(90deg, ${FORMAT_PAINTER_BLUE} 50%, transparent 50%),
+        linear-gradient(90deg, ${FORMAT_PAINTER_BLUE} 50%, transparent 50%),
+        linear-gradient(0deg, ${FORMAT_PAINTER_BLUE} 50%, transparent 50%),
+        linear-gradient(0deg, ${FORMAT_PAINTER_BLUE} 50%, transparent 50%);
     background-size: 8px 2px, 8px 2px, 2px 8px, 2px 8px;
     background-position: 0 0, 0 100%, 0 0, 100% 0;
     background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
@@ -89,7 +90,7 @@ html.calc-format-painter-active, html.calc-format-painter-active * {
                 height,
                 borderWidth: 2,
                 borderStyle: 'dashed',
-                borderColor: '#2563eb',
+                borderColor: FORMAT_PAINTER_BLUE,
             }}
         />
     )

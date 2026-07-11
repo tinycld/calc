@@ -9,6 +9,7 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Bold, Italic, Strikethrough, Underline } from 'lucide-react-native'
 import { Pressable, Text, View } from 'react-native'
+import { SELECTION_GREEN, SELECTION_GREEN_TINT_STRONG } from '../../lib/grid-colors'
 import type { CellStyle } from '../../lib/workbook-types'
 import { COLOR_PALETTE } from '../toolbar/ColorPickerMenu'
 
@@ -114,7 +115,7 @@ function ToggleButton({ label, icon, isOn, disabled, onPress }: ToggleButtonProp
             accessibilityLabel={label}
             className="rounded border border-border px-2 py-1"
             style={{
-                backgroundColor: isOn ? 'rgba(34, 160, 107, 0.15)' : 'transparent',
+                backgroundColor: isOn ? SELECTION_GREEN_TINT_STRONG : 'transparent',
                 opacity: disabled ? 0.5 : 1,
             }}
         >
@@ -159,7 +160,9 @@ function ColorSwatchGrid({ selected, onSelect, disabled }: ColorSwatchGridProps)
                         borderRadius: 2,
                         borderWidth: selected?.toLowerCase() === c.hex.toLowerCase() ? 2 : 1,
                         borderColor:
-                            selected?.toLowerCase() === c.hex.toLowerCase() ? '#22a06b' : border,
+                            selected?.toLowerCase() === c.hex.toLowerCase()
+                                ? SELECTION_GREEN
+                                : border,
                         backgroundColor: c.hex,
                         opacity: disabled ? 0.5 : 1,
                     }}

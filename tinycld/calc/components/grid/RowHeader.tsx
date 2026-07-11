@@ -14,6 +14,7 @@ import {
     ROW_HANDLE_VISUAL_HEIGHT,
     type RowDragState,
 } from '../../hooks/use-row-resize'
+import { SELECTION_GREEN } from '../../lib/grid-colors'
 import { primaryAnchor } from '../../lib/selection-range'
 import { ACTIVE_HEADER_INSET_STYLE, ROW_HEADER_WIDTH, webCursor } from './constants'
 
@@ -308,7 +309,7 @@ function appendRowHeaderCells(
                         (Platform.OS === 'web' ? 0 : NATIVE_ROW_HANDLE_HIT_SLOP * 2),
                     zIndex: 2,
                     ...webCursor('row-resize'),
-                    backgroundColor: isDraggingThis ? '#22a06b' : 'transparent',
+                    backgroundColor: isDraggingThis ? SELECTION_GREEN : 'transparent',
                 }}
             />
         )
