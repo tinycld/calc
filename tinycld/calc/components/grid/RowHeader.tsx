@@ -16,7 +16,7 @@ import {
 } from '../../hooks/use-row-resize'
 import { SELECTION_GREEN } from '../../lib/grid-colors'
 import { primaryAnchor } from '../../lib/selection-range'
-import { ACTIVE_HEADER_INSET_STYLE, ROW_HEADER_WIDTH } from './constants'
+import { ACTIVE_HEADER_INSET_STYLE, ROW_HEADER_WIDTH, webCursor } from './constants'
 
 interface RowHeaderProps {
     scrollRef: React.RefObject<ScrollView | null>
@@ -249,7 +249,7 @@ function appendRowHeaderCells(
                               }
                           },
                       }
-                    : null
+                    : {}
             const onPlainPress = () => {
                 if (skipNextPressRef.current) {
                     skipNextPressRef.current = false
@@ -279,8 +279,7 @@ function appendRowHeaderCells(
                         height,
                         ...(isActive ? ACTIVE_HEADER_INSET_STYLE : null),
                     }}
-                    // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
-                    {...((webMouseDownProp ?? {}) as any)}
+                    {...webMouseDownProp}
                 >
                     <Text
                         className={`text-xs ${isSelected ? 'text-accent-foreground' : 'text-muted-foreground'}`}
@@ -300,21 +299,18 @@ function appendRowHeaderCells(
             <View
                 key={`g-${row}`}
                 {...makeHandleProps(row)}
-                style={
-                    {
-                        position: 'absolute',
-                        left: 0,
-                        top: handleY - (Platform.OS === 'web' ? 0 : NATIVE_ROW_HANDLE_HIT_SLOP),
-                        width: ROW_HEADER_WIDTH,
-                        height:
-                            ROW_HANDLE_VISUAL_HEIGHT +
-                            (Platform.OS === 'web' ? 0 : NATIVE_ROW_HANDLE_HIT_SLOP * 2),
-                        zIndex: 2,
-                        cursor: 'row-resize',
-                        backgroundColor: isDraggingThis ? SELECTION_GREEN : 'transparent',
-                        // biome-ignore lint/suspicious/noExplicitAny: web-only cursor key on RN ViewStyle
-                    } as any
-                }
+                style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: handleY - (Platform.OS === 'web' ? 0 : NATIVE_ROW_HANDLE_HIT_SLOP),
+                    width: ROW_HEADER_WIDTH,
+                    height:
+                        ROW_HANDLE_VISUAL_HEIGHT +
+                        (Platform.OS === 'web' ? 0 : NATIVE_ROW_HANDLE_HIT_SLOP * 2),
+                    zIndex: 2,
+                    ...webCursor('row-resize'),
+                    backgroundColor: isDraggingThis ? SELECTION_GREEN : 'transparent',
+                }}
             />
         )
     }

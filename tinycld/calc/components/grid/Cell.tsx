@@ -349,7 +349,7 @@ export const Cell = memo(function Cell({
                       store.getState().openCellContextMenu(row, col, e.clientX, e.clientY)
                   },
               }
-            : null
+            : {}
 
     // Web onMouseDown handles down-time-only behaviors that
     // useDragGesture's threshold-gated onDragStart can't:
@@ -411,7 +411,7 @@ export const Cell = memo(function Cell({
                       }
                   },
               }
-            : null
+            : {}
 
     // Keyboard handling on a focused (selected, not-editing) cell.
     // Delete / Backspace clear the active selection (whole range, not
@@ -483,12 +483,16 @@ export const Cell = memo(function Cell({
     const rangeTintStyle =
         isInRange && !isSelected ? { backgroundColor: SELECTION_GREEN_TINT } : null
 
+    // onKeyDown is a DOM-only event RN-Web forwards but RN's Pressable
+    // type doesn't declare; keep it in a web-only props object (native
+    // never fires key events) so the spread stays `any`-free.
+    const webKeyDownProp = Platform.OS === 'web' ? { onKeyDown: onCellKeyDown } : {}
+
     return (
         <Pressable
             ref={pressableRef}
             onPress={onPress}
             onLongPress={onLongPress}
-            onKeyDown={onCellKeyDown}
             accessibilityLabel={`Cell ${columnLabel(col)}${row}`}
             style={{
                 position: 'absolute',
@@ -500,10 +504,9 @@ export const Cell = memo(function Cell({
                 ...renderStyle.viewStyle,
             }}
             className="border-r border-b border-border bg-background justify-center px-1 web:outline-none"
-            // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
-            {...((webContextMenuProp ?? {}) as any)}
-            // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
-            {...((webMouseDownProp ?? {}) as any)}
+            {...webKeyDownProp}
+            {...webContextMenuProp}
+            {...webMouseDownProp}
             {...drag.handlers}
         >
             <Text className="text-xs" numberOfLines={renderStyle.numberOfLines} style={textStyle}>

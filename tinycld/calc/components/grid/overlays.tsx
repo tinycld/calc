@@ -17,6 +17,7 @@ import {
 } from '../../lib/grid-colors'
 import { expandRangeOverMergeList, type MergeRange } from '../../lib/merge'
 import { isDisjoint, primaryAnchor, primaryRange } from '../../lib/selection-range'
+import { webCursor } from './constants'
 import { locateCellAtGridCoord } from './style-helpers'
 
 interface RemoteOverlaysProps {
@@ -576,24 +577,19 @@ export function SelectionHandleOverlay({
         <Pressable
             accessibilityLabel="Selection handle"
             hitSlop={HIT_SLOP}
-            style={
-                {
-                    position: 'absolute',
-                    left,
-                    top,
-                    width: HANDLE_SIZE,
-                    height: HANDLE_SIZE,
-                    backgroundColor: SELECTION_GREEN,
-                    borderWidth: 1,
-                    borderColor: HANDLE_BORDER_WHITE,
-                    // Web-only cursor affordance — RN-Web forwards
-                    // unknown style keys to inline CSS. Native has no
-                    // cursor concept; the hit slop carries discovery
-                    // there.
-                    ...(Platform.OS === 'web' ? { cursor: 'crosshair' } : null),
-                    // biome-ignore lint/suspicious/noExplicitAny: web-only cursor key on RN ViewStyle
-                } as any
-            }
+            style={{
+                position: 'absolute',
+                left,
+                top,
+                width: HANDLE_SIZE,
+                height: HANDLE_SIZE,
+                backgroundColor: SELECTION_GREEN,
+                borderWidth: 1,
+                borderColor: HANDLE_BORDER_WHITE,
+                // Web-only crosshair cursor (see webCursor). Native has no
+                // cursor concept; the hit slop carries discovery there.
+                ...(Platform.OS === 'web' ? webCursor('crosshair') : null),
+            }}
             {...fillDrag.handlers}
         />
     )

@@ -121,15 +121,31 @@ function readNumFmtFromCell(cell: Y.Map<unknown>): string | undefined {
     return typeof v === 'string' ? v : undefined
 }
 
-// sameStyle is a structural-equality check used by the snapshot cache
-// to avoid handing back a fresh object identity when no style attribute
-// actually changed. JSON.stringify is fine here — partial style
-// objects are tiny (a handful of keys) and we never store functions or
-// circular references.
+// sameStyle is a structural-equality check used by the snapshot cache to
+// avoid handing back a fresh object identity when no style attribute
+// actually changed. We compare structurally rather than via
+// JSON.stringify: the style Y.Map yields keys in insertion order, so two
+// logically identical styles built by different edit paths can stringify
+// to different strings (a false negative that would churn the cache).
+// deepEqual walks the bounded CellStyle tree (groups → scalars/edges),
+// which never holds functions or circular references.
 function sameStyle(a: CellStyle | undefined, b: CellStyle | undefined): boolean {
+    return deepEqual(a, b)
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
     if (a === b) return true
-    if (a == null || b == null) return false
-    return JSON.stringify(a) === JSON.stringify(b)
+    if (typeof a !== 'object' || typeof b !== 'object' || a == null || b == null) {
+        return false
+    }
+    const aKeys = Object.keys(a)
+    const bKeys = Object.keys(b)
+    if (aKeys.length !== bKeys.length) return false
+    return aKeys.every(
+        key =>
+            Object.hasOwn(b, key) &&
+            deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
+    )
 }
 
 // setYCell is the high-level commit path: take the user-typed string,
