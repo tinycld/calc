@@ -20,7 +20,7 @@ func TestRenderHTML_SingleSheet_NoTitle(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
 			{
-				Name:     "Sheet1",
+				Name: "Sheet1",
 				Cells: map[string]Cell{
 					"1:1": {Display: "Hello"},
 				},
@@ -49,15 +49,15 @@ func TestRenderHTML_MultipleSheets_EmitsTitles(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
 			{
-				Name:     "First",
-				
+				Name: "First",
+
 				Cells: map[string]Cell{
 					"1:1": {Display: "A"},
 				},
 			},
 			{
-				Name:     "Second",
-				
+				Name: "Second",
+
 				Cells: map[string]Cell{
 					"1:1": {Display: "B"},
 				},
@@ -79,8 +79,8 @@ func TestRenderHTML_MultipleSheets_EmitsTitles(t *testing.T) {
 func TestRenderHTML_SkipsHiddenSheets(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
-			{Name: "Visible",  Cells: map[string]Cell{"1:1": {Display: "V"}}},
-			{Name: "Stash", Hidden: true,  Cells: map[string]Cell{"1:1": {Display: "X"}}},
+			{Name: "Visible", Cells: map[string]Cell{"1:1": {Display: "V"}}},
+			{Name: "Stash", Hidden: true, Cells: map[string]Cell{"1:1": {Display: "X"}}},
 		},
 	}
 	out, err := RenderHTML(wb, RenderOpts{})
@@ -102,7 +102,7 @@ func TestRenderHTML_StyleClasses(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
 			{
-				Name: "S", 
+				Name: "S",
 				Cells: map[string]Cell{
 					"1:1": {
 						Display: "X",
@@ -138,7 +138,7 @@ func TestRenderHTML_BorderClasses(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
 			{
-				Name: "S", 
+				Name: "S",
 				Cells: map[string]Cell{
 					"1:1": {
 						Display: "X",
@@ -173,7 +173,7 @@ func TestRenderHTML_DisplayTextEscaped(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
 			{
-				Name: "S", 
+				Name: "S",
 				Cells: map[string]Cell{
 					"1:1": {Display: "<script>x</script>"},
 				},
@@ -196,7 +196,7 @@ func TestRenderHTML_NumberDisplay(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
 			{
-				Name: "S", 
+				Name: "S",
 				Cells: map[string]Cell{
 					"1:1": {Display: "42"},
 					"2:1": {Display: "3.14"},
@@ -220,7 +220,7 @@ func TestRenderHTML_FormulaDisplaysCachedValue(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
 			{
-				Name: "S", 
+				Name: "S",
 				Cells: map[string]Cell{
 					"1:1": {Display: "5"},
 				},
@@ -242,8 +242,8 @@ func TestRenderHTML_FormulaDisplaysCachedValue(t *testing.T) {
 func TestRenderHTML_ScopeSelectionLimitsToOneSheet(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
-			{Name: "First",  Cells: map[string]Cell{"1:1": {Display: "FF"}}},
-			{Name: "Second",  Cells: map[string]Cell{"1:1": {Display: "SS"}}},
+			{Name: "First", Cells: map[string]Cell{"1:1": {Display: "FF"}}},
+			{Name: "Second", Cells: map[string]Cell{"1:1": {Display: "SS"}}},
 		},
 	}
 	out, err := RenderHTML(wb, RenderOpts{Scope: ScopeSelection, Sheet: "Second"})
@@ -262,7 +262,7 @@ func TestRenderHTML_RangeClipping(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
 			{
-				Name: "S", 
+				Name: "S",
 				Cells: map[string]Cell{
 					"1:1": {Display: "A1"}, "1:2": {Display: "A2"}, "1:3": {Display: "A3"},
 					"2:1": {Display: "B1"}, "2:2": {Display: "B2"}, "2:3": {Display: "B3"},
