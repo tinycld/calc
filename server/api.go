@@ -45,12 +45,12 @@ func requireAuthCalc(re *core.RequestEvent) error {
 //
 // Query params:
 //   - sheet:   sheet name to render (default: all visible sheets, or
-//              the first visible sheet when scope=selection).
+//     the first visible sheet when scope=selection).
 //   - range:   A1 range string to clip to (default: full used range).
 //   - scope:   "all" (default) or "selection".
 //   - images:  "url" (default) or "embed". Reserved for the future
-//              image-extraction pass; the calc renderer currently
-//              emits cell text only.
+//     image-extraction pass; the calc renderer currently
+//     emits cell text only.
 //
 // ETag: derived from drive_item `updated` + renderer version. Honors
 // `If-None-Match` → 304.

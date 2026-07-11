@@ -175,7 +175,7 @@ func TestRenderHTML_ParityAfterSanitization(t *testing.T) {
 	wb := Workbook{
 		Sheets: []Worksheet{
 			{
-				Name: "S",
+				Name:      "S",
 				ColWidths: map[int]int{1: 99},
 				Cells: map[string]Cell{
 					"1:1": {

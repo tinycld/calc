@@ -114,10 +114,10 @@ type ConditionalFormatRule struct {
 // fields preserve the absent / empty distinction so the wire
 // round-trip is lossless.
 type ConditionalCondition struct {
-	Type    string                 `json:"type"`
-	Value1  *string                `json:"value1,omitempty"`
-	Value2  *string                `json:"value2,omitempty"`
-	Formula *string                `json:"formula,omitempty"`
+	Type    string  `json:"type"`
+	Value1  *string `json:"value1,omitempty"`
+	Value2  *string `json:"value2,omitempty"`
+	Formula *string `json:"formula,omitempty"`
 	// OpaqueXlsx carries the original excelize options for rules
 	// whose Type isn't yet modelled in the calc UI (top-N,
 	// duplicates, color scales, etc.). The serializer re-emits the
