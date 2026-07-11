@@ -86,7 +86,13 @@ test.describe('Calc No-File panel', () => {
         const editorUrl = page.url()
 
         // Detour through home, then click the Calc rail icon — we should
-        // land back on the file we just created, not on the panel.
+        // land back on the file we just created, not on the panel. This uses
+        // a hard page.goto ON PURPOSE: the test verifies the rail reopens the
+        // last-edited workbook after calc is fully torn down and re-entered
+        // cold. An SPA detour leaves the calc screen mounted-but-frozen
+        // (FrozenSlideStack), so the rail click wouldn't re-trigger the
+        // deep-link reopen — it would never leave the file, defeating the
+        // test. The goto is the teardown the scenario depends on.
         await page.goto(`/a/${ORG_SLUG}`)
         await page.getByTestId('nav-calc').click()
         await page.waitForURL(editorUrl)

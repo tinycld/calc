@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { login, navigateToPackage, ORG_SLUG } from '../../tinycld/tests/e2e/helpers'
+import { clickSidebarItem, login, navigateToPackage } from '../../tinycld/tests/e2e/helpers'
 
 // Drag the selection fill-handle (the small dot at the bottom-right of the
 // current selection) onto a destination cell. The handle is a ~12px target
@@ -44,12 +44,29 @@ test.describe('Calc', () => {
         // The seeded Team Scorecard.xlsx no longer appears on calc's index
         // (which is now a panel with three CTAs, not a recent-files list).
         // Browse to drive's recent view to find it and click through.
+        // Reach drive via SPA nav (rail click + sidebar click) rather than
+        // page.goto: a hard navigation tears down the SPA and cancels
+        // in-flight lazy chunks, forcing a Metro recompile that compounds
+        // CI flakiness.
+        await navigateToPackage(page, 'drive', {
+            waitFor: page.getByTestId('package-sidebar-mounted'),
+        })
+        await clickSidebarItem(page, 'Recent')
+        // Drive's FrozenSlideStack keeps the just-left My Files screen
+        // mounted-but-hidden, so wait for the Recent heading to confirm that
+        // screen is the visible one before targeting a row.
+        await expect(page.getByRole('heading', { name: 'Recent', level: 1 }).first()).toBeVisible()
         // Drive rows on the recent view open a preview pane on single
         // click rather than navigating to the package editor. Use the
         // row's context menu's "Open in Calc" action to bypass the
-        // preview and land directly in the calc editor.
-        await page.goto(`/a/${ORG_SLUG}/drive/recent`)
-        await page.getByText('Team Scorecard.xlsx').click({ button: 'right' })
+        // preview and land directly in the calc editor. Filter to the
+        // visible instance — the frozen My Files screen also carries the
+        // filename in the a11y tree.
+        await page
+            .getByText('Team Scorecard.xlsx')
+            .filter({ visible: true })
+            .first()
+            .click({ button: 'right' })
         await page.getByRole('menuitem', { name: 'Open in Calc' }).click()
 
         // Header row mounts as the xlsx parse + grid hydration completes.
