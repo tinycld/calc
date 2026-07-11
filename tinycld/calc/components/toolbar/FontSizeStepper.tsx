@@ -1,6 +1,6 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Minus, Plus } from 'lucide-react-native'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Platform, TextInput, View } from 'react-native'
 import { ToolbarButton } from './ToolbarButton'
 
@@ -26,10 +26,15 @@ export function FontSizeStepper({ size, disabled, onSetSize }: FontSizeStepperPr
 
     // When the selection changes (which changes the incoming `size`),
     // overwrite any in-progress local draft so the field reflects the
-    // newly-active cell.
-    useEffect(() => {
-        setDraft(String(size ?? DEFAULT_SIZE))
-    }, [size])
+    // newly-active cell. Done during render via a previous-value ref
+    // (React's sanctioned "adjust state when a prop changes" pattern)
+    // rather than a useEffect + setDraft, which would paint the stale
+    // draft for one frame before the effect corrected it.
+    const prevSizeRef = useRef(size)
+    if (prevSizeRef.current !== size) {
+        prevSizeRef.current = size
+        setDraft(String(effective))
+    }
 
     const commit = useCallback(
         (raw: string) => {

@@ -1,5 +1,5 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Dimensions, Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import type * as Y from 'yjs'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
@@ -49,15 +49,24 @@ export function SortDialog({ doc, sheetId }: SortDialogProps) {
     const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
     const [hasHeader, setHasHeader] = useState<boolean>(detectedHeader)
 
-    // Re-seed local state each time the dialog opens so a fresh
-    // selection picks the right defaults. Without this the prior
-    // session's column/direction sticks across opens.
-    useEffect(() => {
-        if (!isOpen) return
-        setColIndex(range?.startCol ?? 1)
+    // Re-seed local state each time the dialog opens (or the open dialog's
+    // selection / detected-header changes) so a fresh selection picks the
+    // right defaults — without this the prior session's column/direction
+    // sticks across opens. Done during render via a seed-signature ref
+    // (React's sanctioned "adjust state when an input changes" pattern)
+    // rather than a useEffect + setters, which would paint the stale
+    // defaults for one frame before the effect corrected them.
+    const startCol = range?.startCol ?? 1
+    const seed = isOpen ? `${startCol}:${detectedHeader}` : null
+    const prevSeedRef = useRef<string | null>(null)
+    if (seed != null && prevSeedRef.current !== seed) {
+        prevSeedRef.current = seed
+        setColIndex(startCol)
         setDirection('asc')
         setHasHeader(detectedHeader)
-    }, [isOpen, range?.startCol, detectedHeader])
+    } else if (seed == null) {
+        prevSeedRef.current = null
+    }
 
     const onApply = useCallback(() => {
         if (doc == null || range == null) {
