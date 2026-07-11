@@ -19,15 +19,14 @@ export function CornerCell({ store, rowCount, colCount }: CornerCellProps) {
                       }
                   },
               }
-            : null
+            : {}
     return (
         <Pressable
             accessibilityLabel="Select all cells"
             className="bg-surface-secondary border-r border-b border-border web:outline-none"
             style={{ width: ROW_HEADER_WIDTH, height: HEADER_HEIGHT }}
             onPress={() => store.getState().selectAll(rowCount, colCount)}
-            // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
-            {...((webProps ?? {}) as any)}
+            {...webProps}
         />
     )
 }

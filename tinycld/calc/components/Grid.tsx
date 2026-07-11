@@ -295,8 +295,9 @@ function GridInner({
     useEffect(() => {
         if (Platform.OS !== 'web') return
         instance.focusSentinelRef.current = () => {
-            // biome-ignore lint/suspicious/noExplicitAny: web-only DOM focus call
-            ;(sentinelRef.current as any)?.focus?.()
+            // RN-Web renders View as a focusable div; RN's View type has no
+            // focus(), so narrow to the web-only method we call.
+            ;(sentinelRef.current as { focus?: () => void } | null)?.focus?.()
         }
     }, [instance.focusSentinelRef])
 

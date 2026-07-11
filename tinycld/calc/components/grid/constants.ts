@@ -1,3 +1,5 @@
+import type { ViewStyle } from 'react-native'
+
 // Shared layout constants for the Grid subtree. Each cell is the same
 // fixed height; row-header column is fixed width; column header and
 // formula bar each occupy one cell-height row at the top of the grid.
@@ -23,3 +25,13 @@ export const MIN_COLS = 26
 export const ACTIVE_HEADER_INSET_STYLE = {
     boxShadow: 'inset 1px 1px 0 rgba(0,0,0,0.18), inset -1px -1px 0 rgba(255,255,255,0.18)',
 } as const
+
+// RN types `ViewStyle['cursor']` as only 'auto' | 'pointer', but RN-Web
+// forwards any string through to inline CSS. The resize/crosshair grid
+// affordances are legitimate web cursor values RN just doesn't enumerate,
+// so we assert to the field's own type — this keeps callers `any`-free and
+// confines the one unavoidable widening to a single spot. Native ignores
+// the key (no cursor concept); the wider hit slop is the affordance there.
+export function webCursor(value: 'col-resize' | 'row-resize' | 'crosshair'): ViewStyle {
+    return { cursor: value as ViewStyle['cursor'] }
+}

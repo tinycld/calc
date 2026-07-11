@@ -18,7 +18,7 @@ import {
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { primaryAnchor } from '../../lib/selection-range'
 import { columnLabel } from '../../lib/workbook-types'
-import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT } from './constants'
+import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT, webCursor } from './constants'
 
 interface ColumnHeaderProps {
     scrollRef: React.RefObject<ScrollView | null>
@@ -314,7 +314,7 @@ function appendHeaderCells(
                               }
                           },
                       }
-                    : null
+                    : {}
             const onPlainPress = () => {
                 if (filter.skipNextPressRef.current) {
                     filter.skipNextPressRef.current = false
@@ -344,8 +344,7 @@ function appendHeaderCells(
                         height: HEADER_HEIGHT,
                         ...(isActive ? ACTIVE_HEADER_INSET_STYLE : null),
                     }}
-                    // biome-ignore lint/suspicious/noExplicitAny: web-only DOM event prop on RN Pressable
-                    {...((webMouseDownProp ?? {}) as any)}
+                    {...webMouseDownProp}
                 >
                     <Text
                         className={`text-xs ${isSelected ? 'text-accent-foreground' : 'text-muted-foreground'}`}
@@ -389,30 +388,22 @@ function appendHeaderCells(
             <View
                 key={`g-${col}`}
                 {...makeHandleProps(col)}
-                style={
-                    {
-                        position: 'absolute',
-                        left: handleX - (Platform.OS === 'web' ? 0 : NATIVE_HANDLE_HIT_SLOP),
-                        top: 0,
-                        width:
-                            HANDLE_VISUAL_WIDTH +
-                            (Platform.OS === 'web' ? 0 : NATIVE_HANDLE_HIT_SLOP * 2),
-                        height: HEADER_HEIGHT,
-                        zIndex: 2,
-                        // Web-only cursor affordance. RN-Web compiles
-                        // unrecognized style keys to inline CSS, so this
-                        // forwards through. Native doesn't have a cursor
-                        // concept; the wider hit slop is the affordance.
-                        cursor: 'col-resize',
-                        // Subtle visible bar centered on the handle so the
-                        // grab target is discoverable on hover; flat (no
-                        // border) when not dragged so it doesn't compete
-                        // with the column-divider line that's already
-                        // there.
-                        backgroundColor: isDraggingThis ? '#22a06b' : 'transparent',
-                        // biome-ignore lint/suspicious/noExplicitAny: web-only cursor key on RN ViewStyle
-                    } as any
-                }
+                style={{
+                    position: 'absolute',
+                    left: handleX - (Platform.OS === 'web' ? 0 : NATIVE_HANDLE_HIT_SLOP),
+                    top: 0,
+                    width:
+                        HANDLE_VISUAL_WIDTH +
+                        (Platform.OS === 'web' ? 0 : NATIVE_HANDLE_HIT_SLOP * 2),
+                    height: HEADER_HEIGHT,
+                    zIndex: 2,
+                    // Web-only col-resize cursor (see webCursor). Subtle visible
+                    // bar centered on the handle so the grab target is
+                    // discoverable on hover; flat (no border) when not dragged so
+                    // it doesn't compete with the existing column-divider line.
+                    ...webCursor('col-resize'),
+                    backgroundColor: isDraggingThis ? '#22a06b' : 'transparent',
+                }}
             />
         )
     }

@@ -76,10 +76,9 @@ export function FilterFieldRow({
                 {filterSummaryLabel(selected)}
             </Text>
             <View className="mt-2 flex-row flex-wrap gap-1">
-                {visible.map((v, i) => (
+                {visible.map(v => (
                     <FilterValueChip
-                        // biome-ignore lint/suspicious/noArrayIndexKey: distinct-value chips rendered in a fixed order; index disambiguates repeated display values
-                        key={`${i}:${v}`}
+                        key={v}
                         value={v}
                         active={selectedSet.has(v)}
                         disabled={disabled}
