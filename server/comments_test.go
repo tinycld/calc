@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -122,19 +123,19 @@ func TestBuildThreadsForCellOrdering(t *testing.T) {
 	}
 }
 
-// TestApplyCommentsToFileRoundTrip: build an xlsx with no comments,
+// TestApplyCommentsToFileRoundTrip: open the fixture for editing,
 // apply two threads on different cells, re-open the result with
-// excelize and confirm GetComments returns the expected entries.
+// excelize (the independent reader) and confirm GetComments returns
+// the expected entries.
 func TestApplyCommentsToFileRoundTrip(t *testing.T) {
 	original, err := os.ReadFile(tinyXlsxPath)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	f, err := excelize.OpenReader(bytes.NewReader(original))
+	f, err := xlsx.Edit(original)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer func() { _ = f.Close() }()
 
 	rows := []CommentRow{
 		{
@@ -162,12 +163,12 @@ func TestApplyCommentsToFileRoundTrip(t *testing.T) {
 		t.Fatalf("applyCommentsToFile: %v", err)
 	}
 
-	buf, err := f.WriteToBuffer()
+	saved, err := f.Save()
 	if err != nil {
-		t.Fatalf("write: %v", err)
+		t.Fatalf("save: %v", err)
 	}
 
-	rt, err := excelize.OpenReader(bytes.NewReader(buf.Bytes()))
+	rt, err := excelize.OpenReader(bytes.NewReader(saved))
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
@@ -198,6 +199,73 @@ func TestApplyCommentsToFileRoundTrip(t *testing.T) {
 	}
 }
 
+// TestApplyCommentsToFileJoinsThreadsPerCell: two distinct threads on
+// the SAME cell land as ONE classic note (SetComment replaces per
+// cell), threads joined by a blank line in created order, with the
+// attribution taken from the last (most recent) thread.
+func TestApplyCommentsToFileJoinsThreadsPerCell(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	f, err := xlsx.Edit(original)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+
+	rows := []CommentRow{
+		{
+			ID:         "rootA",
+			SheetID:    "sheet1",
+			Row:        2,
+			Col:        2,
+			AuthorName: "Alice",
+			Body:       "First thread",
+			Created:    time.Date(2026, 5, 10, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:         "rootB",
+			SheetID:    "sheet1",
+			Row:        2,
+			Col:        2,
+			AuthorName: "Bob",
+			Body:       "Second thread",
+			Created:    time.Date(2026, 5, 10, 11, 0, 0, 0, time.UTC),
+		},
+	}
+	if err := applyCommentsToFile(f, rows, map[string]string{"sheet1": "People"}); err != nil {
+		t.Fatalf("applyCommentsToFile: %v", err)
+	}
+	saved, err := f.Save()
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	rt, err := excelize.OpenReader(bytes.NewReader(saved))
+	if err != nil {
+		t.Fatalf("re-open: %v", err)
+	}
+	defer func() { _ = rt.Close() }()
+	got, err := rt.GetComments("People")
+	if err != nil {
+		t.Fatalf("GetComments: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("comments: want 1 joined note, got %d", len(got))
+	}
+	note := got[0]
+	if note.Cell != "B2" {
+		t.Errorf("cell: want B2, got %q", note.Cell)
+	}
+	wantText := "Alice (2026-05-10): First thread\n\nBob (2026-05-10): Second thread"
+	if note.Text != wantText {
+		t.Errorf("joined text:\nwant %q\n got %q", wantText, note.Text)
+	}
+	if note.Author != "Bob" {
+		t.Errorf("author: want last thread's %q, got %q", "Bob", note.Author)
+	}
+}
+
 // TestApplyCommentsToFileSkipsUnknownSheet: a comment targeting a sheet
 // id we couldn't resolve is silently skipped — the rest of the save
 // still proceeds. Better than aborting persistence over an orphan.
@@ -206,11 +274,10 @@ func TestApplyCommentsToFileSkipsUnknownSheet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	f, err := excelize.OpenReader(bytes.NewReader(original))
+	f, err := xlsx.Edit(original)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer func() { _ = f.Close() }()
 	rows := []CommentRow{
 		{
 			ID:         "orphan",

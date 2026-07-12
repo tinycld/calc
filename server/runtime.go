@@ -393,8 +393,9 @@ func decodePivotFields(parent *ycrdt.YMap, key string) []PivotFieldDTO {
 
 // decodePivotValueFields reads the "values" Y.Array of Y.Maps and
 // returns the per-value DTOs. Aggregation falls back to "sum" on
-// missing or unrecognized inputs (the validation lives downstream in
-// excelizeSubtotal). NumFmt is carried through verbatim — see
+// missing or unrecognized inputs (the aggregation names are already
+// the OOXML subtotal vocabulary the pivot writer emits verbatim).
+// NumFmt is carried through verbatim — see
 // PivotValueFieldDTO docstring for why the export path then drops it.
 func decodePivotValueFields(parent *ycrdt.YMap, key string) []PivotValueFieldDTO {
 	arr, ok := parent.Get(key).(*ycrdt.YArray)

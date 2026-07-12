@@ -7,25 +7,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 	ycrdt "github.com/skyterra/y-crdt"
 	"github.com/xuri/excelize/v2"
 )
 
 // TestCellStyleAttributeRoundTripExhaustive is the canonical audit: it
 // proves that EVERY leaf on CellStyle survives the full server-side
-// round-trip — overlay onto excelize, serialize to xlsx, re-read,
-// extract back to CellStyle, AND bootstrap-emit to YMap + decode back.
+// round-trip — cellStyleToPatch → PatchCellStyle → Save → OpenBytes →
+// probe + styleToCellStyle, AND bootstrap-emit to YMap + decode back.
 //
 // The enumeration is reflect-driven via collectCellStyleLeaves, so
 // adding a new leaf on CellStyle automatically grows the matrix. The
 // test fails with a per-leaf, per-stage breakdown the first time a
 // new attribute slips through without writer + reader + bootstrap
 // support.
-//
-// This is the test that would have caught the original bug: the read
-// side only handled font.bold, and the bootstrap-emit only handled
-// font + numFmt. After the fix, the test passes for every leaf in
-// the registry.
 func TestCellStyleAttributeRoundTripExhaustive(t *testing.T) {
 	leaves := collectCellStyleLeaves()
 	if len(leaves) == 0 {
@@ -33,13 +29,11 @@ func TestCellStyleAttributeRoundTripExhaustive(t *testing.T) {
 	}
 
 	// Every CellStyle leaf MUST have a registry entry. The registry is
-	// what extractStyle uses to invert overlayStyle and what this audit
-	// uses to canary every stage. A missing entry means the leaf has no
-	// way of being read back from excelize, even if overlayStyle's
-	// reflect walk writes it correctly.
+	// what this audit uses to canary every stage and what proves the
+	// write mapper landed the value independently of the read mapper.
 	for _, path := range leaves {
 		if _, ok := styleAttributeRegistry[path]; !ok {
-			t.Errorf("CellStyle leaf %q has no entry in styleAttributeRegistry — extractStyle cannot recover it from excelize", path)
+			t.Errorf("CellStyle leaf %q has no entry in styleAttributeRegistry — the audit cannot verify it round-trips", path)
 		}
 	}
 	if t.Failed() {
@@ -54,37 +48,24 @@ func TestCellStyleAttributeRoundTripExhaustive(t *testing.T) {
 				expected = spec.Canary
 			}
 
-			if spec.ReadOnly {
-				auditReadOnlyAttribute(t, path, spec, expected)
-				return
-			}
-
 			patch := buildSingleLeafCellStyle(t, path, spec.Canary)
 			report := stageReport{path: path, canary: spec.Canary, expected: expected}
 
-			// Stage 1: overlay onto a fresh excelize.Style and probe.
-			base := freshExcelizeStyle()
-			overlayStyle(base, patch)
-			report.excelize, report.excelizeOK = spec.ReadFromExcelize(base)
-
-			// Stage 2: re-read via extractStyle (the read-side inverse).
-			extracted := extractStyle(base)
-			report.extracted, report.extractedOK = leafValueFromCellStyle(extracted, path)
-
-			// Stage 3: a real xlsx round-trip — write to a fresh
-			// workbook, re-open via excelize, probe and extract again.
-			// Catches anything excelize loses on serialize/deserialize
-			// that the in-memory style accidentally tolerates.
+			// Stage 1+2: real xlsx round-trip — patch a blank workbook
+			// through the production write mapper, save, re-open with
+			// the doctaculous reader, and probe the resolved style.
 			xlsxBytes := writeSingleStyledCellXLSX(t, patch)
-			reopened := readStyleFromXLSX(t, xlsxBytes, "Sheet1", 1, 1)
-			report.xlsx, report.xlsxOK = spec.ReadFromExcelize(reopened)
-			xlsxExtracted := extractStyle(reopened)
-			report.xlsxExtracted, report.xlsxExtractedOK = leafValueFromCellStyle(xlsxExtracted, path)
+			reopened := readXlsxCellStyle(t, xlsxBytes)
+			report.xlsx, report.xlsxOK = spec.ReadFromXlsx(reopened)
+
+			// Stage 3: the production read mapper.
+			extracted := styleToCellStyle(reopened)
+			report.extracted, report.extractedOK = leafValueFromCellStyle(extracted, path)
 
 			// Stage 4: bootstrap-emit + decode. Mirrors the read path
 			// the YDoc bootstrap uses on first joiner — fails when
-			// buildStyleYMapFromStyle drops a leaf even if extractStyle
-			// recovered it.
+			// buildStyleYMapFromStyle drops a leaf even if
+			// styleToCellStyle recovered it.
 			bootstrapped := bootstrapRoundTrip(t, patch)
 			report.bootstrap, report.bootstrapOK = leafValueFromCellStyle(bootstrapped, path)
 
@@ -93,59 +74,25 @@ func TestCellStyleAttributeRoundTripExhaustive(t *testing.T) {
 	}
 }
 
-// auditReadOnlyAttribute verifies a read-only leaf round-trips on the
-// read path: we hand-construct an excelize.Style that carries the
-// canary value, then extractStyle must recover it, AND the bootstrap
-// path (which sees the extracted CellStyle on first joiner) must
-// preserve it through emit + decode. The write legs are skipped
-// because the writer cannot produce this leaf.
-func auditReadOnlyAttribute(t *testing.T, path string, spec attributeSpec, expected any) {
-	t.Helper()
-	base := craftExcelizeStyleForReadOnly(t, path, spec.Canary)
-	if got, ok := spec.ReadFromExcelize(base); !ok || !equalAny(got, expected) {
-		t.Fatalf("attribute %q (read-only): the hand-crafted excelize.Style does not even present the canary — audit scaffolding is broken (got %v present=%v)", path, got, ok)
+// TestFillColorPatchWithoutPatternForcesSolid locks the write mapper's
+// defensive rule in isolation: a doc-side fill-color edit that doesn't
+// also carry a pattern must land as a SOLID fill on disk (otherwise
+// the color is invisible or dropped). The exhaustive audit deliberately
+// co-requires Fill.Pattern alongside Fill.FgColor so it does not depend
+// on this fallback — this test is what covers it.
+func TestFillColorPatchWithoutPatternForcesSolid(t *testing.T) {
+	patch := &CellStyle{Fill: &CellFill{FgColor: ptr("#FF8800")}}
+	xlsxBytes := writeSingleStyledCellXLSX(t, patch)
+	st := readXlsxCellStyle(t, xlsxBytes)
+	if st == nil {
+		t.Fatal("cell has no style after a fill-color patch")
 	}
-	extracted := extractStyle(base)
-	got, ok := leafValueFromCellStyle(extracted, path)
-	if !ok || !equalAny(got, expected) {
-		t.Errorf("attribute %q (read-only): extractStyle did not recover the leaf\n  set      = %v\n  expected = %v\n  got      = %v (present=%v)\n  ↳ extractStyle / styleAttributeRegistry gap", path, spec.Canary, expected, got, ok)
+	if st.Fill.Pattern != "solid" {
+		t.Errorf("fill color without pattern should force a solid fill, got pattern %q", st.Fill.Pattern)
 	}
-	bootstrapped := bootstrapRoundTrip(t, extracted)
-	got, ok = leafValueFromCellStyle(bootstrapped, path)
-	if !ok || !equalAny(got, expected) {
-		t.Errorf("attribute %q (read-only): bootstrap emit+decode dropped the leaf\n  set      = %v\n  expected = %v\n  got      = %v (present=%v)\n  ↳ buildStyleYMapFromStyle does not propagate this field", path, spec.Canary, expected, got, ok)
+	if st.Fill.Fg.RGB != "FF8800" {
+		t.Errorf("fill color lost: want FF8800, got %q", st.Fill.Fg.RGB)
 	}
-}
-
-// craftExcelizeStyleForReadOnly produces an excelize.Style that
-// carries the read-only canary, bypassing overlayStyle (which the
-// writer uses and which cannot represent this leaf). We allow direct
-// excelize-shape construction here precisely because the leaf is
-// import-only: the audit's job is to prove the reader sees what an
-// external editor wrote.
-func craftExcelizeStyleForReadOnly(t *testing.T, path string, canary any) *excelize.Style {
-	t.Helper()
-	switch path {
-	case "Fill.BgColor":
-		s, ok := canary.(string)
-		if !ok {
-			t.Fatalf("Fill.BgColor canary must be a hex string, got %T", canary)
-		}
-		// A non-solid pattern is required for excelize to accept two
-		// colors; we use Pattern=2 (darkVertical) which OOXML
-		// recognizes. The fg color is required to occupy slot 0; we
-		// supply an inert sentinel ("EEEEEE") so the bg color lands in
-		// slot 1 unambiguously.
-		return &excelize.Style{
-			Fill: excelize.Fill{
-				Type:    "pattern",
-				Pattern: 2,
-				Color:   []string{"EEEEEE", strings.TrimPrefix(s, "#")},
-			},
-		}
-	}
-	t.Fatalf("no read-only scaffolding for %q — extend craftExcelizeStyleForReadOnly when adding new ReadOnly leaves", path)
-	return nil
 }
 
 // stageReport holds one leaf's result from every audit stage so the
@@ -155,16 +102,12 @@ type stageReport struct {
 	canary   any
 	expected any
 
-	excelize        any
-	excelizeOK      bool
-	extracted       any
-	extractedOK     bool
-	xlsx            any
-	xlsxOK          bool
-	xlsxExtracted   any
-	xlsxExtractedOK bool
-	bootstrap       any
-	bootstrapOK     bool
+	xlsx        any
+	xlsxOK      bool
+	extracted   any
+	extractedOK bool
+	bootstrap   any
+	bootstrapOK bool
 }
 
 func (r stageReport) assert(t *testing.T, expected any) {
@@ -176,17 +119,11 @@ func (r stageReport) assert(t *testing.T, expected any) {
 			"  got       = %v (present=%v)\n"+
 			"  ↳ %s", r.path, stage, r.canary, expected, got, ok, detail)
 	}
-	if !r.excelizeOK || !equalAny(r.excelize, expected) {
-		fail("excelize", "overlayStyle did not land the value on excelize.Style — likely a styleOverlayOverride gap", r.excelize, r.excelizeOK)
+	if !r.xlsxOK || !equalAny(r.xlsx, expected) {
+		fail("xlsx", "cellStyleToPatch → PatchCellStyle did not land the value in the saved file — likely a write-mapper gap in style_map.go", r.xlsx, r.xlsxOK)
 	}
 	if !r.extractedOK || !equalAny(r.extracted, expected) {
-		fail("extract", "extractStyle did not recover the leaf from excelize.Style — likely a styleAttributeRegistry gap", r.extracted, r.extractedOK)
-	}
-	if !r.xlsxOK || !equalAny(r.xlsx, expected) {
-		fail("xlsx", "value was lost during excelize serialize → deserialize round-trip", r.xlsx, r.xlsxOK)
-	}
-	if !r.xlsxExtractedOK || !equalAny(r.xlsxExtracted, expected) {
-		fail("xlsx-extract", "extractStyle on the reopened xlsx style did not recover the leaf", r.xlsxExtracted, r.xlsxExtractedOK)
+		fail("extract", "styleToCellStyle did not recover the leaf from the resolved xlsx.Style — likely a read-mapper gap in style_map.go", r.extracted, r.extractedOK)
 	}
 	if !r.bootstrapOK || !equalAny(r.bootstrap, expected) {
 		fail("bootstrap", "buildStyleYMapFromStyle → decodeCellStyle dropped the leaf — the bootstrap emitter is missing this field", r.bootstrap, r.bootstrapOK)
@@ -240,36 +177,62 @@ func walkLeafFields(t reflect.Type, prefix string, out *[]string) {
 // buildSingleLeafCellStyle constructs a *CellStyle with the target
 // leaf set to its canary, plus any co-required leaves from the
 // registry. The latter ride along so the resulting CellStyle is a
-// valid xlsx record (e.g. a "fill bg color" leaf cannot exist on its
-// own in OOXML — it needs a pattern + a fg color to be writable).
-// The audit asserts only the target leaf's round-trip; co-required
-// leaves are independently asserted by their own iterations.
+// sensible xlsx record (e.g. Fill.Type is dropped on write and only
+// reads back alongside an actual pattern + color fill). The audit
+// asserts only the target leaf's round-trip; co-required leaves are
+// independently asserted by their own iterations.
 func buildSingleLeafCellStyle(t *testing.T, path string, canary any) *CellStyle {
 	t.Helper()
 	cs := &CellStyle{}
-	assignFromRegistry(t, cs, path, canary)
+	assignLeafByPath(t, cs, path, canary)
 	spec := styleAttributeRegistry[path]
 	for _, co := range spec.CoRequiredPaths {
 		coSpec, ok := styleAttributeRegistry[co]
 		if !ok {
 			t.Fatalf("co-required path %q (referenced by %q) not in registry", co, path)
 		}
-		assignFromRegistry(t, cs, co, coSpec.Canary)
+		assignLeafByPath(t, cs, co, coSpec.Canary)
 	}
 	return cs
 }
 
-func assignFromRegistry(t *testing.T, cs *CellStyle, path string, canary any) {
+// assignLeafByPath sets a CellStyle leaf at the dotted path to the
+// given value, allocating the intermediate group structs (Font / Fill /
+// Alignment / Borders / border edges) on demand. The leaf field type
+// drives the allocation (always *bool / *string / *float64 on
+// CellStyle today).
+func assignLeafByPath(t *testing.T, dst *CellStyle, path string, value any) {
 	t.Helper()
-	spec, ok := styleAttributeRegistry[path]
-	if !ok {
-		t.Fatalf("no registry entry for %q", path)
+	v := reflect.ValueOf(dst).Elem()
+	parts := splitDottedPath(path)
+	for i, name := range parts {
+		field := v.FieldByName(name)
+		if !field.IsValid() {
+			t.Fatalf("CellStyle has no field at %q (segment %q)", path, name)
+		}
+		if i == len(parts)-1 {
+			elem := field.Type().Elem()
+			rv := reflect.ValueOf(value)
+			if !rv.Type().AssignableTo(elem) {
+				if !rv.Type().ConvertibleTo(elem) {
+					t.Fatalf("canary %v (%T) not assignable to leaf %q", value, value, path)
+				}
+				rv = rv.Convert(elem)
+			}
+			p := reflect.New(elem)
+			p.Elem().Set(rv)
+			field.Set(p)
+			return
+		}
+		if field.IsNil() {
+			field.Set(reflect.New(field.Type().Elem()))
+		}
+		v = field.Elem()
 	}
-	if spec.ExtractTo != nil {
-		spec.ExtractTo(cs, canary)
-		return
-	}
-	assignLeafByPath(cs, path, canary)
+}
+
+func splitDottedPath(path string) []string {
+	return strings.Split(path, ".")
 }
 
 // leafValueFromCellStyle extracts the value at the given path off a
@@ -306,7 +269,7 @@ func leafValueFromCellStyle(cs *CellStyle, path string) (any, bool) {
 // equalAny compares two values from the audit pipeline. Most values
 // are bool / string / float64 and compare directly; hex strings need
 // the leading "#" trimmed because the writer accepts both forms but
-// excelize stores bare hex.
+// the file stores bare hex.
 func equalAny(got, want any) bool {
 	if got == nil || want == nil {
 		return got == nil && want == nil
@@ -319,73 +282,66 @@ func equalAny(got, want any) bool {
 	return reflect.DeepEqual(got, want)
 }
 
-// freshExcelizeStyle returns an empty excelize.Style suitable as the
-// "base" for overlayStyle. Matches what applyCellStyle uses when the
-// cell has no pre-existing style.
-func freshExcelizeStyle() *excelize.Style {
-	return &excelize.Style{}
-}
-
-// writeSingleStyledCellXLSX opens a fresh xlsx, registers a style
-// built by overlaying patch on an empty base, applies it to A1, and
-// returns the workbook bytes. Mirrors what applyCellStyle does — the
-// audit calls this so it exercises the actual write path the live
-// server uses on save.
-func writeSingleStyledCellXLSX(t *testing.T, patch *CellStyle) []byte {
+// blankWorkbookBytes builds the minimal fixture the audit patches: a
+// fresh single-sheet workbook with a value in A1 (so the cell exists
+// in the saved sheetData for the style to attach to). excelize is the
+// transition oracle and stays test-only — using it to MINT the fixture
+// also guarantees the doctaculous editor handles files it didn't
+// write itself.
+func blankWorkbookBytes(t *testing.T) []byte {
 	t.Helper()
 	f := excelize.NewFile()
 	defer func() { _ = f.Close() }()
-	// SetCellValue gives the cell a writable address; without a value
-	// excelize omits the cell from the saved xml and the style binding
-	// has nothing to attach to.
 	if err := f.SetCellValue("Sheet1", "A1", "audit"); err != nil {
 		t.Fatalf("seed cell value: %v", err)
 	}
-	base := &excelize.Style{}
-	overlayStyle(base, patch)
-	id, err := f.NewStyle(base)
-	if err != nil {
-		t.Fatalf("NewStyle: %v", err)
-	}
-	if err := f.SetCellStyle("Sheet1", "A1", "A1", id); err != nil {
-		t.Fatalf("SetCellStyle: %v", err)
-	}
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
-		t.Fatalf("write workbook: %v", err)
+		t.Fatalf("write fixture workbook: %v", err)
 	}
 	return buf.Bytes()
 }
 
-// readStyleFromXLSX reopens xlsx bytes and returns the excelize.Style
-// applied at (sheet, row, col), or a freshly-allocated empty style
-// when the cell has no registered style.
-func readStyleFromXLSX(t *testing.T, xlsx []byte, sheet string, row, col int) *excelize.Style {
+// writeSingleStyledCellXLSX runs the production write path: open the
+// blank fixture for editing, patch A1's style with the mapped
+// CellStyle, and save. Mirrors what the serializer does per styled
+// cell on save.
+func writeSingleStyledCellXLSX(t *testing.T, patch *CellStyle) []byte {
 	t.Helper()
-	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
+	f, err := xlsx.Edit(blankWorkbookBytes(t))
+	if err != nil {
+		t.Fatalf("xlsx.Edit: %v", err)
+	}
+	sh, err := f.Sheet("Sheet1")
+	if err != nil {
+		t.Fatalf("sheet: %v", err)
+	}
+	if err := sh.PatchCellStyle(1, 1, cellStyleToPatch(patch)); err != nil {
+		t.Fatalf("PatchCellStyle: %v", err)
+	}
+	out, err := f.Save()
+	if err != nil {
+		t.Fatalf("save workbook: %v", err)
+	}
+	return out
+}
+
+// readXlsxCellStyle reopens saved bytes with the doctaculous reader and
+// returns A1's fully resolved style (nil when the cell carries none).
+func readXlsxCellStyle(t *testing.T, data []byte) *xlsx.Style {
+	t.Helper()
+	wb, err := xlsx.OpenBytes(data)
 	if err != nil {
 		t.Fatalf("open xlsx: %v", err)
 	}
-	defer func() { _ = f.Close() }()
-	ref, err := excelize.CoordinatesToCellName(col, row)
-	if err != nil {
-		t.Fatalf("coords (%d,%d): %v", col, row, err)
+	if len(wb.Sheets) == 0 {
+		t.Fatal("no sheets in saved workbook")
 	}
-	id, err := f.GetCellStyle(sheet, ref)
-	if err != nil {
-		t.Fatalf("GetCellStyle %s!%s: %v", sheet, ref, err)
+	cells := wb.Sheets[0].Cells
+	if len(cells) == 0 || len(cells[0]) == 0 {
+		t.Fatal("A1 missing from the saved workbook's used range")
 	}
-	if id == 0 {
-		return &excelize.Style{}
-	}
-	style, err := f.GetStyle(id)
-	if err != nil {
-		t.Fatalf("GetStyle %d: %v", id, err)
-	}
-	if style == nil {
-		return &excelize.Style{}
-	}
-	return style
+	return cells[0][0].Style
 }
 
 // bootstrapRoundTrip exercises the bootstrap-emit path: build a YMap
@@ -425,27 +381,18 @@ func bootstrapRoundTrip(t *testing.T, patch *CellStyle) *CellStyle {
 }
 
 // TestCellStyleReadFromXLSXEndToEnd is the user-facing reproduction of
-// the original bug: write a workbook with every CellStyle attribute
-// set on one cell, run it through ReadWorkbookFromXLSX (the production
-// preview / bootstrap entry point), and assert every attribute
-// survives onto the resulting WorkbookModel. Catches a regression at
-// the level of "open a customer xlsx, half the formatting is gone".
+// the original style-loss bug: write a workbook with every CellStyle
+// attribute set on one cell (through the doctaculous write path), run
+// it through ReadWorkbookFromXLSX (the production preview / bootstrap
+// entry point), and assert every attribute survives onto the resulting
+// WorkbookModel. Catches a regression at the level of "open a customer
+// xlsx, half the formatting is gone".
 func TestCellStyleReadFromXLSXEndToEnd(t *testing.T) {
 	leaves := collectCellStyleLeaves()
 
 	combined := &CellStyle{}
 	for _, path := range leaves {
-		spec := styleAttributeRegistry[path]
-		if spec.ReadOnly {
-			// Writer can't produce this leaf — auditReadOnlyAttribute
-			// covers the read-only round-trip separately.
-			continue
-		}
-		if spec.ExtractTo != nil {
-			spec.ExtractTo(combined, spec.Canary)
-			continue
-		}
-		assignLeafByPath(combined, path, spec.Canary)
+		assignLeafByPath(t, combined, path, styleAttributeRegistry[path].Canary)
 	}
 
 	xlsxBytes := writeSingleStyledCellXLSX(t, combined)
@@ -463,17 +410,11 @@ func TestCellStyleReadFromXLSXEndToEnd(t *testing.T) {
 		t.Fatalf("no cell at 1:1, got keys: %v", sheetCellKeys(sheet))
 	}
 	if cell.Style == nil {
-		t.Fatal("ReadWorkbookFromXLSX dropped the entire style block — extractStyle returned nil despite a fully-styled cell")
+		t.Fatal("ReadWorkbookFromXLSX dropped the entire style block despite a fully-styled cell")
 	}
 
 	for _, path := range leaves {
 		spec := styleAttributeRegistry[path]
-		if spec.ReadOnly {
-			// Writer cannot produce a ReadOnly leaf, so a
-			// writer-built fixture can't carry it. Audited
-			// separately in auditReadOnlyAttribute.
-			continue
-		}
 		expected := spec.CanaryReadBack
 		if expected == nil {
 			expected = spec.Canary

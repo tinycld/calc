@@ -1,20 +1,18 @@
 package calc
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
-	"github.com/xuri/excelize/v2"
 
 	"tinycld.org/core/previewqueue"
 	"tinycld.org/core/realtime"
@@ -264,20 +262,34 @@ func buildPlaintext(snap YDocSnapshot) string {
 // xlsx from a WorkbookModel (including pivot defs), without needing a
 // Y.Doc. Used by tests; production goes through serializeSnapshotToXLSX.
 func serializeWorkbook(model WorkbookModel) ([]byte, error) {
-	f := excelize.NewFile()
-	defer func() { _ = f.Close() }()
+	f := xlsx.New()
 
 	// Replace the default Sheet1 with the first model sheet's name, so
 	// the workbook starts cleanly named.
-	if len(model.Sheets) > 0 {
-		_ = f.SetSheetName("Sheet1", model.Sheets[0].Name)
+	firstName := "Sheet1"
+	if len(model.Sheets) > 0 && model.Sheets[0].Name != "" {
+		firstName = model.Sheets[0].Name
+	}
+	if firstName != "Sheet1" {
+		sh, err := f.Sheet("Sheet1")
+		if err != nil {
+			return nil, fmt.Errorf("resolve default sheet: %w", err)
+		}
+		if err := sh.SetName(firstName); err != nil {
+			return nil, fmt.Errorf("rename default sheet to %q: %w", firstName, err)
+		}
 	}
 
 	for i, s := range model.Sheets {
-		if i > 0 {
-			if _, err := f.NewSheet(s.Name); err != nil {
-				return nil, fmt.Errorf("new sheet %q: %w", s.Name, err)
-			}
+		var sh *xlsx.SheetEdit
+		var err error
+		if i == 0 {
+			sh, err = f.Sheet(firstName)
+		} else {
+			sh, err = f.AddSheet(s.Name)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("sheet %q: %w", s.Name, err)
 		}
 		// Write each cell at its (row,col).
 		for key, v := range s.Cells {
@@ -285,11 +297,7 @@ func serializeWorkbook(model WorkbookModel) ([]byte, error) {
 			if r < 1 || c < 1 {
 				continue
 			}
-			ref, err := excelize.CoordinatesToCellName(c, r)
-			if err != nil {
-				continue
-			}
-			if err := writeModelCell(f, s.Name, ref, v); err != nil {
+			if err := writeModelCell(sh, r, c, v); err != nil {
 				return nil, err
 			}
 		}
@@ -297,49 +305,52 @@ func serializeWorkbook(model WorkbookModel) ([]byte, error) {
 
 	writePivots(f, model.Pivots)
 
-	var buf bytes.Buffer
-	if err := f.Write(&buf); err != nil {
+	out, err := f.Save()
+	if err != nil {
 		return nil, fmt.Errorf("write xlsx: %w", err)
 	}
-	return buf.Bytes(), nil
+	return out, nil
 }
 
-// writePivots emits each pivot definition as an excelize PivotTable on
-// the workbook. Shared between serializeWorkbook (model-only path) and
+// writePivots emits each pivot definition as an xlsx.PivotTable on the
+// workbook. Shared between serializeWorkbook (model-only path) and
 // serializeSnapshotToXLSX (snapshot-on-disk-bytes path) so both paths
 // agree on field mapping, naming, and the "skip when Values is empty"
 // rule.
 //
 // Behavior:
-//   - Pivots with no Values are skipped silently (excelize requires at
-//     least one Data field; v1 surfaces the def to clients via the
-//     Y.Doc but doesn't try to materialize it in xlsx).
+//   - Pivots with no Values are skipped silently (a pivot needs at
+//     least one Data field to materialize; v1 surfaces the def to
+//     clients via the Y.Doc but doesn't try to materialize it in xlsx).
 //   - AddPivotTable failures are logged and skipped rather than fatal,
 //     so a single malformed def doesn't poison the whole save. The
 //     Y.Doc keeps the original def around for the next attempt.
-//   - excelize v2.10.1 quirk: PivotTableRange / DataRange want the
-//     bare sheet name, even when it contains spaces — single-quoting
-//     breaks the parser's lookup against the workbook.
+//   - AddPivotTable reads field names from the source range's header
+//     cells, so the caller must emit pivots AFTER all cell writes.
 //
-// Order is significant in excelize (pivot caches share workbook-level
-// IDs), so the caller's slice order is preserved verbatim.
-func writePivots(f *excelize.File, pivots []PivotDefinitionDTO) {
+// The caller's slice order is preserved verbatim so cache IDs allocate
+// deterministically.
+func writePivots(f *xlsx.File, pivots []PivotDefinitionDTO) {
 	for _, p := range pivots {
 		if len(p.Values) == 0 {
 			continue
 		}
-		opts := &excelize.PivotTableOptions{
-			DataRange:           p.SourceRange,
-			PivotTableRange:     pivotTableRange(f, p),
-			Rows:                toExcelizeFields(p.Rows, false, ""),
-			Columns:             toExcelizeFields(p.Cols, false, ""),
-			Data:                toExcelizeValueFields(p.Values),
-			Filter:              toExcelizeFields(p.Filters, false, ""),
-			RowGrandTotals:      p.RowGrandTotals,
-			ColGrandTotals:      p.ColGrandTotals,
-			PivotTableStyleName: p.StyleName,
+		srcSheet, srcRange := splitSourceRange(p.SourceRange)
+		pt := xlsx.PivotTable{
+			Name:           p.ID,
+			SourceSheet:    srcSheet,
+			SourceRange:    srcRange,
+			TargetSheet:    p.TargetSheetName,
+			Location:       pivotTableRange(f, p),
+			Rows:           sourceColumnNames(p.Rows),
+			Cols:           sourceColumnNames(p.Cols),
+			Filters:        sourceColumnNames(p.Filters),
+			Values:         toPivotValueFields(p.Values),
+			RowGrandTotals: p.RowGrandTotals,
+			ColGrandTotals: p.ColGrandTotals,
+			StyleName:      p.StyleName,
 		}
-		if err := f.AddPivotTable(opts); err != nil {
+		if err := f.AddPivotTable(pt); err != nil {
 			slog.Warn("calc: AddPivotTable failed; skipping pivot",
 				"pivotID", p.ID, "err", err)
 			continue
@@ -347,38 +358,43 @@ func writePivots(f *excelize.File, pivots []PivotDefinitionDTO) {
 	}
 }
 
-// pivotTableRange derives the A1 output range for a pivot from the
-// materialized pivot's ACTUAL dimensions, rather than the old hardcoded
-// "A1:Z200" (which truncated pivots past column Z or row 200). The
-// dimensions are computed exactly as the TS render engine does (see
-// tinycld/calc/lib/pivot/render.ts): a header band, one render-row per
-// distinct row-key tuple (plus subtotals and a grand-total row), and one
-// render-col per distinct col-key tuple times the value count (plus row
-// grand totals). Distinct tuple counts come from the pivot's source data,
-// which is present in the workbook by the time writePivots runs.
+// pivotTableRange derives the pivot's anchor Location range on the
+// target sheet from the materialized pivot's ACTUAL dimensions, rather
+// than the old hardcoded "A1:Z200" (which truncated pivots past column Z
+// or row 200). The dimensions are computed exactly as the TS render
+// engine does (see tinycld/calc/lib/pivot/render.ts): a header band, one
+// render-row per distinct row-key tuple (plus subtotals and a
+// grand-total row), and one render-col per distinct col-key tuple times
+// the value count (plus row grand totals). Distinct tuple counts come
+// from the pivot's source data, which is present in the workbook by the
+// time writePivots runs.
 //
 // If the source data can't be read (missing/malformed range, absent
 // sheet), we fall back to the legacy A1:Z200 box so a single unreadable
 // pivot never poisons the save — matching writePivots' "skip, don't
 // fatal" posture.
-func pivotTableRange(f *excelize.File, p PivotDefinitionDTO) string {
+//
+// Unlike the excelize-era PivotTableRange, doctaculous' Location is a
+// bare range on TargetSheet — no sheet prefix.
+func pivotTableRange(f *xlsx.File, p PivotDefinitionDTO) string {
+	const legacyRange = "A1:Z200"
 	rowCount, colCount, ok := computePivotDimensions(f, p)
 	if !ok {
-		return fmt.Sprintf("%s!A1:Z200", p.TargetSheetName)
+		return legacyRange
 	}
-	// Guard against a degenerate 0×0 pivot: excelize needs a valid A1
-	// range, and the header band is always at least 1×1.
+	// Guard against a degenerate 0×0 pivot: the header band is always at
+	// least 1×1.
 	if rowCount < 1 {
 		rowCount = 1
 	}
 	if colCount < 1 {
 		colCount = 1
 	}
-	bottomRight, err := excelize.CoordinatesToCellName(colCount, rowCount)
-	if err != nil {
-		return fmt.Sprintf("%s!A1:Z200", p.TargetSheetName)
+	bottomRight := xlsx.CellRef(rowCount, colCount)
+	if bottomRight == "" {
+		return legacyRange
 	}
-	return fmt.Sprintf("%s!A1:%s", p.TargetSheetName, bottomRight)
+	return "A1:" + bottomRight
 }
 
 // computePivotDimensions returns the (rowCount, colCount) of the
@@ -398,7 +414,7 @@ func pivotTableRange(f *excelize.File, p PivotDefinitionDTO) string {
 //
 // ok is false when the source data can't be read; the caller then falls
 // back to the legacy range.
-func computePivotDimensions(f *excelize.File, p PivotDefinitionDTO) (rowCount, colCount int, ok bool) {
+func computePivotDimensions(f *xlsx.File, p PivotDefinitionDTO) (rowCount, colCount int, ok bool) {
 	rows, err := readPivotSourceRows(f, p.SourceRange)
 	if err != nil {
 		return 0, 0, false
@@ -447,102 +463,56 @@ type pivotSourceRow map[string]string
 // and returns one map per data row (header row excluded), keyed by header
 // name. Cell values are stringified the same way the TS engine keys them
 // (stringifyRaw: raw scalar → string), so distinct-tuple counts match.
-func readPivotSourceRows(f *excelize.File, a1 string) ([]pivotSourceRow, error) {
-	sheet, startCol, startRow, endCol, endRow, err := parsePivotSourceRange(a1)
+func readPivotSourceRows(f *xlsx.File, a1 string) ([]pivotSourceRow, error) {
+	sheetName, ref := splitSourceRange(a1)
+	if sheetName == "" {
+		return nil, fmt.Errorf("calc: pivot source range %q missing sheet name", a1)
+	}
+	rng, err := xlsx.ParseRange(ref)
 	if err != nil {
 		return nil, err
 	}
-	if idx, _ := f.GetSheetIndex(sheet); idx < 0 {
-		return nil, fmt.Errorf("calc: pivot source sheet %q not found", sheet)
+	sh, err := f.Sheet(sheetName)
+	if err != nil {
+		return nil, err
 	}
-	headers := make([]string, 0, endCol-startCol+1)
-	for c := startCol; c <= endCol; c++ {
-		ref, err := excelize.CoordinatesToCellName(c, startRow)
-		if err != nil {
-			return nil, err
-		}
-		v, err := f.GetCellValue(sheet, ref)
-		if err != nil {
-			return nil, err
-		}
-		headers = append(headers, v)
+	headers := make([]string, 0, rng.EndCol-rng.StartCol+1)
+	for c := rng.StartCol; c <= rng.EndCol; c++ {
+		headers = append(headers, pivotCellString(sh.Cell(rng.StartRow, c).Value))
 	}
-	out := make([]pivotSourceRow, 0, endRow-startRow)
-	for r := startRow + 1; r <= endRow; r++ {
+	out := make([]pivotSourceRow, 0, rng.EndRow-rng.StartRow)
+	for r := rng.StartRow + 1; r <= rng.EndRow; r++ {
 		row := make(pivotSourceRow, len(headers))
 		for i, h := range headers {
-			ref, err := excelize.CoordinatesToCellName(startCol+i, r)
-			if err != nil {
-				return nil, err
-			}
-			v, err := f.GetCellValue(sheet, ref)
-			if err != nil {
-				return nil, err
-			}
-			row[h] = v
+			row[h] = pivotCellString(sh.Cell(r, rng.StartCol+i).Value)
 		}
 		out = append(out, row)
 	}
 	return out, nil
 }
 
-// parsePivotSourceRange splits an A1 range like "Sheet1!A1:F10" or
-// "'Sheet With Spaces'!A1:F10" into its sheet name and 1-based
-// coordinates. Mirrors parseA1Range in tinycld/calc/lib/pivot/range-parse.ts.
-func parsePivotSourceRange(a1 string) (sheet string, startCol, startRow, endCol, endRow int, err error) {
-	bang := sheetSeparatorIndex(a1)
-	if bang < 0 {
-		return "", 0, 0, 0, 0, fmt.Errorf("calc: pivot source range %q missing sheet separator", a1)
-	}
-	sheet = unquotePivotSheet(a1[:bang])
-	rangePart := a1[bang+1:]
-	colon := strings.IndexByte(rangePart, ':')
-	if colon < 0 {
-		return "", 0, 0, 0, 0, fmt.Errorf("calc: pivot source range %q missing ':'", a1)
-	}
-	startCol, startRow, err = excelize.CellNameToCoordinates(rangePart[:colon])
-	if err != nil {
-		return "", 0, 0, 0, 0, err
-	}
-	endCol, endRow, err = excelize.CellNameToCoordinates(rangePart[colon+1:])
-	if err != nil {
-		return "", 0, 0, 0, 0, err
-	}
-	if endRow < startRow || endCol < startCol {
-		return "", 0, 0, 0, 0, fmt.Errorf("calc: pivot source range %q is reversed", a1)
-	}
-	return sheet, startCol, startRow, endCol, endRow, nil
-}
-
-// sheetSeparatorIndex finds the "!" that separates the sheet name from
-// the cell range, ignoring any "!" inside a single-quoted sheet name.
-func sheetSeparatorIndex(s string) int {
-	inQuote := false
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '\'':
-			if inQuote && i+1 < len(s) && s[i+1] == '\'' {
-				i++
-				continue
-			}
-			inQuote = !inQuote
-		case '!':
-			if !inQuote {
-				return i
-			}
+// pivotCellString renders a typed cell value the way the TS engine's
+// stringifyRaw (tinycld/calc/lib/pivot/aggregate.ts) keys the Y.Doc raw:
+// numbers via JS String(n) semantics, booleans as "true"/"false", dates
+// in the same ISO convention the bootstrap stores as the date raw
+// (dateRawString). Filter selections arrive stringified by the client
+// with the same function, so filterPivotRows matches exactly.
+func pivotCellString(v xlsx.Value) string {
+	switch v.Kind {
+	case xlsx.KindNumber:
+		return formatNumber(v.F)
+	case xlsx.KindBool:
+		if v.B {
+			return "true"
 		}
+		return "false"
+	case xlsx.KindDate:
+		return dateRawString(v.T)
+	case xlsx.KindString, xlsx.KindError:
+		return v.S
+	default: // KindEmpty
+		return ""
 	}
-	return -1
-}
-
-// unquotePivotSheet strips the surrounding single quotes (and unescapes
-// doubled apostrophes) from a quoted sheet name; returns the name
-// verbatim otherwise.
-func unquotePivotSheet(part string) string {
-	if len(part) >= 2 && strings.HasPrefix(part, "'") && strings.HasSuffix(part, "'") {
-		return strings.ReplaceAll(part[1:len(part)-1], "''", "'")
-	}
-	return part
 }
 
 // filterPivotRows drops rows excluded by the pivot's filter selections,
@@ -624,57 +594,65 @@ func distinctFirstFieldGroups(tuples [][]string) int {
 	return len(seen)
 }
 
-func toExcelizeFields(in []PivotFieldDTO, _ bool, _ string) []excelize.PivotTableField {
-	out := make([]excelize.PivotTableField, 0, len(in))
+// sourceColumnNames projects axis field DTOs (rows/cols/filters) onto
+// the source-column names doctaculous keys pivot fields by.
+func sourceColumnNames(in []PivotFieldDTO) []string {
+	out := make([]string, 0, len(in))
 	for _, f := range in {
-		out = append(out, excelize.PivotTableField{Data: f.SourceColumn, Name: f.DisplayName})
+		out = append(out, f.SourceColumn)
 	}
 	return out
 }
 
-// toExcelizeValueFields intentionally does NOT propagate v.NumFmt onto
-// excelize.PivotTableField.NumFmt. The excelize field is `int` (built-in
-// numFmt ID 0..49); a free-form pattern string has no representation
-// there. See docs/pivot.md "Per-value numFmt round-trip" for the
-// documented divergence.
-func toExcelizeValueFields(in []PivotValueFieldDTO) []excelize.PivotTableField {
-	out := make([]excelize.PivotTableField, 0, len(in))
+// toPivotValueFields maps value-field DTOs onto xlsx.PivotValueField.
+// Calc's aggregation names ("sum", "average", "countNums", "stdDevp",
+// …) are already the OOXML dataField subtotal vocabulary, so they pass
+// through verbatim. NumFmt intentionally does NOT round-trip: the
+// dataField numFmt slot is a built-in numFmt ID and only accepts that
+// catalog — see docs/pivot.md "Per-value numFmt round-trip".
+func toPivotValueFields(in []PivotValueFieldDTO) []xlsx.PivotValueField {
+	out := make([]xlsx.PivotValueField, 0, len(in))
 	for _, v := range in {
-		out = append(out, excelize.PivotTableField{
-			Data:     v.SourceColumn,
-			Name:     v.DisplayName,
-			Subtotal: excelizeSubtotal(v.Aggregation),
+		out = append(out, xlsx.PivotValueField{
+			Field:       v.SourceColumn,
+			Aggregation: v.Aggregation,
+			DisplayName: v.DisplayName,
 		})
 	}
 	return out
 }
 
-func excelizeSubtotal(agg string) string {
-	switch agg {
-	case "sum":
-		return "Sum"
-	case "average":
-		return "Average"
-	case "count":
-		return "Count"
-	case "countNums":
-		return "CountNums"
-	case "max":
-		return "Max"
-	case "min":
-		return "Min"
-	case "product":
-		return "Product"
-	case "stdDev":
-		return "StdDev"
-	case "stdDevp":
-		return "StdDevp"
-	case "var":
-		return "Var"
-	case "varp":
-		return "Varp"
+// splitSourceRange is the inverse of combineSourceRange (pivot.go): it
+// splits the combined "<sheet>!<range>" form the DTO carries into the
+// separate sheet + ref doctaculous expects, unquoting a single-quoted
+// sheet name (doubled ” collapse to a literal quote). A bare range
+// with no sheet prefix returns ("", ref); AddPivotTable then fails its
+// sheet lookup and the pivot is logged-and-skipped, matching the old
+// writer's handling of malformed source ranges.
+func splitSourceRange(combined string) (sheet, ref string) {
+	if strings.HasPrefix(combined, "'") {
+		i := 1
+		for i < len(combined) {
+			if combined[i] != '\'' {
+				i++
+				continue
+			}
+			if i+1 < len(combined) && combined[i+1] == '\'' {
+				i += 2 // escaped quote, keep scanning
+				continue
+			}
+			break // closing quote
+		}
+		if i < len(combined) && i+1 < len(combined) && combined[i+1] == '!' {
+			name := strings.ReplaceAll(combined[1:i], "''", "'")
+			return name, combined[i+2:]
+		}
+		return "", combined
 	}
-	return "Sum"
+	if idx := strings.LastIndex(combined, "!"); idx >= 0 {
+		return combined[:idx], combined[idx+1:]
+	}
+	return "", combined
 }
 
 // parseModelCellKey parses the "row:col" keys used by
@@ -694,25 +672,29 @@ func parseModelCellKey(key string) (row, col int) {
 	return r, c
 }
 
-func writeModelCell(f *excelize.File, sheet, ref string, v CellValueDTO) error {
+// writeModelCell writes one CellValueDTO at (row, col). Formula cells
+// carry no cached value on this path (parity with the excelize-era
+// writer, which emitted the formula alone); typed scalars dispatch to
+// the matching typed setter.
+func writeModelCell(sh *xlsx.SheetEdit, row, col int, v CellValueDTO) error {
 	if v.Formula != "" {
-		return f.SetCellFormula(sheet, ref, v.Formula)
+		return sh.SetFormula(row, col, v.Formula, xlsx.Value{})
 	}
 	switch v.Kind {
 	case "number":
 		if n, ok := v.Raw.(float64); ok {
-			return f.SetCellFloat(sheet, ref, n, -1, 64)
+			return sh.SetNumber(row, col, n)
 		}
 	case "boolean":
 		if b, ok := v.Raw.(bool); ok {
-			return f.SetCellBool(sheet, ref, b)
+			return sh.SetBool(row, col, b)
 		}
 	}
 	if s, ok := v.Raw.(string); ok && s != "" {
-		return f.SetCellStr(sheet, ref, s)
+		return sh.SetString(row, col, s)
 	}
 	if v.Display != "" {
-		return f.SetCellStr(sheet, ref, v.Display)
+		return sh.SetString(row, col, v.Display)
 	}
 	return nil
 }
@@ -721,35 +703,48 @@ func writeModelCell(f *excelize.File, sheet, ref string, v CellValueDTO) error {
 // Y.Doc snapshot's sheet metadata + cell entries on top, and returns
 // the rewritten .xlsx bytes.
 //
+// The write path is doctaculous pkg/xlsx's preservation-first editor:
+// xlsx.Edit opens the original bytes, every mutation touches only what
+// it names, and untouched parts (themes, drawings, extension lists,
+// unmodeled style facets) copy through byte-verbatim at Save. A second
+// read-only handle (xlsx.OpenBytes) supplies the "what's on disk" view
+// the authoritative-clear passes diff against — existing row/column
+// customizations and the populated-cell grid. The read model is
+// 0-based; every index converts to calc's 1-based convention at the
+// seam.
+//
 // Behavior:
+//   - Pivot parts are removed up front and rebuilt from the snapshot at
+//     the end (re-adding without removing would duplicate caches).
 //   - Sheets are ordered by SheetMeta.Position (the snapshot producer
 //     pre-sorts; we use slice index as the position in the output).
-//   - Sheets present in the snapshot but not in the original workbook
-//     are appended via NewSheet.
-//   - Sheets present in the original workbook with a different name in
-//     the snapshot are renamed.
-//   - Per-sheet metadata applied after rename/create and before cells:
+//     Sheets present in the snapshot but not in the original workbook
+//     are appended; existing sheets with a different snapshot name are
+//     renamed positionally.
+//   - Per-sheet metadata applies after rename/create and before cells:
 //     RowCount/ColCount widen the workbook's <dimension> to the union
 //     of snapshot and existing extents (never shrink); RowHeights and
-//     ColWidths apply px-to-Excel-unit conversions onto SetRowHeight/
-//     SetColWidth (px=0 hides the row/column, mirroring the TS-side
-//     hide-snap thresholds); RowStyles overwrite the row's xlsx style
-//     with the Y.Doc state (per-cell styles still layer on top).
-//   - For each cell: if Formula is non-empty, write the formula via
-//     SetCellFormula; otherwise write the value (Raw, falling back to
-//     Display).
-//   - Cells in the original workbook that the snapshot does NOT have
-//     an entry for are cleared (value + formula). The Y.Doc is seeded
+//     ColWidths apply px-to-Excel-unit conversions (px=0 hides the
+//     row/column, mirroring the TS-side hide-snap thresholds);
+//     RowStyles overwrite the row's xlsx style with the Y.Doc state
+//     (per-cell styles still layer on top). Merges replace wholesale.
+//   - Visibility applies after all sheet writes. Hiding (or deleting)
+//     the last visible sheet is logged and skipped rather than failing
+//     the save — an intended change from the excelize-era writer, which
+//     aborted the whole save; a doc state that hides every sheet is
+//     better persisted mostly-hidden than not at all.
+//   - Cells in the original workbook that the snapshot does NOT carry
+//     are cleared (value + formula; style stays). The Y.Doc is seeded
 //     from a complete walk of the source workbook on bootstrap, so a
-//     missing snapshot entry reflects a real client-side deletion
-//     (delete-rows, delete-columns, clear-contents, sort that wrote
-//     null tuples into trailing slots) rather than an untracked cell.
-//     The deletion pass runs per-sheet via GetRows before the cell
-//     writes below; the writes then re-seed whatever the snapshot
-//     does carry.
+//     missing snapshot entry reflects a real client-side deletion.
+//   - For each snapshot cell: a formula writes atomically with its
+//     cached value via SetFormula; plain values dispatch by Kind to the
+//     typed setters; Style overlays via PatchCellStyle (nil leaves keep
+//     the on-disk facet).
 //   - When comments is non-empty, classic xlsx cell notes are written
-//     for each thread via applyCommentsToFile (one-way: app → xlsx).
-//     Existing cell notes from external editors are overwritten.
+//     via applyCommentsToFile (one-way: app → xlsx; one note per cell).
+//   - Conditional formats replace wholesale per sheet from the doc's
+//     rules (see writeConditionalFormats).
 //
 // Returns an error rather than empty bytes on any sheet/cell write
 // failure; the caller treats both alike.
@@ -757,26 +752,56 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 	if len(originalBytes) == 0 {
 		return nil, errors.New("calc: serializeSnapshotToXLSX called with empty original bytes")
 	}
-	f, err := excelize.OpenReader(bytes.NewReader(originalBytes))
+	// Deterministic write order: the snapshot's cells arrive in Y.Map
+	// iteration order (randomized per process), and downstream
+	// allocation (shared strings, style xfs) is append-ordered, so an
+	// unsorted walk would make byte output differ between saves of the
+	// same doc state.
+	sort.Slice(snap.Cells, func(i, j int) bool {
+		a, b := snap.Cells[i], snap.Cells[j]
+		if a.SheetID != b.SheetID {
+			return a.SheetID < b.SheetID
+		}
+		if a.Row != b.Row {
+			return a.Row < b.Row
+		}
+		return a.Col < b.Col
+	})
+
+	orig, err := xlsx.OpenBytes(originalBytes)
 	if err != nil {
-		return nil, fmt.Errorf("open xlsx: %w", err)
+		return nil, fmt.Errorf("open xlsx read model: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	f, err := xlsx.Edit(originalBytes)
+	if err != nil {
+		return nil, fmt.Errorf("open xlsx editor: %w", err)
+	}
+
+	// Clean slate for pivots FIRST: the snapshot's defs are re-emitted
+	// at the end of the save; leaving the old parts in place would
+	// duplicate caches.
+	if err := f.RemovePivotTables(); err != nil {
+		return nil, fmt.Errorf("remove pivot tables: %w", err)
+	}
 
 	// existingSheets is the workbook's sheets in their on-disk order;
 	// we line them up positionally with the snapshot's sorted slice.
-	existingSheets := f.GetSheetList()
+	existingSheets := f.SheetNames()
 
-	// Map snapshot sheet id → resolved excelize sheet name. New sheets
-	// take SheetMeta.Name verbatim; renamed existing sheets take the
-	// updated name as well.
+	// Map snapshot sheet id → resolved sheet name. New sheets take
+	// SheetMeta.Name verbatim; renamed existing sheets take the updated
+	// name as well.
 	sheetNameByID := make(map[string]string, len(snap.Sheets))
 	for i, meta := range snap.Sheets {
 		switch {
 		case i < len(existingSheets):
 			oldName := existingSheets[i]
 			if meta.Name != "" && meta.Name != oldName {
-				if err := f.SetSheetName(oldName, meta.Name); err != nil {
+				sh, err := f.Sheet(oldName)
+				if err != nil {
+					return nil, fmt.Errorf("sheet %q: %w", oldName, err)
+				}
+				if err := sh.SetName(meta.Name); err != nil {
 					return nil, fmt.Errorf("rename sheet %q -> %q: %w", oldName, meta.Name, err)
 				}
 				sheetNameByID[meta.ID] = meta.Name
@@ -788,224 +813,83 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 			if name == "" {
 				name = meta.ID
 			}
-			if _, err := f.NewSheet(name); err != nil {
+			if _, err := f.AddSheet(name); err != nil {
 				return nil, fmt.Errorf("add sheet %q: %w", name, err)
 			}
 			sheetNameByID[meta.ID] = name
 		}
 	}
 
-	// Second pass: now that every sheet has its final name, write
-	// dimensions for any sheet whose snapshot carries non-zero counts,
-	// and apply any row/column size customizations the user made.
-	//
-	// The heights/widths pass applies EVEN when RowCount/ColCount are
-	// zero (a user could resize a column without scrolling any rows), so
-	// we iterate all snapshot sheets and make the dimension write
-	// conditional on non-zero counts only.
-	for _, meta := range snap.Sheets {
+	// Second pass: now that every sheet has its final name, apply the
+	// per-sheet metadata (dimension, sizes, styles, merges, freeze, tab
+	// color). The orig read model at the same position supplies the
+	// existing-customization sets the authoritative clears diff against;
+	// appended sheets have no orig counterpart and nothing to clear.
+	for i, meta := range snap.Sheets {
 		name, ok := sheetNameByID[meta.ID]
 		if !ok {
 			continue
 		}
-		if meta.RowCount > 0 && meta.ColCount > 0 {
-			// Union with the workbook's existing <dimension>: the Y.Doc
-			// may track a narrower extent than the imported file actually
-			// contains (e.g. when bootstrap sees only a scrolled-into
-			// region), and a contracting save would silently hide rows
-			// past meta.RowCount from readers that trust <dimension>.
-			// Always grow, never shrink.
-			existingRef, err := f.GetSheetDimension(name)
-			if err != nil {
-				return nil, fmt.Errorf("get existing dimension on %s: %w", name, err)
-			}
-			existingCol, existingRow := parseDimensionRef(existingRef)
-			finalCol := max(meta.ColCount, existingCol)
-			finalRow := max(meta.RowCount, existingRow)
-			bottomRight, err := excelize.CoordinatesToCellName(finalCol, finalRow)
-			if err != nil {
-				return nil, fmt.Errorf("dimension coords (col=%d,row=%d): %w", finalCol, finalRow, err)
-			}
-			if err := f.SetSheetDimension(name, "A1:"+bottomRight); err != nil {
-				return nil, fmt.Errorf("set dimension on %s: %w", name, err)
-			}
-		}
-		// Enumerate the sheet's existing per-row / per-column
-		// customizations once so each clear-then-write helper below
-		// only walks the small (existingCustom ∪ snapshotKeys) set
-		// rather than the dense 1..maxRow / 1..maxCol range.
-		//
-		// Why it matters: every mutation API in excelize
-		// (SetRowHeight, SetRowStyle, SetCellValue, …) routes through
-		// an internal backfill step that extends the worksheet's
-		// in-memory row slice up to the touched row, allocating a
-		// placeholder xlsxRow for every gap. A dense walk over
-		// 1..dimensionExtent triggers that backfill for every
-		// uncustomized row in the sheet — wasteful in CPU and
-		// allocations even when the on-disk output ends up small
-		// after trimRow filtering, and visibly bloating when the
-		// helper (SetRowStyle) sets CustomFormat=true on the
-		// placeholder, which trimRow keeps.
-		//
-		// One enumeration covers both row heights and row styles
-		// because excelize's Rows() iterator surfaces both Height
-		// and StyleID in a single streaming pass over the sheet XML.
-		existingHeightRows, existingStyleRows, err := existingCustomRowOpts(f, name)
+		sh, err := f.Sheet(name)
 		if err != nil {
-			return nil, fmt.Errorf("enumerate custom row opts on %s: %w", name, err)
+			return nil, fmt.Errorf("sheet %q: %w", name, err)
 		}
-		existingWidthCols, err := existingCustomCols(f, name, meta.ColCount)
-		if err != nil {
-			return nil, fmt.Errorf("enumerate custom col widths on %s: %w", name, err)
+		var origSheet *xlsx.Sheet
+		if i < len(orig.Sheets) {
+			origSheet = &orig.Sheets[i]
 		}
-		// Row heights / col widths follow the snapshot-is-authoritative
-		// contract for tri-state sparse maps (see SheetMeta docstring).
-		// Nil ⇒ the Y.Doc has no nested map ⇒ preserve on-disk values
-		// (legacy bootstraps). Non-nil ⇒ the Y.Doc tracks this field ⇒
-		// clear any on-disk customization not in the map, then write
-		// the map entries.
-		//
-		// px==0 is a deliberate value (snap-to-hide), not an absence:
-		// the TS side's HIDE_SNAP_THRESHOLD rounds small drag widths to
-		// 0 so excelize's SetRowHeight/SetColWidth=0 hides the row/col.
-		// The serializer treats px<0 as an out-of-band sentinel and
-		// skips it.
-		if err := applySparseRowHeights(f, name, meta.RowHeights, existingHeightRows); err != nil {
-			return nil, err
-		}
-		if err := applySparseColWidths(f, name, meta.ColWidths, existingWidthCols); err != nil {
-			return nil, err
-		}
-		// Merges: unmerge anything that the workbook already has on this
-		// sheet (excelize has no "set merges" call — only Add/Remove),
-		// then re-merge from the snapshot. This makes the snapshot
-		// authoritative without requiring the caller to track diffs.
-		existingMerges, _ := f.GetMergeCells(name)
-		for _, mc := range existingMerges {
-			_ = f.UnmergeCell(name, mc.GetStartAxis(), mc.GetEndAxis())
-		}
-		for _, m := range meta.Merges {
-			if m.RowSpan < 1 || m.ColSpan < 1 {
-				continue
-			}
-			if m.RowSpan == 1 && m.ColSpan == 1 {
-				continue
-			}
-			fromCell, err := excelize.CoordinatesToCellName(m.AnchorCol, m.AnchorRow)
-			if err != nil {
-				return nil, fmt.Errorf("merge from coords (%d,%d): %w", m.AnchorCol, m.AnchorRow, err)
-			}
-			toCell, err := excelize.CoordinatesToCellName(
-				m.AnchorCol+m.ColSpan-1,
-				m.AnchorRow+m.RowSpan-1,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("merge to coords: %w", err)
-			}
-			if err := f.MergeCell(name, fromCell, toCell); err != nil {
-				return nil, fmt.Errorf("merge %s!%s:%s: %w", name, fromCell, toCell, err)
-			}
-		}
-
-		// Freeze panes: write the xlsx <pane> via excelize.SetPanes when
-		// the snapshot has any freeze. Both axes are independent;
-		// XSplit=0/YSplit=0 means "no freeze on that axis". When both
-		// are zero we explicitly clear any prior freeze (Freeze:false)
-		// so an unfreeze on the doc round-trips back to a freeze-less
-		// xlsx. The TopLeftCell + ActivePane fields keep Excel happy
-		// when it reopens the file.
-		if meta.FrozenRows > 0 || meta.FrozenCols > 0 {
-			topLeft, err := excelize.CoordinatesToCellName(meta.FrozenCols+1, meta.FrozenRows+1)
-			if err != nil {
-				return nil, fmt.Errorf("freeze top-left coords on %s: %w", name, err)
-			}
-			activePane := "bottomRight"
-			if meta.FrozenCols == 0 {
-				activePane = "bottomLeft"
-			} else if meta.FrozenRows == 0 {
-				activePane = "topRight"
-			}
-			if err := f.SetPanes(name, &excelize.Panes{
-				Freeze:      true,
-				XSplit:      meta.FrozenCols,
-				YSplit:      meta.FrozenRows,
-				TopLeftCell: topLeft,
-				ActivePane:  activePane,
-			}); err != nil {
-				return nil, fmt.Errorf("set panes on %s: %w", name, err)
-			}
-		} else {
-			// Explicit unfreeze: clears any existing on-disk pane so
-			// round-tripping a doc that started frozen and got
-			// unfrozen produces a freeze-less xlsx.
-			if err := f.SetPanes(name, &excelize.Panes{Freeze: false, Split: false}); err != nil {
-				return nil, fmt.Errorf("clear panes on %s: %w", name, err)
-			}
-		}
-		// Row styles follow the same snapshot-is-authoritative contract
-		// as row heights / col widths above. Nil ⇒ preserve on-disk;
-		// non-nil ⇒ clear any on-disk row style not in the map, then
-		// write the entries. Per-cell styles layer on top in Excel's
-		// render model, so the row-level clear here doesn't affect
-		// individual cells' own styles applied in the cells pass below.
-		if err := applySparseRowStyles(f, name, meta.RowStyles, existingStyleRows); err != nil {
-			return nil, err
-		}
-
-		// Tab color: the Y.Doc is authoritative once a workbook has been
-		// bootstrapped (BootstrapYDocFromWorkbook seeds the imported
-		// xlsx's TabColorRGB into the doc). Empty Color ⇒ clear any
-		// prior tab color so a user-side unset round-trips; non-empty ⇒
-		// stamp it via SheetPropsOptions.TabColorRGB. excelize accepts
-		// the hex with or without the leading "#"; we strip it for
-		// portability with older sheet readers that store the bare RGB.
-		if meta.Color != "" {
-			rgb := strings.TrimPrefix(meta.Color, "#")
-			if err := f.SetSheetProps(name, &excelize.SheetPropsOptions{
-				TabColorRGB: &rgb,
-			}); err != nil {
-				return nil, fmt.Errorf("set tab color on %s: %w", name, err)
-			}
-		} else {
-			empty := ""
-			if err := f.SetSheetProps(name, &excelize.SheetPropsOptions{
-				TabColorRGB: &empty,
-			}); err != nil {
-				return nil, fmt.Errorf("clear tab color on %s: %w", name, err)
-			}
+		if err := applySheetMeta(sh, meta, origSheet); err != nil {
+			return nil, fmt.Errorf("apply sheet meta on %s: %w", name, err)
 		}
 	}
 
 	// Visibility pass: applied AFTER every sheet write so the count of
-	// visible sheets is accurate. SetSheetVisible refuses to hide the
-	// only remaining visible sheet — that's a workbook-level rule, not
-	// our own. Sheets the snapshot wants visible (Hidden=false) get
-	// explicitly re-shown so a Y.Doc unhide propagates.
+	// visible sheets is accurate. Sheets the snapshot wants visible
+	// (Hidden=false) get explicitly re-shown so a Y.Doc unhide
+	// propagates. Hiding the last visible sheet is refused by the
+	// workbook-level rule; log-and-skip (see the function docstring).
 	for _, meta := range snap.Sheets {
 		name, ok := sheetNameByID[meta.ID]
 		if !ok {
 			continue
 		}
-		if err := f.SetSheetVisible(name, !meta.Hidden); err != nil {
-			return nil, fmt.Errorf("set sheet visible on %s: %w", name, err)
+		sh, err := f.Sheet(name)
+		if err != nil {
+			return nil, fmt.Errorf("sheet %q: %w", name, err)
+		}
+		visibility := xlsx.SheetVisible
+		if meta.Hidden {
+			visibility = xlsx.SheetHidden
+		}
+		if err := sh.SetVisibility(visibility); err != nil {
+			if errors.Is(err, xlsx.ErrLastVisibleSheet) {
+				slog.Warn("calc: cannot hide last visible sheet; leaving visible",
+					"sheet", name)
+				continue
+			}
+			return nil, fmt.Errorf("set sheet visibility on %s: %w", name, err)
 		}
 	}
 
-	// Final pass: drop any sheets that exist on disk but the snapshot
-	// no longer references. Without this, a sheet deleted via the
-	// sheet-management UI would persist in the saved xlsx — the
-	// positional rename pass above would either rename it to something
-	// new (if the snapshot has a sheet at that index) or leave it
-	// alone (if there are fewer snapshot sheets than disk sheets).
+	// Drop any sheets that exist on disk but the snapshot no longer
+	// references. Without this, a sheet deleted via the sheet-management
+	// UI would persist in the saved xlsx. Deleting the last visible
+	// sheet is refused workbook-wide; log-and-skip keeps the save alive
+	// (the excelize-era writer silently no-op'd the same case).
 	keptNames := make(map[string]struct{}, len(sheetNameByID))
 	for _, name := range sheetNameByID {
 		keptNames[name] = struct{}{}
 	}
-	for _, name := range f.GetSheetList() {
+	for _, name := range f.SheetNames() {
 		if _, kept := keptNames[name]; kept {
 			continue
 		}
 		if err := f.DeleteSheet(name); err != nil {
+			if errors.Is(err, xlsx.ErrLastVisibleSheet) {
+				slog.Warn("calc: cannot delete last visible sheet; leaving in place",
+					"sheet", name)
+				continue
+			}
 			return nil, fmt.Errorf("delete sheet %s: %w", name, err)
 		}
 	}
@@ -1028,40 +912,48 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		set[int64(cell.Row)<<32|int64(cell.Col)] = struct{}{}
 	}
 
-	// Per-sheet deletion pass: walk the workbook's existing cells and
-	// blank any cell the snapshot no longer carries. Without this,
-	// row/column deletions and clear-contents would silently bounce
-	// back on reload because the original .xlsx bytes still hold those
-	// values. GetRows skips truly-empty rows so the cost scales with
-	// populated cells, not the worksheet's nominal dimension.
-	for _, name := range f.GetSheetList() {
-		rows, err := f.GetRows(name)
+	// Per-sheet deletion pass: walk the orig read model's populated
+	// cells (typed value or formula — the used-range grid pads with
+	// KindEmpty) and blank any cell the snapshot no longer carries.
+	// Without this, row/column deletions and clear-contents would
+	// silently bounce back on reload because the original .xlsx bytes
+	// still hold those values. ClearCell drops value + formula but
+	// keeps the cell's style — a formula-only cell with no cached value
+	// is populated too (the excelize-era GetRows walk missed those; the
+	// typed grid does not).
+	for i := range orig.Sheets {
+		if i >= len(snap.Sheets) {
+			break // disk sheets past the snapshot were deleted above
+		}
+		name, ok := sheetNameByID[snap.Sheets[i].ID]
+		if !ok {
+			continue
+		}
+		sh, err := f.Sheet(name)
 		if err != nil {
-			return nil, fmt.Errorf("read rows on %s for delete pass: %w", name, err)
+			return nil, fmt.Errorf("sheet %q: %w", name, err)
 		}
 		set := snapshotCellsBySheet[name]
-		for rowIdx, row := range rows {
-			rowNumber := rowIdx + 1
-			for colIdx, value := range row {
-				if value == "" {
+		grid := orig.Sheets[i].Cells
+		for r := range grid {
+			for c := range grid[r] {
+				cell := &grid[r][c]
+				if cell.Value.Kind == xlsx.KindEmpty && cell.Formula == "" {
 					continue
 				}
-				colNumber := colIdx + 1
-				key := int64(rowNumber)<<32 | int64(colNumber)
-				if _, kept := set[key]; kept {
+				if _, kept := set[int64(r+1)<<32|int64(c+1)]; kept {
 					continue
 				}
-				ref, err := excelize.CoordinatesToCellName(colNumber, rowNumber)
-				if err != nil {
-					return nil, fmt.Errorf("delete-pass cell coords (%d,%d): %w", colNumber, rowNumber, err)
-				}
-				if err := f.SetCellValue(name, ref, nil); err != nil {
-					return nil, fmt.Errorf("clear stale cell at %s!%s: %w", name, ref, err)
-				}
+				sh.ClearCell(r+1, c+1)
 			}
 		}
 	}
 
+	// snap.Cells is sorted by sheet (then row/col) above, so the sheet
+	// handle is resolved once per run of same-sheet cells rather than
+	// per cell.
+	var curSheetName string
+	var curSheet *xlsx.SheetEdit
 	for _, cell := range snap.Cells {
 		sheetName, ok := sheetNameByID[cell.SheetID]
 		if !ok {
@@ -1073,31 +965,28 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		if cell.Row <= 0 || cell.Col <= 0 {
 			continue
 		}
-		ref, err := excelize.CoordinatesToCellName(cell.Col, cell.Row)
-		if err != nil {
-			return nil, fmt.Errorf("cell coords (%d,%d): %w", cell.Col, cell.Row, err)
+		if curSheet == nil || sheetName != curSheetName {
+			sh, err := f.Sheet(sheetName)
+			if err != nil {
+				return nil, fmt.Errorf("sheet %q: %w", sheetName, err)
+			}
+			curSheetName, curSheet = sheetName, sh
 		}
+		sh := curSheet
 		if cell.Formula != "" {
-			// Seed the cached value first so non-evaluating readers see
-			// something; SetCellFormula attaches the formula on top
-			// without clearing it. Calling SetCellValue *after*
-			// SetCellFormula would erase the formula.
-			if cached, ok := formulaCachedValue(cell); ok {
-				if err := f.SetCellValue(sheetName, ref, cached); err != nil {
-					return nil, fmt.Errorf("seed formula result at %s!%s: %w", sheetName, ref, err)
-				}
+			// Atomic formula + cached value: the cached scalar's kind
+			// selects the cell type (KindEmpty writes no cache). Go
+			// still never evaluates — cached values come from
+			// HyperFormula via the snapshot.
+			if err := sh.SetFormula(cell.Row, cell.Col, cell.Formula, formulaCachedValue(cell)); err != nil {
+				return nil, fmt.Errorf("set formula at %s!%s: %w", sheetName, xlsx.CellRef(cell.Row, cell.Col), err)
 			}
-			if err := f.SetCellFormula(sheetName, ref, cell.Formula); err != nil {
-				return nil, fmt.Errorf("set formula at %s!%s: %w", sheetName, ref, err)
-			}
-		} else {
-			if err := f.SetCellValue(sheetName, ref, cellValueForExcelize(cell)); err != nil {
-				return nil, fmt.Errorf("set value at %s!%s: %w", sheetName, ref, err)
-			}
+		} else if err := writeSnapshotCellValue(sh, cell); err != nil {
+			return nil, fmt.Errorf("set value at %s!%s: %w", sheetName, xlsx.CellRef(cell.Row, cell.Col), err)
 		}
 		if cell.Style != nil {
-			if err := applyCellStyle(f, sheetName, ref, cell.Style); err != nil {
-				return nil, fmt.Errorf("apply style at %s!%s: %w", sheetName, ref, err)
+			if err := sh.PatchCellStyle(cell.Row, cell.Col, cellStyleToPatch(cell.Style)); err != nil {
+				return nil, fmt.Errorf("apply style at %s!%s: %w", sheetName, xlsx.CellRef(cell.Row, cell.Col), err)
 			}
 		}
 	}
@@ -1108,11 +997,9 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		}
 	}
 
-	// Apply conditional-formatting rules per sheet. Done after the
-	// per-cell value/style writes so the dxf style indices excelize
-	// generates here don't collide with cell-style indices, and
-	// before pivots so pivot output ranges can carry their own
-	// conditional formats if a future enhancement wants that.
+	// Replace conditional-formatting rules wholesale per sheet. Done
+	// after the per-cell writes (styles minted here land after cell
+	// styles) and before pivots.
 	for _, meta := range snap.Sheets {
 		if len(meta.ConditionalFormats) == 0 {
 			continue
@@ -1121,361 +1008,293 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		if !ok {
 			continue
 		}
-		if err := writeConditionalFormats(f, name, meta.ConditionalFormats); err != nil {
+		sh, err := f.Sheet(name)
+		if err != nil {
+			return nil, fmt.Errorf("sheet %q: %w", name, err)
+		}
+		if err := writeConditionalFormats(sh, meta.ConditionalFormats); err != nil {
 			return nil, fmt.Errorf("write conditional formats on %s: %w", name, err)
 		}
 	}
 
 	// Emit pivots last so all cells and sheets the pivot defs reference
 	// (both source ranges and target sheets) are present in the workbook
-	// by the time AddPivotTable runs.
+	// by the time AddPivotTable reads header names off the source cells.
 	writePivots(f, snap.Pivots)
 
-	buf, err := f.WriteToBuffer()
+	out, err := f.Save()
 	if err != nil {
 		return nil, fmt.Errorf("write workbook: %w", err)
-	}
-	return buf.Bytes(), nil
-}
-
-// existingCustomRowOpts streams the sheet's rows via excelize.Rows()
-// and returns two sets of 1-based row numbers: rows whose stored
-// height differs from the xlsx default, and rows whose StyleID is
-// non-zero. One pass produces both because the streaming iterator
-// surfaces Height + StyleID in the same XML stream.
-//
-// The serializer's clear-then-write helpers use these sets to bound
-// their clear pass to rows that actually have a customization to
-// clear. Without that bound, the helpers walked 1..dimensionRowExtent
-// and called SetRowHeight(-1) / SetRowStyle(_,_,0) on every row, each
-// call triggering excelize's in-memory backfill (it densifies the
-// worksheet's row slice up to the touched row, allocating a
-// placeholder for every gap). A 50k-row <dimension> sheet with no
-// customizations would allocate 50k placeholder rows on every save,
-// and the row-style clear path also marks each placeholder with
-// CustomFormat=true so the bloat survives excelize's marshal-time
-// trimRow filter and shows up as 50k <row> entries on disk.
-//
-// Returns empty (non-nil) sets on success when nothing is customized;
-// callers can treat that as "nothing to clear" without a nil check.
-func existingCustomRowOpts(f *excelize.File, sheet string) (map[int]struct{}, map[int]struct{}, error) {
-	heights := map[int]struct{}{}
-	styles := map[int]struct{}{}
-	rows, err := f.Rows(sheet)
-	if err != nil {
-		return heights, styles, fmt.Errorf("open row iterator: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	rowIdx := 0
-	for rows.Next() {
-		rowIdx++
-		opts := rows.GetRowOpts()
-		// excelize's extractRowOpts seeds Height with defaultRowHeight
-		// when the <row> element has no `ht` attribute. The 0.01pt
-		// epsilon catches roundtrip rounding without missing real
-		// customizations.
-		if opts.Height > 0 && (opts.Height < defaultExcelRowHeight-0.01 || opts.Height > defaultExcelRowHeight+0.01) {
-			heights[rowIdx] = struct{}{}
-		}
-		if opts.StyleID > 0 {
-			styles[rowIdx] = struct{}{}
-		}
-	}
-	if err := rows.Error(); err != nil {
-		return heights, styles, fmt.Errorf("row iterator: %w", err)
-	}
-	return heights, styles, nil
-}
-
-// existingCustomCols walks columns 1..maxCol and returns the set of
-// 1-based column numbers whose stored width differs from the xlsx
-// default. excelize has no public column iterator so the bounded walk
-// is the simplest correct path — GetColWidth is a constant-time lookup
-// into ws.Cols.Col, so the cost is O(maxCol) memory reads, not
-// O(maxCol) XML mutations.
-//
-// maxCol is read from the snapshot's tracked ColCount unioned with the
-// workbook's <dimension> column extent so columns customized in the
-// original file beyond the snapshot's tracked extent still surface.
-func existingCustomCols(f *excelize.File, sheet string, snapshotColCount int) (map[int]struct{}, error) {
-	out := map[int]struct{}{}
-	dimCol, _ := parseDimensionRef(getSheetDimension(f, sheet))
-	maxCol := dimCol
-	if snapshotColCount > maxCol {
-		maxCol = snapshotColCount
-	}
-	for col := 1; col <= maxCol; col++ {
-		colName, err := excelize.ColumnNumberToName(col)
-		if err != nil {
-			return out, fmt.Errorf("col name for %d: %w", col, err)
-		}
-		w, err := f.GetColWidth(sheet, colName)
-		if err != nil {
-			return out, fmt.Errorf("get col width %s!%s: %w", sheet, colName, err)
-		}
-		if w > 0 && (w < defaultExcelColWidth-0.001 || w > defaultExcelColWidth+0.001) {
-			out[col] = struct{}{}
-		}
 	}
 	return out, nil
 }
 
-// applySparseRowHeights enforces the snapshot-is-authoritative contract
-// for per-row heights on one sheet.
+// applySheetMeta writes one sheet's snapshot metadata onto its editor
+// handle. origSheet is the same sheet's read model from the original
+// bytes (nil for sheets appended by this save) — it supplies the
+// existing-customization sets the snapshot-is-authoritative clears
+// diff against, bounded to what's actually customized on disk so a
+// no-op save touches nothing it doesn't have to.
 //
-//   - heights == nil → no-op (legacy bootstrap; preserve on-disk).
-//   - heights non-nil → walk (existingCustom ∪ snapshotKeys), unset
-//     rows in existingCustom but not in the snapshot, write rows in
-//     the snapshot. existingCustom is pre-computed by
-//     existingCustomRowOpts so the clear pass touches only rows that
-//     have something to clear — no dense 1..maxRow walk, no
-//     excelize-side backfill of placeholders on uncustomized rows.
+// Row heights / col widths / row styles follow the tri-state sparse-map
+// contract (see SheetMeta): nil ⇒ preserve on-disk values (legacy
+// bootstraps); non-nil ⇒ clear any on-disk customization not in the
+// map, then write the map entries. The existing sets reuse the SAME
+// default-height/width filters the bootstrap seeding applies
+// (readRowHeights / readColWidths), so the clear pass exactly covers
+// the set a bootstrap would have seeded — producer-stamped default
+// heights are neither seeded nor cleared. Clearing is a true unset
+// (ClearRowHeight / ClearColWidth remove the attribute / <col> entry),
+// unlike the excelize-era writer which wrote the default value back.
 //
-// Without the unset pass, a user resizing a row and then resetting to
-// default would silently leave the old height in the saved xlsx; the
-// next reload would reseed the row's customization from the stale file.
-func applySparseRowHeights(f *excelize.File, sheet string, heights map[int]int, existingCustom map[int]struct{}) error {
-	if heights == nil {
-		return nil
+// px==0 is a deliberate value (snap-to-hide), not an absence: the TS
+// side's HIDE_SNAP_THRESHOLD rounds small drag sizes to 0 so a
+// zero-height row / zero-width column reads as hidden. px<0 is an
+// out-of-band sentinel and is skipped.
+func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet) error {
+	existingDim, hasDim := sh.Dimension()
+
+	if meta.RowCount > 0 && meta.ColCount > 0 {
+		// Union with the workbook's existing <dimension>: the Y.Doc
+		// may track a narrower extent than the imported file actually
+		// contains (e.g. when bootstrap sees only a scrolled-into
+		// region), and a contracting save would silently hide rows
+		// past meta.RowCount from readers that trust <dimension>.
+		// Always grow, never shrink.
+		finalRow, finalCol := meta.RowCount, meta.ColCount
+		if hasDim {
+			finalRow = max(finalRow, existingDim.EndRow)
+			finalCol = max(finalCol, existingDim.EndCol)
+		}
+		sh.SetDimension(xlsx.Range{StartRow: 1, StartCol: 1, EndRow: finalRow, EndCol: finalCol})
 	}
-	for row := range existingCustom {
-		if _, kept := heights[row]; kept {
+
+	// All sparse-map passes below iterate in sorted key order: Go map
+	// iteration is randomized, and the editor appends elements (e.g.
+	// <col> entries) in call order, so unsorted walks would make every
+	// save of the same doc state produce different bytes.
+	if meta.RowHeights != nil {
+		var existing map[int]int
+		if origSheet != nil {
+			existing = readRowHeights(origSheet)
+		}
+		for _, row := range sortedIntKeys(existing) {
+			if _, kept := meta.RowHeights[row]; !kept {
+				sh.ClearRowHeight(row)
+			}
+		}
+		for _, row := range sortedIntKeys(meta.RowHeights) {
+			px := meta.RowHeights[row]
+			if row < 1 || px < 0 {
+				continue
+			}
+			sh.SetRowHeight(row, pxToExcelPoints(px))
+		}
+	}
+
+	if meta.ColWidths != nil {
+		var existing map[int]int
+		if origSheet != nil {
+			// Bound the existing-custom scan to the union of the
+			// snapshot's tracked extent and the on-disk <dimension>
+			// column extent, mirroring the excelize-era walk: blanket
+			// <col> ranges spanning thousands of trailing columns
+			// beyond the used range represent no real edit.
+			maxCol := meta.ColCount
+			if hasDim && existingDim.EndCol > maxCol {
+				maxCol = existingDim.EndCol
+			}
+			existing = readColWidths(origSheet, maxCol)
+		}
+		for _, col := range sortedIntKeys(existing) {
+			if _, kept := meta.ColWidths[col]; !kept {
+				sh.ClearColWidth(col)
+			}
+		}
+		for _, col := range sortedIntKeys(meta.ColWidths) {
+			px := meta.ColWidths[col]
+			if col < 1 || px < 0 {
+				continue
+			}
+			sh.SetColWidth(col, pxToExcelCharWidth(px))
+		}
+	}
+
+	// Merges replace wholesale — the snapshot is authoritative, so the
+	// set it carries (1×1 and degenerate entries dropped) IS the
+	// sheet's merge list.
+	merges := make([]xlsx.Range, 0, len(meta.Merges))
+	for _, m := range meta.Merges {
+		if m.RowSpan < 1 || m.ColSpan < 1 {
 			continue
 		}
-		if err := f.SetRowHeight(sheet, row, -1); err != nil {
-			return fmt.Errorf("clear stale row height %s!%d: %w", sheet, row, err)
-		}
-	}
-	for row, px := range heights {
-		if row < 1 || px < 0 {
+		if m.RowSpan == 1 && m.ColSpan == 1 {
 			continue
 		}
-		if err := f.SetRowHeight(sheet, row, pxToExcelPoints(px)); err != nil {
-			return fmt.Errorf("set row height %s!%d: %w", sheet, row, err)
+		merges = append(merges, xlsx.Range{
+			StartRow: m.AnchorRow,
+			StartCol: m.AnchorCol,
+			EndRow:   m.AnchorRow + m.RowSpan - 1,
+			EndCol:   m.AnchorCol + m.ColSpan - 1,
+		})
+	}
+	// Anchor order for the emitted <mergeCells> list — the snapshot
+	// decodes merges from a Y.Map, so slice order is randomized.
+	sort.Slice(merges, func(i, j int) bool {
+		if merges[i].StartRow != merges[j].StartRow {
+			return merges[i].StartRow < merges[j].StartRow
+		}
+		return merges[i].StartCol < merges[j].StartCol
+	})
+	sh.SetMerges(merges)
+
+	// Freeze panes: (0, 0) removes the pane, so an unfreeze on the doc
+	// round-trips back to a freeze-less xlsx. The editor derives
+	// topLeftCell/activePane itself.
+	sh.SetFrozen(max(meta.FrozenRows, 0), max(meta.FrozenCols, 0))
+
+	// Row styles follow the same tri-state contract. The existing set
+	// is every row carrying a row-level style on disk (customFormat),
+	// modeled or not — a row style the doc doesn't track is cleared,
+	// matching the excelize-era behavior. Per-cell styles layer on top
+	// in Excel's render model, so the row-level clear doesn't affect
+	// individual cells' own styles applied in the cells pass.
+	if meta.RowStyles != nil {
+		if origSheet != nil {
+			for _, row := range sortedIntKeys(origSheet.RowStyles) {
+				if _, kept := meta.RowStyles[row+1]; !kept {
+					sh.ClearRowStyle(row + 1)
+				}
+			}
+		}
+		for _, row := range sortedIntKeys(meta.RowStyles) {
+			style := meta.RowStyles[row]
+			if row < 1 || style == nil {
+				continue
+			}
+			if err := sh.SetRowStyle(row, cellStyleToStyle(style)); err != nil {
+				return fmt.Errorf("set row style on row %d: %w", row, err)
+			}
 		}
 	}
+
+	// Tab color: the Y.Doc is authoritative once a workbook has been
+	// bootstrapped (BootstrapYDocFromWorkbook seeds the imported xlsx's
+	// tab color into the doc). Empty Color ⇒ clear any prior tab color
+	// so a user-side unset round-trips; non-empty ⇒ stamp the bare RGB.
+	sh.SetTabColor(strings.TrimPrefix(meta.Color, "#"))
 	return nil
 }
 
-// applySparseColWidths enforces the snapshot-is-authoritative contract
-// for per-column widths on one sheet. excelize has no public
-// "unset column width" call, so the "clear" path writes the workbook
-// default (defaultExcelColWidth) which is the rendered behavior of a
-// column with no customization. The clear is bounded to columns
-// pre-identified as having a non-default width on disk, so the file
-// gains no spurious <col> entries on a no-op save.
-func applySparseColWidths(f *excelize.File, sheet string, widths map[int]int, existingCustom map[int]struct{}) error {
-	if widths == nil {
-		return nil
-	}
-	for col := range existingCustom {
-		if _, kept := widths[col]; kept {
-			continue
-		}
-		colName, err := excelize.ColumnNumberToName(col)
-		if err != nil {
-			return fmt.Errorf("col name for %d: %w", col, err)
-		}
-		if err := f.SetColWidth(sheet, colName, colName, defaultExcelColWidth); err != nil {
-			return fmt.Errorf("clear stale col width %s!%s: %w", sheet, colName, err)
-		}
-	}
-	for col, px := range widths {
-		if col < 1 || px < 0 {
-			continue
-		}
-		colName, err := excelize.ColumnNumberToName(col)
-		if err != nil {
-			return fmt.Errorf("col name for %d: %w", col, err)
-		}
-		if err := f.SetColWidth(sheet, colName, colName, pxToExcelCharWidth(px)); err != nil {
-			return fmt.Errorf("set col width %s!%s: %w", sheet, colName, err)
-		}
-	}
-	return nil
-}
-
-// applySparseRowStyles enforces the snapshot-is-authoritative contract
-// for per-row styles. Same tri-state semantics as the height/width
-// helpers above. The "clear" path writes excelize's style-ID 0 (the
-// "no style" sentinel), which removes the row-level style without
-// affecting per-cell styles applied in the cells pass.
-//
-// existingCustom is bounded to rows that actually carry a non-zero
-// StyleID on disk so the clear pass doesn't dirty every row in the
-// dimension on a sheet with no row-level styles.
-func applySparseRowStyles(f *excelize.File, sheet string, styles map[int]*CellStyle, existingCustom map[int]struct{}) error {
-	if styles == nil {
-		return nil
-	}
-	for row := range existingCustom {
-		if _, kept := styles[row]; kept {
-			continue
-		}
-		if err := f.SetRowStyle(sheet, row, row, 0); err != nil {
-			return fmt.Errorf("clear stale row style %s!%d: %w", sheet, row, err)
-		}
-	}
-	for row, style := range styles {
-		if row < 1 || style == nil {
-			continue
-		}
-		base := &excelize.Style{}
-		overlayStyle(base, style)
-		styleID, err := f.NewStyle(base)
-		if err != nil {
-			return fmt.Errorf("register row style %s!%d: %w", sheet, row, err)
-		}
-		if err := f.SetRowStyle(sheet, row, row, styleID); err != nil {
-			return fmt.Errorf("set row style %s!%d: %w", sheet, row, err)
-		}
-	}
-	return nil
-}
-
-// getSheetDimension is a small error-swallowing wrapper around
-// excelize.GetSheetDimension so callers can use it inside expression
-// contexts without four lines of plumbing. A missing dimension reads
-// as the empty string, which parseDimensionRef maps to (0, 0).
-func getSheetDimension(f *excelize.File, sheet string) string {
-	ref, err := f.GetSheetDimension(sheet)
-	if err != nil {
-		return ""
-	}
-	return ref
-}
-
-// applyCellStyle overlays a partial CellStyle onto the cell's existing
-// excelize style and writes the result back via NewStyle/SetCellStyle.
-//
-// "Existing" matters: the original .xlsx may already have a style on
-// this cell (a fill color, a number format, a font size). Reading it
-// first and overlaying only the snapshot's non-nil leaves preserves
-// every attribute the doc didn't track.
-func applyCellStyle(f *excelize.File, sheet, ref string, patch *CellStyle) error {
-	if patch == nil {
-		return nil
-	}
-	styleID, err := f.GetCellStyle(sheet, ref)
-	if err != nil {
-		return fmt.Errorf("get existing style: %w", err)
-	}
-	base := &excelize.Style{}
-	if styleID != 0 {
-		got, err := f.GetStyle(styleID)
-		if err != nil {
-			return fmt.Errorf("read style %d: %w", styleID, err)
-		}
-		if got != nil {
-			base = got
-		}
-	}
-	overlayStyle(base, patch)
-	newID, err := f.NewStyle(base)
-	if err != nil {
-		return fmt.Errorf("register style: %w", err)
-	}
-	if err := f.SetCellStyle(sheet, ref, ref, newID); err != nil {
-		return fmt.Errorf("apply style: %w", err)
-	}
-	return nil
-}
-
-// cellValueForExcelize picks the right Go value to hand to
-// excelize.SetCellValue based on the cell's Kind. excelize dispatches
-// internally on the value's reflect type — a Go int64/float64 lands
-// as a numeric cell, a bool as a boolean cell, a time.Time as a date
-// cell, and a string as a text cell. Matching kind to type at this
+// writeSnapshotCellValue writes a non-formula snapshot cell through the
+// typed setter matching its Kind. Matching kind to setter at this
 // boundary is what gives the round-trip its type-fidelity.
 //
 // Empty Kind (legacy doc with no kind tag written) falls back to the
 // previous "try int → float → string" coercion of RawString, so
 // already-saved workbooks continue to round-trip as they did before.
-func cellValueForExcelize(c CellEntry) any {
+func writeSnapshotCellValue(sh *xlsx.SheetEdit, c CellEntry) error {
 	switch c.Kind {
 	case "number":
-		if c.RawNumber == nil {
-			// Legacy fallback: kind says number but raw was carried
-			// as a string. Promote via the same path the legacy
-			// coercer used.
-			return legacyCoerceCellValue(c.RawString)
+		if c.RawNumber != nil {
+			return sh.SetNumber(c.Row, c.Col, *c.RawNumber)
 		}
-		n := *c.RawNumber
-		// Excel stores integers as floats with no fractional part;
-		// surfacing them as int64 to excelize keeps the on-disk
-		// representation tidy (no trailing .0 in raw XML). The 2^53
-		// guard avoids precision loss for large floats that Go can't
-		// round-trip through int64 cleanly.
-		if !math.IsNaN(n) && !math.IsInf(n, 0) && n == math.Trunc(n) && math.Abs(n) < (1<<53) {
-			return int64(n)
-		}
-		return n
+		// Legacy fallback: kind says number but raw was carried as a
+		// string. Promote via the same path the legacy coercer used.
+		return writeCoercedString(sh, c.Row, c.Col, c.RawString)
 	case "boolean":
-		if c.RawBool == nil {
-			return false
-		}
-		return *c.RawBool
+		v := c.RawBool != nil && *c.RawBool
+		return sh.SetBool(c.Row, c.Col, v)
 	case "date":
 		// ISO-only on the wire (the TS side never writes anything
-		// else). Try full RFC3339 first, then date-only.
+		// else). Try full RFC3339 first, then date-only. Unparseable
+		// dates round-trip as the literal text rather than fail the
+		// whole save.
 		if t, err := time.Parse(time.RFC3339, c.RawString); err == nil {
-			return t
+			return sh.SetDate(c.Row, c.Col, t)
 		}
 		if t, err := time.Parse("2006-01-02", c.RawString); err == nil {
-			return t
+			return sh.SetDate(c.Row, c.Col, t)
 		}
-		// Unparseable date — round-trip as the literal text rather
-		// than fail the whole save.
-		return c.RawString
-	case "string":
-		return c.RawString
-	case "formula":
-		// Reached when called from the formula cache path; just
-		// surface the cached scalar.
-		return c.RawString
+		return sh.SetString(c.Row, c.Col, c.RawString)
 	case "":
 		// Legacy snapshot: no kind tag was written by the producer.
-		// Preserve prior behavior by promoting numeric-looking
-		// strings.
+		// Preserve prior behavior by promoting numeric-looking strings.
 		val := c.RawString
 		if val == "" {
 			val = c.Display
 		}
-		return legacyCoerceCellValue(val)
+		return writeCoercedString(sh, c.Row, c.Col, val)
+	default:
+		// "string", a formula kind with no source, and any future kind
+		// all land as text.
+		return sh.SetString(c.Row, c.Col, c.RawString)
 	}
-	return c.RawString
+}
+
+// writeCoercedString runs the legacy int → float → string coercion and
+// dispatches to the matching typed setter.
+func writeCoercedString(sh *xlsx.SheetEdit, row, col int, s string) error {
+	switch v := legacyCoerceCellValue(s).(type) {
+	case int64:
+		return sh.SetNumber(row, col, float64(v))
+	case float64:
+		return sh.SetNumber(row, col, v)
+	default:
+		return sh.SetString(row, col, s)
+	}
+}
+
+// excelErrorLiterals is the set of Excel error values a formula's
+// cached result can carry. They map to KindError so the file stores a
+// proper t="e" cell instead of a look-alike string.
+var excelErrorLiterals = map[string]struct{}{
+	"#DIV/0!": {},
+	"#N/A":    {},
+	"#VALUE!": {},
+	"#REF!":   {},
+	"#NAME?":  {},
+	"#NUM!":   {},
+	"#NULL!":  {},
 }
 
 // formulaCachedValue extracts the kind-aware cached scalar for a
-// formula cell, if one is present. Returns ok=false when the formula
-// has no cached value (e.g. a fresh =A1+B1 the user just typed) so the
-// caller can skip the SetCellValue seed.
+// formula cell. Returns the zero Value (KindEmpty) when the formula has
+// no cached value (e.g. a fresh =A1+B1 the user just typed), which
+// SetFormula treats as "no cache".
 //
-// excelize semantics: when SetCellValue sees a numeric Go type, it
-// stores both the number and the cell type as Number; setting the
-// same cell to a string-of-digits stores it as an inline string and
-// excelize will recompute the formula's result. So promoting numeric
-// cached values up front is what keeps "this cell shows 57" durable
-// across the round-trip.
-func formulaCachedValue(c CellEntry) (any, bool) {
+// Numeric-looking strings get promoted so the file stores a Number
+// cell — that's what keeps "this cell shows 57" durable across the
+// round-trip for viewers that don't evaluate.
+func formulaCachedValue(c CellEntry) xlsx.Value {
 	switch {
 	case c.RawNumber != nil:
-		v := *c.RawNumber
-		if !math.IsNaN(v) && !math.IsInf(v, 0) && v == math.Trunc(v) && math.Abs(v) < (1<<53) {
-			return int64(v), true
-		}
-		return v, true
+		return xlsx.Value{Kind: xlsx.KindNumber, F: *c.RawNumber}
 	case c.RawBool != nil:
-		return *c.RawBool, true
+		return xlsx.Value{Kind: xlsx.KindBool, B: *c.RawBool}
 	case c.RawString != "":
-		// Numeric-looking strings get promoted so excelize stores
-		// them as Number cells; non-numeric strings round-trip as
-		// strings.
-		return legacyCoerceCellValue(c.RawString), true
+		return coercedCachedValue(c.RawString)
 	case c.Display != "":
-		return legacyCoerceCellValue(c.Display), true
+		return coercedCachedValue(c.Display)
 	}
-	return nil, false
+	return xlsx.Value{}
+}
+
+// coercedCachedValue classifies a string-carried cached scalar: Excel
+// error literals become KindError, numeric-looking strings KindNumber,
+// everything else KindString.
+func coercedCachedValue(s string) xlsx.Value {
+	if _, ok := excelErrorLiterals[s]; ok {
+		return xlsx.Value{Kind: xlsx.KindError, S: s}
+	}
+	switch v := legacyCoerceCellValue(s).(type) {
+	case int64:
+		return xlsx.Value{Kind: xlsx.KindNumber, F: float64(v)}
+	case float64:
+		return xlsx.Value{Kind: xlsx.KindNumber, F: v}
+	default:
+		return xlsx.Value{Kind: xlsx.KindString, S: s}
+	}
 }
 
 // legacyCoerceCellValue is the prior pre-typed-cells fallback: try
@@ -1492,6 +1311,17 @@ func legacyCoerceCellValue(s string) any {
 		return n
 	}
 	return s
+}
+
+// sortedIntKeys returns m's keys in ascending order, for deterministic
+// iteration over the sparse row/column maps.
+func sortedIntKeys[V any](m map[int]V) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	return keys
 }
 
 // pxToExcelPoints converts a CSS pixel value (the unit calc stores
@@ -1518,23 +1348,6 @@ func pxToExcelCharWidth(px int) float64 {
 		return float64(px-5) / 7.0
 	}
 	return float64(px) / 12.0
-}
-
-// parseDimensionRef extracts the bottom-right (col, row) from an
-// excelize <dimension> ref like "A1:H30". Returns (0,0) on a missing
-// or malformed ref so callers can treat it as "no existing extent"
-// and fall back to whatever the snapshot supplies.
-func parseDimensionRef(ref string) (col, row int) {
-	if ref == "" {
-		return 0, 0
-	}
-	parts := strings.SplitN(ref, ":", 2)
-	target := parts[len(parts)-1]
-	c, r, err := excelize.CellNameToCoordinates(target)
-	if err != nil {
-		return 0, 0
-	}
-	return c, r
 }
 
 // readDriveItemBytes returns the current `file` blob attached to

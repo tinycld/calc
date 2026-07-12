@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/xuri/excelize/v2"
 )
 
 // CommentRow is the projection of one calc_comments PB row that the
@@ -83,17 +83,19 @@ func commentRowFromRecord(r *core.Record) CommentRow {
 }
 
 // applyCommentsToFile groups rows by (sheetID, row, col), renders each
-// thread to a single excelize.Comment via formatThreadForXlsx, and
-// stamps it on the workbook. sheetNameByID resolves a snapshot sheet
-// id to the name excelize knows it as (post-rename) — the same map the
-// serializer already builds.
+// thread via formatThreadForXlsx, and stamps ONE classic note per cell
+// on the workbook — doctaculous SetComment replaces per cell, so a
+// cell's threads join into a single note separated by blank lines, and
+// the attribution is the last (most recent) thread's author. sheetNameByID
+// resolves a snapshot sheet id to the sheet's post-rename name — the
+// same map the serializer already builds.
 //
 // Threads with no resolvable sheet name are skipped rather than failing
 // the whole save. A row that lives on a sheet the snapshot didn't list
 // (e.g. an orphan comment after a sheet delete) is more recoverable
 // than aborting persistence over it.
 func applyCommentsToFile(
-	f *excelize.File,
+	f *xlsx.File,
 	rows []CommentRow,
 	sheetNameByID map[string]string,
 ) error {
@@ -115,7 +117,7 @@ func applyCommentsToFile(
 		grouped[k] = append(grouped[k], r)
 	}
 	// Iterate in a stable order so xlsx bytes are reproducible across
-	// saves (helps diffing during development; excelize itself is not
+	// saves (helps diffing during development; the editor itself is not
 	// sensitive to insertion order, but our tests are).
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].sheetID != keys[j].sheetID {
@@ -132,20 +134,31 @@ func applyCommentsToFile(
 		if !ok {
 			continue
 		}
+		sh, err := f.Sheet(sheetName)
+		if err != nil {
+			return fmt.Errorf("calc: comment sheet %q: %w", sheetName, err)
+		}
 		threads := buildThreadsForCell(grouped[k])
+		if len(threads) == 0 {
+			continue
+		}
+		parts := make([]string, 0, len(threads))
+		author := ""
 		for _, thread := range threads {
-			author, text := formatThreadForXlsx(thread)
-			ref, err := excelize.CoordinatesToCellName(k.col, k.row)
-			if err != nil {
-				return fmt.Errorf("calc: cell coords (%d,%d) for comment: %w", k.col, k.row, err)
-			}
-			if err := f.AddComment(sheetName, excelize.Comment{
-				Cell:   ref,
-				Author: author,
-				Text:   text,
-			}); err != nil {
-				return fmt.Errorf("calc: add comment at %s!%s: %w", sheetName, ref, err)
-			}
+			a, text := formatThreadForXlsx(thread)
+			parts = append(parts, text)
+			// buildThreadsForCell orders roots by created time, so the
+			// last thread's attribution wins — matching the per-thread
+			// "most recent commenter" rule at the cell level.
+			author = a
+		}
+		if err := sh.SetComment(xlsx.Comment{
+			Row:    k.row,
+			Col:    k.col,
+			Author: author,
+			Text:   strings.Join(parts, "\n\n"),
+		}); err != nil {
+			return fmt.Errorf("calc: set comment at %s!%s: %w", sheetName, xlsx.CellRef(k.row, k.col), err)
 		}
 	}
 	return nil
@@ -196,8 +209,8 @@ func buildThreadsForCell(rowsForCell []CommentRow) []commentThread {
 	return out
 }
 
-// formatThreadForXlsx renders a thread to the (Author, Text) pair
-// excelize.AddComment expects. Author is the most-recent commenter (the
+// formatThreadForXlsx renders a thread to the (Author, Text) pair the
+// xlsx note writer expects. Author is the most-recent commenter (the
 // reply author, falling back to the root author for a reply-less
 // thread) — matches Sheets' "last replier" attribution when the file
 // is opened in Excel.

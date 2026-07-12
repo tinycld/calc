@@ -17,8 +17,8 @@ its `cells` Y.Map. Every peer recomputes locally from the source range
 
 On `.xlsx` open:
 
-- Each `<pivotTable>` from any sheet is read via `excelize.GetPivotTables`
-  and converted into a `PivotDefinitionDTO`.
+- Each `<pivotTable>` from any sheet is read via doctaculous
+  `pkg/xlsx`'s `PivotTables()` and converted into a `PivotDefinitionDTO`.
 - If the xlsx pivot was anchored on a sheet that **also contains source
   data**, calc promotes the pivot to a new dedicated sheet named
   `<anchor> pivot` (suffix-incremented for uniqueness). The original
@@ -41,7 +41,7 @@ On save:
 | `(blank)` label | Excel renders the literal string `(blank)`. | Calc renders an empty cell. |
 | Multi-value column header text | Excel uses `"Values"` as a row header. | Calc renders the per-value labels directly without a "Values" header row. |
 | In-sheet anchored pivots | Excel allows pivots anywhere on any sheet. | Calc v1 only supports **dedicated** pivot sheets. |
-| Per-value `numFmt` round-trip | Pivot value fields carry a built-in numFmt ID (excelize: `PivotTableField.NumFmt int`). | Calc stores a free-form numFmt **string** (e.g. `'#,##0.00'`) used by the live engine; this field is **not written to xlsx** and is **not read back from xlsx**. Custom formats survive within calc (and across `.xlsx` save/load via the Y.Doc state once realtime is wired) but do **not** propagate to Excel-side rendering. |
+| Per-value `numFmt` round-trip | Pivot value fields carry a built-in numFmt ID (`<dataField numFmtId="…">`). | Calc stores a free-form numFmt **string** (e.g. `'#,##0.00'`) used by the live engine; this field is **not written to xlsx** and is **not read back from xlsx**. Custom formats survive within calc (and across `.xlsx` save/load via the Y.Doc state once realtime is wired) but do **not** propagate to Excel-side rendering. |
 | Calculated fields | Supported. | Not in v1. |
 | Date grouping (month/quarter/year) | Supported. | Not in v1. |
 | Drill-down to source rows | Supported (double-click a value). | Not in v1. |

@@ -3,10 +3,30 @@ package calc
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 	"github.com/xuri/excelize/v2"
 )
+
+// readSheetConditionalFormats runs the production CF read path over
+// raw xlsx bytes: doctaculous OpenBytes, find the sheet, map its
+// blocks through readConditionalFormats.
+func readSheetConditionalFormats(t *testing.T, data []byte, sheetName string) []ConditionalFormatRule {
+	t.Helper()
+	wb, err := xlsx.OpenBytes(data)
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	for i := range wb.Sheets {
+		if wb.Sheets[i].Name == sheetName {
+			return readConditionalFormats(&wb.Sheets[i])
+		}
+	}
+	t.Fatalf("sheet %q not found", sheetName)
+	return nil
+}
 
 // TestConditionalFormatRoundtripNumberGreater verifies that a doc-side
 // numberGreater rule maps to a "cell" + "greater than" excelize rule
@@ -84,10 +104,7 @@ func TestConditionalFormatRoundtripNumberGreater(t *testing.T) {
 	}
 
 	// And confirm our reader maps it back to numberGreater.
-	rules, err := readConditionalFormats(f, "People")
-	if err != nil {
-		t.Fatalf("readConditionalFormats: %v", err)
-	}
+	rules := readSheetConditionalFormats(t, out, "People")
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule on re-parse; got %d", len(rules))
 	}
@@ -150,10 +167,7 @@ func TestConditionalFormatRoundtripCustomFormula(t *testing.T) {
 	if got := opts[0].Type; got != "formula" && got != "expression" {
 		t.Errorf("type: want formula/expression, got %q", got)
 	}
-	rules, err := readConditionalFormats(f, "People")
-	if err != nil {
-		t.Fatalf("readConditionalFormats: %v", err)
-	}
+	rules := readSheetConditionalFormats(t, out, "People")
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule; got %d", len(rules))
 	}
@@ -195,16 +209,11 @@ func TestConditionalFormatOpaquePassthrough(t *testing.T) {
 	}
 	_ = f.Close()
 
-	// Read it back via our reader.
-	f2, err := excelize.OpenReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatalf("reopen seeded: %v", err)
-	}
-	defer func() { _ = f2.Close() }()
-	rules, err := readConditionalFormats(f2, "People")
-	if err != nil {
-		t.Fatalf("readConditionalFormats: %v", err)
-	}
+	// Read it back via our reader: duplicateValues is outside the
+	// modelled subset, so it must surface as xlsxOpaque carrying the
+	// verbatim <cfRule> XML, with the dxf style attached for client
+	// previews.
+	rules := readSheetConditionalFormats(t, buf.Bytes(), "People")
 	if len(rules) != 1 {
 		t.Fatalf("expected 1 rule from seeded xlsx; got %d", len(rules))
 	}
@@ -212,21 +221,49 @@ func TestConditionalFormatOpaquePassthrough(t *testing.T) {
 		t.Errorf("opaque type: want xlsxOpaque, got %q", rules[0].Condition.Type)
 	}
 	if rules[0].Condition.OpaqueXlsx == nil {
-		t.Fatalf("opaque blob is nil; want roundtrip payload")
+		t.Fatalf("opaque blob is nil; want rawXml payload")
 	}
-	if rules[0].Condition.OpaqueXlsx["Type"] != "duplicate" {
-		t.Errorf("opaque Type: want duplicate, got %v", rules[0].Condition.OpaqueXlsx["Type"])
+	rawXML, ok := rules[0].Condition.OpaqueXlsx["rawXml"].(string)
+	if !ok || rawXML == "" {
+		t.Fatalf("opaque rawXml missing: %v", rules[0].Condition.OpaqueXlsx)
+	}
+	if !strings.Contains(rawXML, `type="duplicateValues"`) {
+		t.Errorf("rawXml should carry the verbatim cfRule, got %q", rawXML)
+	}
+	if rules[0].Style == nil || rules[0].Style.Font == nil || rules[0].Style.Font.Bold == nil || !*rules[0].Style.Font.Bold {
+		t.Errorf("opaque rule dxf style not attached: %+v", rules[0].Style)
 	}
 
-	// Now serialize a snapshot that carries the opaque rule and
-	// verify the saved xlsx still has a duplicate rule.
+	// Write-side half: the save is AUTHORITATIVE — the snapshot's rules
+	// replace the sheet's conditional formatting wholesale, and the
+	// rawXml opaque rule re-emits verbatim via CFRule{Raw}. To prove
+	// the output comes from the SNAPSHOT (not incidental survival in
+	// the original bytes), move the rule to a different range and add a
+	// second typed styled rule: the output must carry the rule on the
+	// NEW range, with the rawXml byte-comparable modulo the renumbered
+	// priority attribute.
+	//
+	// The typed styled rule also grows the <dxfs> table — proving the
+	// raw rule's embedded dxfId stays valid: the save applies onto the
+	// same file the rule was read from and the editor only APPENDS to
+	// <dxfs> (never compacts), so an index that resolved at read time
+	// resolves at save time. The bold dxf re-reading below is that
+	// induction's assertion.
+	movedRule := rules[0]
+	movedRule.Ranges = []string{"B2:B12"}
+	typedRule := ConditionalFormatRule{
+		ID:        "typed-1",
+		Ranges:    []string{"C1:C5"},
+		Condition: ConditionalCondition{Type: "numberGreater", Value1: strPtr("3")},
+		Style:     &CellStyle{Font: &CellFont{Italic: boolPtr(true)}},
+	}
 	snap := YDocSnapshot{
 		Sheets: []SheetMeta{
 			{
 				ID:                 "sheet1",
 				Name:               "People",
 				Position:           0,
-				ConditionalFormats: rules,
+				ConditionalFormats: []ConditionalFormatRule{typedRule, movedRule},
 			},
 			{ID: "sheet2", Name: "Incomes", Position: 1},
 		},
@@ -235,21 +272,106 @@ func TestConditionalFormatOpaquePassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	f3, err := excelize.OpenReader(bytes.NewReader(out))
+	got := readSheetConditionalFormats(t, out, "People")
+	if len(got) != 2 {
+		t.Fatalf("authoritative save: want 2 rules, got %d", len(got))
+	}
+	if got[0].Condition.Type != "numberGreater" {
+		t.Errorf("typed rule: want numberGreater first, got %q", got[0].Condition.Type)
+	}
+	opaqueOut := got[1]
+	if len(opaqueOut.Ranges) != 1 || opaqueOut.Ranges[0] != "B2:B12" {
+		t.Errorf("opaque rule ranges: want snapshot's [B2:B12], got %v", opaqueOut.Ranges)
+	}
+	if opaqueOut.Condition.Type != "xlsxOpaque" {
+		t.Errorf("opaque round-trip type: want xlsxOpaque, got %q", opaqueOut.Condition.Type)
+	}
+	roundTripped, _ := opaqueOut.Condition.OpaqueXlsx["rawXml"].(string)
+	if stripPriorityAttr(roundTripped) != stripPriorityAttr(rawXML) {
+		t.Errorf("opaque rawXml not byte-comparable (modulo priority):\nwant %q\n got %q", rawXML, roundTripped)
+	}
+	// The raw rule's original dxf (bold) still resolves after the save
+	// minted a NEW dxf for the typed rule — the append-only induction.
+	if opaqueOut.Style == nil || opaqueOut.Style.Font == nil || opaqueOut.Style.Font.Bold == nil || !*opaqueOut.Style.Font.Bold {
+		t.Errorf("opaque rule's embedded dxfId no longer resolves to the bold dxf: %+v", opaqueOut.Style)
+	}
+	if got[0].Style == nil || got[0].Style.Font == nil || got[0].Style.Font.Italic == nil || !*got[0].Style.Font.Italic {
+		t.Errorf("typed rule's minted dxf lost: %+v", got[0].Style)
+	}
+}
+
+// TestConditionalFormatUniqueIDsAcrossBlocksSharingSqref guards the ID
+// scheme against the one-block-per-rule shape LibreOffice and Google
+// Sheets export: two <conditionalFormatting> blocks carrying the SAME
+// sqref, one rule each. Each excelize SetConditionalFormat call appends
+// its own block, so two calls on the same range reproduce that shape.
+// Per-block occurrence numbering minted duplicate IDs here (both rules
+// were the bare base ID), which broke doc-side edit/delete targeting —
+// the TS panel and y-binding look rules up by ID.
+func TestConditionalFormatUniqueIDsAcrossBlocksSharingSqref(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
 	if err != nil {
-		t.Fatalf("reopen final: %v", err)
+		t.Fatalf("read fixture: %v", err)
 	}
-	defer func() { _ = f3.Close() }()
-	got, err := f3.GetConditionalFormats("People")
+
+	f, err := excelize.OpenReader(bytes.NewReader(original))
 	if err != nil {
-		t.Fatalf("GetConditionalFormats final: %v", err)
+		t.Fatalf("open: %v", err)
 	}
-	opts := got["A1:A10"]
-	if len(opts) == 0 {
-		t.Fatalf("opaque round-trip lost the rule; got %v", got)
+	fmtIdx, err := f.NewConditionalStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	if err != nil {
+		t.Fatalf("new dxf: %v", err)
 	}
-	if opts[0].Type != "duplicate" {
-		t.Errorf("opaque round-trip type: want duplicate, got %q", opts[0].Type)
+	if err := f.SetConditionalFormat("People", "A1:A10", []excelize.ConditionalFormatOptions{
+		{Type: "duplicate", Criteria: "=", Format: &fmtIdx},
+	}); err != nil {
+		t.Fatalf("seed CF block 1: %v", err)
+	}
+	if err := f.SetConditionalFormat("People", "A1:A10", []excelize.ConditionalFormatOptions{
+		{Type: "unique", Criteria: "=", Format: &fmtIdx},
+	}); err != nil {
+		t.Fatalf("seed CF block 2: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("write seeded: %v", err)
+	}
+	_ = f.Close()
+
+	rules := readSheetConditionalFormats(t, buf.Bytes(), "People")
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules from 2 blocks; got %d", len(rules))
+	}
+	seen := make(map[string]bool, len(rules))
+	for _, r := range rules {
+		if seen[r.ID] {
+			t.Errorf("duplicate rule ID %q across blocks sharing sqref", r.ID)
+		}
+		seen[r.ID] = true
+	}
+	// The first occurrence keeps the bare base ID (stable with the
+	// unique-ranges common case); the collision gains the suffix.
+	if rules[0].ID != "xlsx:A1:A10" {
+		t.Errorf("first rule ID: want %q, got %q", "xlsx:A1:A10", rules[0].ID)
+	}
+	if rules[1].ID != "xlsx:A1:A10:1" {
+		t.Errorf("second rule ID: want %q, got %q", "xlsx:A1:A10:1", rules[1].ID)
+	}
+}
+
+// stripPriorityAttr removes the priority="N" attribute so raw rule XML
+// compares across the save's renumbering.
+func stripPriorityAttr(s string) string {
+	for {
+		i := strings.Index(s, ` priority="`)
+		if i < 0 {
+			return s
+		}
+		j := strings.Index(s[i+len(` priority="`):], `"`)
+		if j < 0 {
+			return s
+		}
+		s = s[:i] + s[i+len(` priority="`)+j+1:]
 	}
 }
 

@@ -4,17 +4,22 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 	"github.com/xuri/excelize/v2"
 )
 
 // buildSourceSheet creates an in-memory workbook whose first sheet holds
 // the given header row plus data rows, so the pivot-range computation can
-// read real source data the same way it does on the save path.
-func buildSourceSheet(t *testing.T, sheet string, headers []string, rows [][]any) *excelize.File {
+// read real source data the same way it does on the save path. The
+// workbook is authored with excelize (test-only oracle) and re-opened
+// through doctaculous, so the read path is exercised on genuinely
+// foreign bytes.
+func buildSourceSheet(t *testing.T, sheet string, headers []string, rows [][]any) *xlsx.File {
 	t.Helper()
-	f := excelize.NewFile()
+	ef := excelize.NewFile()
+	defer func() { _ = ef.Close() }()
 	if sheet != "Sheet1" {
-		if err := f.SetSheetName("Sheet1", sheet); err != nil {
+		if err := ef.SetSheetName("Sheet1", sheet); err != nil {
 			t.Fatalf("rename sheet: %v", err)
 		}
 	}
@@ -23,7 +28,7 @@ func buildSourceSheet(t *testing.T, sheet string, headers []string, rows [][]any
 		if err != nil {
 			t.Fatalf("coord: %v", err)
 		}
-		if err := f.SetCellValue(sheet, ref, h); err != nil {
+		if err := ef.SetCellValue(sheet, ref, h); err != nil {
 			t.Fatalf("set header: %v", err)
 		}
 	}
@@ -33,10 +38,18 @@ func buildSourceSheet(t *testing.T, sheet string, headers []string, rows [][]any
 			if err != nil {
 				t.Fatalf("coord: %v", err)
 			}
-			if err := f.SetCellValue(sheet, ref, v); err != nil {
+			if err := ef.SetCellValue(sheet, ref, v); err != nil {
 				t.Fatalf("set cell: %v", err)
 			}
 		}
+	}
+	buf, err := ef.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("write workbook: %v", err)
+	}
+	f, err := xlsx.Edit(buf.Bytes())
+	if err != nil {
+		t.Fatalf("reopen workbook via doctaculous: %v", err)
 	}
 	return f
 }
@@ -52,7 +65,7 @@ func buildSourceSheet(t *testing.T, sheet string, headers []string, rows [][]any
 //	rows = 1 + 3 + 1(colGrandTotal) = 5
 //	cols = 1 + 2*1 + 1(rowGrandTotal) = 4  -> D
 //
-// Range: Pivot!A1:D5.
+// Range: A1:D5.
 func TestPivotTableRange_SmallPivot(t *testing.T) {
 	f := buildSourceSheet(t, "Sheet1",
 		[]string{"Region", "Year", "Sales"},
@@ -65,8 +78,6 @@ func TestPivotTableRange_SmallPivot(t *testing.T) {
 			{"North", 2024, 9},
 		},
 	)
-	defer func() { _ = f.Close() }()
-
 	p := PivotDefinitionDTO{
 		SourceRange:     "Sheet1!A1:C7",
 		TargetSheetName: "Pivot",
@@ -84,8 +95,8 @@ func TestPivotTableRange_SmallPivot(t *testing.T) {
 	if rowCount != 5 || colCount != 4 {
 		t.Fatalf("dims = %dx%d, want 5x4", rowCount, colCount)
 	}
-	if got := pivotTableRange(f, p); got != "Pivot!A1:D5" {
-		t.Fatalf("range = %q, want Pivot!A1:D5", got)
+	if got := pivotTableRange(f, p); got != "A1:D5" {
+		t.Fatalf("range = %q, want A1:D5", got)
 	}
 }
 
@@ -100,8 +111,6 @@ func TestPivotTableRange_NoTotals(t *testing.T) {
 			{"North", 2023, 3},
 		},
 	)
-	defer func() { _ = f.Close() }()
-
 	p := PivotDefinitionDTO{
 		SourceRange:     "Sheet1!A1:C4",
 		TargetSheetName: "Pivot",
@@ -110,8 +119,8 @@ func TestPivotTableRange_NoTotals(t *testing.T) {
 		Values:          []PivotValueFieldDTO{{SourceColumn: "Sales", Aggregation: "sum"}},
 	}
 	// 3 regions, 2 years: rows = 1 + 3 = 4, cols = 1 + 2 = 3 -> C4
-	if got := pivotTableRange(f, p); got != "Pivot!A1:C4" {
-		t.Fatalf("range = %q, want Pivot!A1:C4", got)
+	if got := pivotTableRange(f, p); got != "A1:C4" {
+		t.Fatalf("range = %q, want A1:C4", got)
 	}
 }
 
@@ -125,8 +134,6 @@ func TestPivotTableRange_WidePivot(t *testing.T) {
 		rows = append(rows, []any{"OnlyRow", fmt.Sprintf("col%02d", i), i})
 	}
 	f := buildSourceSheet(t, "Sheet1", []string{"Group", "Bucket", "N"}, rows)
-	defer func() { _ = f.Close() }()
-
 	p := PivotDefinitionDTO{
 		SourceRange:     fmt.Sprintf("Sheet1!A1:C%d", len(rows)+1),
 		TargetSheetName: "Pivot",
@@ -142,13 +149,13 @@ func TestPivotTableRange_WidePivot(t *testing.T) {
 	if colCount != 31 {
 		t.Fatalf("colCount = %d, want 31", colCount)
 	}
-	endName, _ := excelize.ColumnNumberToName(colCount)
+	endName := xlsx.ColumnName(colCount)
 	if endName != "AE" {
 		t.Fatalf("end column letter = %q, want AE", endName)
 	}
 	got := pivotTableRange(f, p)
-	if got != "Pivot!A1:AE2" {
-		t.Fatalf("range = %q, want Pivot!A1:AE2 (past Z, not truncated)", got)
+	if got != "A1:AE2" {
+		t.Fatalf("range = %q, want A1:AE2 (past Z, not truncated)", got)
 	}
 }
 
@@ -160,8 +167,6 @@ func TestPivotTableRange_TallPivot(t *testing.T) {
 		rows = append(rows, []any{fmt.Sprintf("row%04d", i), i})
 	}
 	f := buildSourceSheet(t, "Sheet1", []string{"Key", "N"}, rows)
-	defer func() { _ = f.Close() }()
-
 	p := PivotDefinitionDTO{
 		SourceRange:     fmt.Sprintf("Sheet1!A1:B%d", len(rows)+1),
 		TargetSheetName: "Pivot",
@@ -177,8 +182,8 @@ func TestPivotTableRange_TallPivot(t *testing.T) {
 		t.Fatalf("rowCount = %d, want 251", rowCount)
 	}
 	// No cols, single value -> one heading column: cols = headerColCount(1) + 1 = 2 -> B.
-	if got := pivotTableRange(f, p); got != "Pivot!A1:B251" {
-		t.Fatalf("range = %q, want Pivot!A1:B251 (past row 200)", got)
+	if got := pivotTableRange(f, p); got != "A1:B251" {
+		t.Fatalf("range = %q, want A1:B251 (past row 200)", got)
 	}
 }
 
@@ -193,8 +198,6 @@ func TestPivotTableRange_MultiValue(t *testing.T) {
 			{"West", "Q1", 5, 3},
 		},
 	)
-	defer func() { _ = f.Close() }()
-
 	p := PivotDefinitionDTO{
 		SourceRange:     "Sheet1!A1:D4",
 		TargetSheetName: "Pivot",
@@ -229,8 +232,6 @@ func TestPivotTableRange_RowSubtotals(t *testing.T) {
 			{"West", "SF", 7},
 		},
 	)
-	defer func() { _ = f.Close() }()
-
 	p := PivotDefinitionDTO{
 		SourceRange:     "Sheet1!A1:C5",
 		TargetSheetName: "Pivot",
@@ -264,8 +265,6 @@ func TestPivotTableRange_FilterSelections(t *testing.T) {
 			{"South", "closed", 8},
 		},
 	)
-	defer func() { _ = f.Close() }()
-
 	p := PivotDefinitionDTO{
 		SourceRange:     "Sheet1!A1:C5",
 		TargetSheetName: "Pivot",
@@ -297,8 +296,6 @@ func TestPivotTableRange_QuotedSheetName(t *testing.T) {
 			{"West", 5},
 		},
 	)
-	defer func() { _ = f.Close() }()
-
 	p := PivotDefinitionDTO{
 		SourceRange:     "'My Data'!A1:B3",
 		TargetSheetName: "Pivot",
@@ -317,9 +314,7 @@ func TestPivotTableRange_QuotedSheetName(t *testing.T) {
 // TestPivotTableRange_UnreadableSourceFallsBack: a malformed/absent source
 // range falls back to the legacy A1:Z200 box rather than failing the save.
 func TestPivotTableRange_UnreadableSourceFallsBack(t *testing.T) {
-	f := excelize.NewFile()
-	defer func() { _ = f.Close() }()
-
+	f := xlsx.New()
 	p := PivotDefinitionDTO{
 		SourceRange:     "NoSuchSheet!A1:C10",
 		TargetSheetName: "Pivot",
@@ -329,7 +324,7 @@ func TestPivotTableRange_UnreadableSourceFallsBack(t *testing.T) {
 	if _, _, ok := computePivotDimensions(f, p); ok {
 		t.Fatal("expected ok=false for unreadable source")
 	}
-	if got := pivotTableRange(f, p); got != "Pivot!A1:Z200" {
-		t.Fatalf("fallback range = %q, want Pivot!A1:Z200", got)
+	if got := pivotTableRange(f, p); got != "A1:Z200" {
+		t.Fatalf("fallback range = %q, want A1:Z200", got)
 	}
 }

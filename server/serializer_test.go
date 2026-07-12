@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -782,8 +783,12 @@ func TestSerializerStyleClearsUnderline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	if got := readCellUnderline(t, out, "People", 2, 2); got != "none" {
-		t.Errorf("B2 underline: want %q (explicit OOXML cancel), got %q — underline not properly cleared", "none", got)
+	// The doctaculous writer clears an underline by REMOVING the <u>
+	// element (reads back as ""); excelize used to write the explicit
+	// val="none" cancel. Both render un-underlined — what must not
+	// survive is "single".
+	if got := readCellUnderline(t, out, "People", 2, 2); got != "" && got != "none" {
+		t.Errorf("B2 underline: want cleared (\"\" or \"none\"), got %q — underline not properly cleared", got)
 	}
 }
 
@@ -912,8 +917,19 @@ func TestSerializerStyleClearsFontName(t *testing.T) {
 	}
 }
 
-// readCellNumFmt returns the custom number format string applied to
-// the cell, or "" if none is set.
+// builtinNumFmtCodes maps the builtin numFmt ids the tests exercise
+// back to their format patterns. The doctaculous writer resolves a
+// pattern matching a BUILTIN format to its builtin id instead of
+// minting a custom id >= 164 the way excelize did — semantically the
+// same format, different storage.
+var builtinNumFmtCodes = map[int]string{
+	4:  "#,##0.00",
+	10: "0.00%",
+}
+
+// readCellNumFmt returns the number format pattern applied to the
+// cell — a custom format's code verbatim, a known builtin id resolved
+// through builtinNumFmtCodes — or "" if none is set.
 func readCellNumFmt(t *testing.T, xlsx []byte, sheetName string, row, col int) string {
 	t.Helper()
 	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
@@ -936,10 +952,13 @@ func readCellNumFmt(t *testing.T, xlsx []byte, sheetName string, row, col int) s
 	if err != nil {
 		t.Fatalf("read style %d: %v", id, err)
 	}
-	if style == nil || style.CustomNumFmt == nil {
+	if style == nil {
 		return ""
 	}
-	return *style.CustomNumFmt
+	if style.CustomNumFmt != nil {
+		return *style.CustomNumFmt
+	}
+	return builtinNumFmtCodes[style.NumFmt]
 }
 
 // TestSerializerStyleSetsNumFmt: snapshot numFmt lands as
@@ -1840,6 +1859,15 @@ func TestSerializerColWidthsNilLeavesExistingAlone(t *testing.T) {
 
 // readRowStyleFill returns the fill type/pattern/color of the row
 // style for the given row, if one is set.
+//
+// The probe reads a cell WITHOUT its own explicit style (column T is
+// beyond every fixture's data) — excelize resolves such a cell's style
+// through the row's customFormat xf, which is exactly the OOXML
+// row-style semantic. The excelize-era writer additionally stamped the
+// row style onto every EXISTING cell (overwriting their own styles);
+// the doctaculous writer keeps the row-level style row-level, so a
+// probe at a populated cell like A7 would read that cell's own style
+// instead.
 func readRowStyleFill(t *testing.T, xlsx []byte, sheetName string, row int) (string, int, []string) {
 	t.Helper()
 	f, err := excelize.OpenReader(bytes.NewReader(xlsx))
@@ -1847,12 +1875,9 @@ func readRowStyleFill(t *testing.T, xlsx []byte, sheetName string, row int) (str
 		t.Fatalf("open xlsx: %v", err)
 	}
 	defer func() { _ = f.Close() }()
-	// excelize reads row style from any cell on that row that has the
-	// row-style applied; we read from the first column (which
-	// SetRowStyle applies to even if the column is empty).
-	id, err := f.GetCellStyle(sheetName, fmt.Sprintf("A%d", row))
+	id, err := f.GetCellStyle(sheetName, fmt.Sprintf("T%d", row))
 	if err != nil {
-		t.Fatalf("get style A%d: %v", row, err)
+		t.Fatalf("get style T%d: %v", row, err)
 	}
 	if id == 0 {
 		return "", 0, nil
@@ -2181,8 +2206,14 @@ func TestSerializerClearsRowHeightsForEmptyMap(t *testing.T) {
 // TestSerializerClearsColWidthsForEmptyMap: non-nil empty ColWidths
 // clears every customized column on the sheet. Same contract as
 // TestSerializerClearsRowHeightsForEmptyMap; pinned per-axis because
-// SetColWidth and SetRowHeight have different "unset" mechanisms in
-// excelize (col uses defaultColWidth, row uses height=-1).
+// the clear mechanisms differ.
+//
+// A cleared column is now TRULY ABSENT from <cols> (ClearColWidth
+// removes the entry) — the excelize-era writer instead wrote the
+// 9.140625 default back as an explicit width. The assertion therefore
+// checks absence via the doctaculous read model rather than a numeric
+// excelize default (which now reads as the sheet's own declared
+// default, whatever it is).
 func TestSerializerClearsColWidthsForEmptyMap(t *testing.T) {
 	original, err := os.ReadFile(tinyXlsxPath)
 	if err != nil {
@@ -2219,11 +2250,27 @@ func TestSerializerClearsColWidthsForEmptyMap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	got := readColWidth(t, out, "People", 3)
-	// defaultExcelColWidth ≈ 9.140625
-	if got < 9.0 || got > 9.3 {
-		t.Errorf("col C width after empty-map clear: want ≈ default (9.14), got %v", got)
+	assertColWidthAbsent(t, out, "People", 3)
+}
+
+// assertColWidthAbsent verifies no explicit <col> width entry covers
+// the 1-based column (a true unset, not a written-back default).
+func assertColWidthAbsent(t *testing.T, data []byte, sheetName string, col int) {
+	t.Helper()
+	wb, err := xlsx.OpenBytes(data)
+	if err != nil {
+		t.Fatalf("open output with doctaculous: %v", err)
 	}
+	for i := range wb.Sheets {
+		if wb.Sheets[i].Name != sheetName {
+			continue
+		}
+		if w, ok := wb.Sheets[i].ColWidths[col-1]; ok {
+			t.Errorf("col %d still carries an explicit width %v after clear; want the <col> entry removed", col, w)
+		}
+		return
+	}
+	t.Fatalf("sheet %q not found", sheetName)
 }
 
 // TestSerializerClearsRowStylesForEmptyMap: non-nil empty RowStyles
@@ -2416,12 +2463,23 @@ func TestSerializerSparseMapRoundTripContract(t *testing.T) {
 				snap.Sheets[0].ColCount = 5
 			},
 			observe: func(t *testing.T, out []byte) (string, string) {
-				w := readColWidth(t, out, "People", 3)
-				// Within tolerance of defaultExcelColWidth.
-				if w > 9.0 && w < 9.3 {
-					return "default", "default"
+				// A cleared column width is truly absent from <cols>
+				// (no written-back default) — see
+				// TestSerializerClearsColWidthsForEmptyMap.
+				wb, err := xlsx.OpenBytes(out)
+				if err != nil {
+					t.Fatalf("open output with doctaculous: %v", err)
 				}
-				return fmt.Sprintf("%v", w), "default"
+				for i := range wb.Sheets {
+					if wb.Sheets[i].Name != "People" {
+						continue
+					}
+					if w, ok := wb.Sheets[i].ColWidths[2]; ok {
+						return fmt.Sprintf("explicit width %v", w), "absent"
+					}
+					return "absent", "absent"
+				}
+				return "sheet missing", "absent"
 			},
 			describe: "ColWidths",
 		},
@@ -2596,5 +2654,21 @@ func TestSerializerNoOpSaveDoesNotInflateSheetData(t *testing.T) {
 	if outRowCount != originalRowCount {
 		t.Errorf("sheetData row count after no-op save: want %d (matching input), got %d — clear pass backfilled placeholder rows",
 			originalRowCount, outRowCount)
+	}
+
+	// Stronger preservation lock: a doctaculous Edit + Save with NO
+	// mutations reproduces the package byte-identically, part for part.
+	// This is the property the whole save path is built on — anything
+	// the serializer doesn't explicitly touch rides through verbatim.
+	ed, err := xlsx.Edit(original)
+	if err != nil {
+		t.Fatalf("xlsx.Edit: %v", err)
+	}
+	resaved, err := ed.Save()
+	if err != nil {
+		t.Fatalf("no-op save: %v", err)
+	}
+	if !bytes.Equal(resaved, original) {
+		t.Errorf("no-op Edit+Save is not byte-identical: %d bytes -> %d bytes", len(original), len(resaved))
 	}
 }
