@@ -267,8 +267,10 @@ populated state.
 
 The `style` `Y.Map` shape is intentionally additive: a new attribute
 lands as one field in TS `CellStyle`, one field in Go `CellStyle`, one
-reader in `server/bootstrap.go::readWorkbookCellStyle`, and one writer
-in `persist.go`. Nothing in between needs to change.
+reader in `server/style_map.go::styleToCellStyle` (the xlsx→`CellStyle`
+mapping bootstrap runs via `readRowStyles`), and one writer in
+`persist.go` (`cellStyleToPatch` → `PatchCellStyle`). Nothing in
+between needs to change.
 
 ### Realtime room lifecycle
 
@@ -399,7 +401,9 @@ client recomputes from there.
 Comments are not in the `Y.Doc`. They live in a regular PocketBase
 collection, `calc_comments` (see `pb-migrations/`), one row per thread
 root or reply. The grid subscribes via `useCellComments` with
-`useOrgLiveQuery`; mutations go through `useMutation`. On save,
+`useOrgLiveQuery`; mutations go through `useCommentMutations`, which
+writes the `calc_comments` collection directly (`.insert`/`.update`).
+On save,
 `SaveRoom` snapshots the threads and writes them into the xlsx as
 classic cell notes (one-way: app → xlsx; external editor notes are
 overwritten).
