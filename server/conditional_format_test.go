@@ -300,6 +300,65 @@ func TestConditionalFormatOpaquePassthrough(t *testing.T) {
 	}
 }
 
+// TestConditionalFormatUniqueIDsAcrossBlocksSharingSqref guards the ID
+// scheme against the one-block-per-rule shape LibreOffice and Google
+// Sheets export: two <conditionalFormatting> blocks carrying the SAME
+// sqref, one rule each. Each excelize SetConditionalFormat call appends
+// its own block, so two calls on the same range reproduce that shape.
+// Per-block occurrence numbering minted duplicate IDs here (both rules
+// were the bare base ID), which broke doc-side edit/delete targeting —
+// the TS panel and y-binding look rules up by ID.
+func TestConditionalFormatUniqueIDsAcrossBlocksSharingSqref(t *testing.T) {
+	original, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	f, err := excelize.OpenReader(bytes.NewReader(original))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	fmtIdx, err := f.NewConditionalStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	if err != nil {
+		t.Fatalf("new dxf: %v", err)
+	}
+	if err := f.SetConditionalFormat("People", "A1:A10", []excelize.ConditionalFormatOptions{
+		{Type: "duplicate", Criteria: "=", Format: &fmtIdx},
+	}); err != nil {
+		t.Fatalf("seed CF block 1: %v", err)
+	}
+	if err := f.SetConditionalFormat("People", "A1:A10", []excelize.ConditionalFormatOptions{
+		{Type: "unique", Criteria: "=", Format: &fmtIdx},
+	}); err != nil {
+		t.Fatalf("seed CF block 2: %v", err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("write seeded: %v", err)
+	}
+	_ = f.Close()
+
+	rules := readSheetConditionalFormats(t, buf.Bytes(), "People")
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules from 2 blocks; got %d", len(rules))
+	}
+	seen := make(map[string]bool, len(rules))
+	for _, r := range rules {
+		if seen[r.ID] {
+			t.Errorf("duplicate rule ID %q across blocks sharing sqref", r.ID)
+		}
+		seen[r.ID] = true
+	}
+	// The first occurrence keeps the bare base ID (stable with the
+	// unique-ranges common case); the collision gains the suffix.
+	if rules[0].ID != "xlsx:A1:A10" {
+		t.Errorf("first rule ID: want %q, got %q", "xlsx:A1:A10", rules[0].ID)
+	}
+	if rules[1].ID != "xlsx:A1:A10:1" {
+		t.Errorf("second rule ID: want %q, got %q", "xlsx:A1:A10:1", rules[1].ID)
+	}
+}
+
 // stripPriorityAttr removes the priority="N" attribute so raw rule XML
 // compares across the save's renumbering.
 func stripPriorityAttr(s string) string {

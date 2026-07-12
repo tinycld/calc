@@ -41,11 +41,22 @@ import (
 // carrying the whole block's ranges. We deliberately do NOT merge
 // rules with identical conditions across blocks — the inverse mapping
 // would lose information.
+//
+// IDs derive from the block's joined range list; the first rule for a
+// given range list takes the bare ID, and every later rule sharing it
+// gets a sheet-wide occurrence suffix. The counter spans blocks — the
+// one-block-per-rule shape LibreOffice and Google Sheets export puts
+// each rule in its own <conditionalFormatting> with the same sqref,
+// and per-block numbering would mint duplicate IDs there (the TS side
+// keys edits, deletes, and React rows on ID). IDs are minted at import
+// time only; the save path replaces the file's rules wholesale from
+// the doc, so the scheme has no round-trip coupling.
 func readConditionalFormats(sheet *xlsx.Sheet) []ConditionalFormatRule {
 	if len(sheet.CondFmts) == 0 {
 		return nil
 	}
 	var out []ConditionalFormatRule
+	seen := make(map[string]int)
 	for _, block := range sheet.CondFmts {
 		baseID := "xlsx:" + strings.Join(block.Ranges, "+")
 		for i := range block.Rules {
@@ -59,9 +70,10 @@ func readConditionalFormats(sheet *xlsx.Sheet) []ConditionalFormatRule {
 				// even for rule kinds it doesn't model.
 				Style: styleToCellStyle(r.Style),
 			}
-			if i > 0 {
-				rule.ID = baseID + ":" + strconv.Itoa(i)
+			if n := seen[baseID]; n > 0 {
+				rule.ID = baseID + ":" + strconv.Itoa(n)
 			}
+			seen[baseID]++
 			out = append(out, rule)
 		}
 	}

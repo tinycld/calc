@@ -11,10 +11,12 @@ package calc
 // any divergence NOT in the explicit allowlist of intended diffs:
 //
 //   1. CF rule IDs + grouping: rules now surface in file order, one
-//      rule per multi-range block, with ID "xlsx:"+join(ranges,"+");
-//      the oracle sorted per-range and split multi-range rules. The
-//      comparator canonicalizes both sides to (range, condition,
-//      style) triples and asserts the new ID scheme separately.
+//      rule per multi-range block, with ID "xlsx:"+join(ranges,"+")
+//      (repeat range lists — across or within blocks — take a
+//      sheet-wide ":n" occurrence suffix); the oracle sorted per-range
+//      and split multi-range rules. The comparator canonicalizes both
+//      sides to (range, condition, style) triples and asserts the new
+//      ID scheme separately.
 //   2. Opaque CF payload: {"rawXml": "<cfRule .../>"} replaces the old
 //      PascalCase excelize-options JSON. Canonicalized to the bare
 //      "xlsxOpaque" tag for the cross-era diff; the new shape is
