@@ -64,8 +64,8 @@ github.com/mitchellh/copystructure v1.2.0 h1:vpKXTN4ewci03Vljg/q9QvCGUDttBOGBIa1
 github.com/mitchellh/copystructure v1.2.0/go.mod h1:qLl+cE2AmVv+CoeAwDPye/v+N2HKCj9FbZEVFJRxO9s=
 github.com/mitchellh/reflectwalk v1.0.2 h1:G2LzWKi524PWgd3mLHV8Y5k7s6XUvT0Gef6zxSIeXaQ=
 github.com/mitchellh/reflectwalk v1.0.2/go.mod h1:mSTlrgnPZtwu0c4WaC2kGObEpuNDbx0jmZXqmk4esnw=
-github.com/nathanstitt/doctaculous v0.0.2 h1:FpYpS4eJf8HrF75+dMZVoXFKRDf9k0WfMlg84jL5B+A=
-github.com/nathanstitt/doctaculous v0.0.2/go.mod h1:OhrAHqkISkBx2gMJ/GlTEVMk/lczgm6gAruwYph1RzA=
+github.com/nathanstitt/doctaculous v0.0.4 h1:X8nRQuM8XgOeZuSz2pbINHG5e2qUKm+sYkqzw2/qfI0=
+github.com/nathanstitt/doctaculous v0.0.4/go.mod h1:IThecO2Glk7IGQCqtfMTNWfDY8F5cIpfhyG06ds6+5w=
 github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOFAw7w=
 github.com/ncruces/go-strftime v1.0.0/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
 github.com/pingcap/errors v0.11.4 h1:lFuQV/oaUMGcD2tqt+01ROSmJs75VG1ToEOkZIZ4nE4=

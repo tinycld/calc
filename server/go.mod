@@ -1,9 +1,10 @@
 module tinycld.org/packages/calc
 
-go 1.26.0
+go 1.26.3
 
 require (
-	github.com/nathanstitt/doctaculous v0.0.2
+	github.com/google/go-cmp v0.6.0
+	github.com/nathanstitt/doctaculous v0.0.4
 	github.com/pocketbase/pocketbase v0.38.1
 	github.com/skyterra/y-crdt v0.0.0-20260224023949-c0cb10d3f33e
 	github.com/xuri/excelize/v2 v2.10.1
@@ -24,7 +25,6 @@ require (
 	github.com/getsentry/sentry-go v0.44.1 // indirect
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
