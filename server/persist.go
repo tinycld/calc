@@ -863,7 +863,8 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		}
 		if err := sh.SetVisibility(visibility); err != nil {
 			if errors.Is(err, xlsx.ErrLastVisibleSheet) {
-				fmt.Printf("calc: cannot hide last visible sheet %q; leaving visible\n", name)
+				slog.Warn("calc: cannot hide last visible sheet; leaving visible",
+					"sheet", name)
 				continue
 			}
 			return nil, fmt.Errorf("set sheet visibility on %s: %w", name, err)
@@ -885,7 +886,8 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		}
 		if err := f.DeleteSheet(name); err != nil {
 			if errors.Is(err, xlsx.ErrLastVisibleSheet) {
-				fmt.Printf("calc: cannot delete last visible sheet %q; leaving in place\n", name)
+				slog.Warn("calc: cannot delete last visible sheet; leaving in place",
+					"sheet", name)
 				continue
 			}
 			return nil, fmt.Errorf("delete sheet %s: %w", name, err)
@@ -947,6 +949,11 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		}
 	}
 
+	// snap.Cells is sorted by sheet (then row/col) above, so the sheet
+	// handle is resolved once per run of same-sheet cells rather than
+	// per cell.
+	var curSheetName string
+	var curSheet *xlsx.SheetEdit
 	for _, cell := range snap.Cells {
 		sheetName, ok := sheetNameByID[cell.SheetID]
 		if !ok {
@@ -958,10 +965,14 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		if cell.Row <= 0 || cell.Col <= 0 {
 			continue
 		}
-		sh, err := f.Sheet(sheetName)
-		if err != nil {
-			return nil, fmt.Errorf("sheet %q: %w", sheetName, err)
+		if curSheet == nil || sheetName != curSheetName {
+			sh, err := f.Sheet(sheetName)
+			if err != nil {
+				return nil, fmt.Errorf("sheet %q: %w", sheetName, err)
+			}
+			curSheetName, curSheet = sheetName, sh
 		}
+		sh := curSheet
 		if cell.Formula != "" {
 			// Atomic formula + cached value: the cached scalar's kind
 			// selects the cell type (KindEmpty writes no cache). Go

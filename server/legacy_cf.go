@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -75,6 +76,12 @@ type legacyCFOptions struct {
 // synthesized rule XML. Returns ok=false (and logs) for blob types the
 // converter does not model — the doc keeps the blob for a future
 // attempt, matching the writer's general skip-don't-corrupt stance.
+// Note the file-side consequence: the save replaces each sheet's
+// conditional formatting wholesale (SetConditionalFormats), so a
+// skipped rule is ERASED from the emitted xlsx whenever any sibling
+// rule on the sheet survives — only the Y.Doc retains the blob. This
+// differs from the excelize-era writer, which appended rules and left
+// the file's existing formatting in place.
 func legacyOpaqueToCFRule(blob map[string]interface{}, style *CellStyle, anchor string) (xlsx.CFRule, bool, error) {
 	raw, err := json.Marshal(blob)
 	if err != nil {
@@ -86,7 +93,8 @@ func legacyOpaqueToCFRule(blob map[string]interface{}, style *CellStyle, anchor 
 	}
 	ruleXML, ok := legacyRuleXML(&opt, anchor)
 	if !ok {
-		fmt.Printf("calc: unconvertible legacy CF blob type %q; skipping rule\n", opt.Type)
+		slog.Warn("calc: unconvertible legacy CF blob; skipping rule",
+			"blobType", opt.Type)
 		return xlsx.CFRule{}, false, nil
 	}
 	out := xlsx.CFRule{Raw: ruleXML}
