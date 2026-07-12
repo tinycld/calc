@@ -11,7 +11,7 @@
 
 import { expect, type Page, test } from '@playwright/test'
 import { login, navigateToPackage, ORG_SLUG } from '../../tinycld/tests/e2e/helpers'
-import { openNewSpreadsheet } from './_menubar-helpers'
+import { openNewSpreadsheet, waitForTemplateItem } from './_menubar-helpers'
 
 test.describe('Calc — Spreadsheet templates', () => {
     test.beforeEach(async ({ page }) => {
@@ -29,11 +29,29 @@ test.describe('Calc — Spreadsheet templates', () => {
 
         await exportAsTemplate(page)
 
+        // The template must actually exist server-side before the menu can
+        // offer it. exportAsTemplate confirms the folder dialog, but the
+        // ChooseFolderDialog closes on click *before* the copy mutation's
+        // create resolves — so at that point the `.tmpl.xlsx` row may not
+        // exist yet. Confirm it landed with a read-only query (writes still
+        // go through the UI; this is a read-only assertion) so we're never
+        // waiting on a menu item for a row that isn't there.
+        await waitForTemplateItem(page, `${baseName}.tmpl.xlsx`)
+
         // Export keeps us on the current workbook (no navigation). Open the
         // picker in-app from the File menu — a navigateToPackage / goto
         // would tear down the SPA and cancel the on-demand drive_items
         // fetch the picker depends on.
-        await page.getByRole('button', { name: 'File', exact: true }).click()
+        //
+        // "New from template…" is gated on useHasTemplates — a live query
+        // over drive_items. Even after the row exists server-side it reaches
+        // the already-mounted query only on the next realtime redelivery, so
+        // the item can render a beat after the menu first opens. Re-open the
+        // menu until the reactive query has observed the template and the
+        // item renders (instead of spending the whole test budget on a
+        // single open that fired one tick too early — the pre-existing
+        // flake), then click it.
+        await openFileMenuWithTemplates(page)
         await page.getByRole('menuitem', { name: 'New from template…' }).click()
 
         const dialog = page.getByTestId('template-picker-dialog')
@@ -55,6 +73,25 @@ test.describe('Calc — Spreadsheet templates', () => {
 // hidden-when-empty behavior is covered deterministically by the
 // useHasTemplates unit test (the shared e2e DB can't guarantee a
 // template-free org once another test has exported one).
+
+// Opens the File menu and waits for its "New from template…" item, which
+// useHasTemplates renders only once its mounted drive_items live query has
+// observed the just-exported `.tmpl.xlsx`. The row exists by now (the caller
+// waited on it), but it reaches that persistently-mounted query only on the
+// next realtime redelivery — which can land a beat after the menu first
+// opens. Re-opening the menu each poll re-renders the popover against the
+// freshest query result, so the item shows the moment the query catches up
+// instead of the first open winning or losing the whole wait. Escape closes
+// the menu between attempts so each open is a clean open, not a toggle-shut
+// of an already-open menu.
+async function openFileMenuWithTemplates(page: Page): Promise<void> {
+    const item = page.getByRole('menuitem', { name: 'New from template…' })
+    await expect(async () => {
+        await page.keyboard.press('Escape')
+        await page.getByRole('button', { name: 'File', exact: true }).click()
+        await expect(item).toBeVisible({ timeout: 1_000 })
+    }).toPass({ timeout: 20_000 })
+}
 
 async function renameWorkbook(page: Page, name: string): Promise<void> {
     await page.getByRole('button', { name: 'File', exact: true }).click()
