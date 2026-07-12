@@ -205,7 +205,7 @@ menu-only.
 │   persist.SaveRoom: read original xlsx → snapshot ycrdt.Doc →        │
 │                     overlay (sheets, dimensions, row/col sizes,      │
 │                     row styles, cells, formulas, comments) →         │
-│                     write back via excelize → save drive_items.file  │
+│                     write via pkg/xlsx edit → save drive_items.file  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -254,8 +254,8 @@ per-filter `filterSelections`, grand-total and subtotal toggles, and
 optional `styleName`. The materialized output range lives in the
 target sheet's regular `cells` entries — the pivot Y.Map is the
 definition, the cells are the cached evaluation. Server-side
-`server/pivot.go` round-trips definitions through excelize's native
-pivot-table XML; client-side keys live in `lib/pivot/keys.ts`
+`server/pivot.go` round-trips definitions through doctaculous
+`pkg/xlsx`'s pivot-table parts; client-side keys live in `lib/pivot/keys.ts`
 (`PIVOTS_MAP`, `PIVOT_SHEET_KEY`).
 
 Both sides share a canonical bootstrap: `bootstrapYDocFromWorkbook` in
@@ -279,7 +279,8 @@ via `useRealtimeRoom({ roomKind: 'calc', roomID: driveItemID, … })`:
 1. **Authorize** — the room rejects clients without a `drive_shares` row
    linking them to the item.
 2. **Bootstrap** — on first open, `Runtime.NewDoc` invokes the bootstrap
-   hook, which loads `drive_items.file`, parses the xlsx with `excelize`,
+   hook, which loads `drive_items.file`, parses the xlsx with
+   doctaculous `pkg/xlsx`,
    and seeds the `Y.Doc` via `BootstrapYDocFromWorkbook` — all
    synchronously, before the broker sends `SyncReply`. Empty / missing
    files yield an empty doc that the next save will materialize from
@@ -307,12 +308,14 @@ via `useRealtimeRoom({ roomKind: 'calc', roomID: driveItemID, … })`:
 `SaveRoom` reads the current xlsx bytes off `drive_items`, snapshots the
 server-side `Y.Doc` (`Snapshot()` walks the `sheets` and `cells` maps
 into Go structs), and applies the snapshot on top of the original
-workbook via `excelize` — renaming or appending sheets, growing
-dimensions, applying row/column sizes and styles, writing each cell's
-formula or value, then writing classic xlsx cell notes for the threaded
-comments. The resulting bytes replace `drive_items.file`; PocketBase
-renames the on-disk blob to a fresh hash so the prior version isn't
-overwritten in place.
+workbook via doctaculous `pkg/xlsx` — a preservation-first overlay
+editor that patches only what the doc tracks (renaming or appending
+sheets, growing dimensions, applying row/column sizes and styles,
+writing each cell's formula or value, then writing classic xlsx cell
+notes for the threaded comments) and leaves every untracked part of
+the source file byte-intact. The resulting bytes replace
+`drive_items.file`; PocketBase renames the on-disk blob to a fresh
+hash so the prior version isn't overwritten in place.
 
 ### How core's WAL provides durability
 
@@ -375,7 +378,10 @@ Bootstrap happens server-side (not client-side) so the wire shape clients
 see is canonical regardless of join order — there is no "first joiner
 parses xlsx, everyone else syncs from peer" race, and a peer dropping
 mid-edit doesn't strand the next joiner with stale state. The client
-package has no xlsx parser at all; `excelize` is a Go-only dependency.
+package has no xlsx parser at all; doctaculous `pkg/xlsx` is a Go-only
+dependency. (`excelize` remains in `server/go.mod` as a test-only
+dependency — the parity suite in `parity_oracle_test.go` uses it as an
+independent oracle for the read and write paths.)
 
 ### Formula evaluation
 
@@ -409,15 +415,26 @@ server/
     bootstrap.go              ReadWorkbookFromXLSX, BootstrapYDocFromWorkbook
     bootstrap_hook.go         production bootstrap closure (load drive_items file)
     save_coordinator.go       calc-side flush wrapper around core's SaveCoordinator
-    persist.go                SaveRoom — Y.Doc snapshot → xlsx via excelize
+    persist.go                SaveRoom — Y.Doc snapshot overlaid onto the
+                              source xlsx via doctaculous pkg/xlsx (a
+                              preservation-first editor: untracked parts
+                              of the file pass through byte-intact)
     comments.go               CommentRow loader; classic xlsx cell-note writer
     snapshot.go               Go-side YDocSnapshot / SheetMeta / CellEntry shapes
-    pivot.go                  PivotDefinitionDTO + excelize pivot-table writer
-    conditional_format.go     conditional formatting round-trip with excelize
+    pivot.go                  PivotDefinitionDTO + pkg/xlsx pivot-table
+                              reader/writer
+    conditional_format.go     conditional formatting round-trip with
+                              pkg/xlsx; rule kinds outside the modelled
+                              subset pass through as verbatim <cfRule> XML
+    legacy_cf.go              converts pre-migration excelize-JSON opaque
+                              CF blobs persisted in old Y.Docs into rule XML
     style_attribute_registry.go  single source of truth for every CellStyle
                                  leaf attribute (canaries, probes, extractors)
-    style_reflect.go          overlayStyle — reflect-driven CellStyle →
-                              *excelize.Style copy on the save path
+    style_map.go              hand-written CellStyle ⇄ xlsx.Style /
+                              xlsx.StylePatch mappers (read, patch-write,
+                              and dxf builds)
+    parity_oracle_test.go     excelize-as-oracle parity suite — the one
+                              place excelize is still used (test-only)
     api.go                    GET /api/calc/preview/:id (thumbnail / file preview)
 ```
 
