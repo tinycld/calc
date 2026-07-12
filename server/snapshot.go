@@ -21,8 +21,8 @@ type YDocSnapshot struct {
 	// top-level "pivots" Y.Map (see tinycld/calc/lib/pivot/y-binding.ts
 	// for the doc-side write shape). Empty when the doc holds no pivots.
 	// The serializer in persist.go consumes this slice and emits one
-	// excelize PivotTable per entry through the shared writePivots
-	// helper (see persist.go), matching the model-only path in
+	// xlsx.PivotTable per entry through the shared writePivots helper
+	// (see persist.go), matching the model-only path in
 	// serializeWorkbook.
 	Pivots []PivotDefinitionDTO
 }
@@ -77,8 +77,8 @@ type SheetMeta struct {
 
 	// Merges enumerates merged-cell rectangles on this sheet. Each
 	// entry is the top-left anchor coordinate plus span dimensions.
-	// Empty/nil when the sheet has no merges. Round-trips through
-	// excelize MergeCell on save.
+	// Empty/nil when the sheet has no merges. Round-trips through a
+	// wholesale SetMerges on save.
 	Merges []MergeRange
 
 	// FrozenRows / FrozenCols mirror the Y.Doc's frozenRows /
@@ -93,8 +93,8 @@ type SheetMeta struct {
 	// authored against this sheet, in priority order (first match
 	// wins). Mirrors the per-sheet conditionalFormats Y.Array on the
 	// doc side (see tinycld/calc/lib/conditional-format/y-binding.ts).
-	// Empty/nil when the sheet has no rules. Round-trips through
-	// excelize's GetConditionalFormats / SetConditionalFormat on save.
+	// Empty/nil when the sheet has no rules. Read via doctaculous
+	// (readConditionalFormats); written back on save.
 	ConditionalFormats []ConditionalFormatRule
 }
 
@@ -118,11 +118,13 @@ type ConditionalCondition struct {
 	Value1  *string `json:"value1,omitempty"`
 	Value2  *string `json:"value2,omitempty"`
 	Formula *string `json:"formula,omitempty"`
-	// OpaqueXlsx carries the original excelize options for rules
-	// whose Type isn't yet modelled in the calc UI (top-N,
-	// duplicates, color scales, etc.). The serializer re-emits the
-	// blob verbatim on save so an imported workbook survives a
-	// round-trip unmodified. Nil for native types authored in calc.
+	// OpaqueXlsx carries the passthrough payload for rules whose Type
+	// isn't modelled in the calc UI (top-N, duplicates, color scales,
+	// etc.). Rules read since the doctaculous migration hold the
+	// verbatim <cfRule> XML under the "rawXml" key; Y.Docs persisted
+	// before it hold a JSON blob of excelize options (PascalCase
+	// keys) — legacy_cf.go (migration step 2d) converts those on
+	// save. Nil for native types authored in calc.
 	OpaqueXlsx map[string]interface{} `json:"opaqueXlsx,omitempty"`
 }
 
@@ -172,7 +174,7 @@ type CellEntry struct {
 // (tinycld/calc/lib/workbook-types.ts). Every field is a pointer (or a
 // pointer-typed group) so "absent" is distinguishable from "explicitly
 // false / empty". The serializer overlays only the non-nil fields onto
-// the cell's existing excelize.Style.
+// the cell's existing on-disk style (cellStyleToPatch → PatchCellStyle).
 //
 // JSON tags use camelCase keys to match the doc-side shape: runtime.go's
 // decodeCellStyle flattens the style YMap into a plain map and routes
@@ -219,10 +221,9 @@ type CellAlignment struct {
 //   - non-nil with Style/Color set: paint the edge with that style and
 //     color.
 //
-// The "Borders" entry in styleOverlayOverrides consumes each non-nil
-// edge and writes the corresponding excelize.Border. Diagonals (and
-// any other non-orthogonal edge types in the source workbook) survive
-// untouched.
+// bordersToPatch (style_map.go) consumes each non-nil edge and writes
+// the corresponding xlsx.EdgePatch. Diagonals (and any other
+// non-orthogonal edge types in the source workbook) survive untouched.
 type CellBorders struct {
 	Top    *CellBorderEdge `json:"top,omitempty"`
 	Right  *CellBorderEdge `json:"right,omitempty"`

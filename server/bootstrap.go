@@ -1,15 +1,14 @@
 package calc
 
 import (
-	"bytes"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 	ycrdt "github.com/skyterra/y-crdt"
-	"github.com/xuri/excelize/v2"
 )
 
 // WorkbookModel mirrors the TS WorkbookModel
@@ -36,7 +35,7 @@ type WorksheetModel struct {
 	// sheet list — see useYSheets.
 	Hidden bool `json:"hidden,omitempty"`
 	// Merges enumerates merged-cell rectangles imported from the
-	// source xlsx via excelize.GetMergeCells.
+	// source xlsx's <mergeCells> entries.
 	Merges []MergeRangeDTO `json:"merges,omitempty"`
 	// FrozenRows / FrozenCols mirror the xlsx <pane> ySplit /
 	// xSplit when state="frozen". Zero on either axis means "no
@@ -56,15 +55,15 @@ type WorksheetModel struct {
 	ColWidths  map[int]int        `json:"colWidths,omitempty"`
 	RowStyles  map[int]*CellStyle `json:"rowStyles,omitempty"`
 	// ConditionalFormats enumerates rules imported from the source
-	// xlsx via excelize.GetConditionalFormats. Bootstrap seeds them
-	// into the per-sheet conditionalFormats Y.Array so the doc-side
-	// authoring UI sees them on first open. Empty/nil when the
-	// source has no rules.
+	// xlsx's <conditionalFormatting> blocks, in file order. Bootstrap
+	// seeds them into the per-sheet conditionalFormats Y.Array so the
+	// doc-side authoring UI sees them on first open. Empty/nil when
+	// the source has no rules.
 	ConditionalFormats []ConditionalFormatRule `json:"conditionalFormats,omitempty"`
 }
 
 // MergeRangeDTO mirrors the TS MergeRangeModel: a merged cell anchor
-// (top-left) plus span dimensions. Round-trips through excelize.
+// (top-left) plus span dimensions.
 type MergeRangeDTO struct {
 	AnchorRow int `json:"anchorRow"`
 	AnchorCol int `json:"anchorCol"`
@@ -96,28 +95,21 @@ func ReadWorkbookFromXLSX(xlsxBytes []byte, rowCap, colCap int) (WorkbookModel, 
 	if len(xlsxBytes) == 0 {
 		return WorkbookModel{}, fmt.Errorf("calc: ReadWorkbookFromXLSX: empty input")
 	}
-	f, err := excelize.OpenReader(bytes.NewReader(xlsxBytes))
+	wb, err := xlsx.OpenBytes(xlsxBytes)
 	if err != nil {
 		return WorkbookModel{}, fmt.Errorf("calc: open xlsx: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	// Resolve legacy indexed palette colors to plain RGB before any
+	// style conversion — see indexed_palette.go for scope and rationale.
+	resolveWorkbookIndexedColors(wb, indexedPaletteFromStyles(xlsxBytes))
 
-	sheetNames := f.GetSheetList()
-	out := WorkbookModel{Sheets: make([]WorksheetModel, 0, len(sheetNames))}
-
-	for _, sheetName := range sheetNames {
-		ws, err := readWorksheet(f, sheetName, rowCap, colCap)
-		if err != nil {
-			return WorkbookModel{}, fmt.Errorf("calc: read sheet %q: %w", sheetName, err)
-		}
-		out.Sheets = append(out.Sheets, ws)
+	out := WorkbookModel{Sheets: make([]WorksheetModel, 0, len(wb.Sheets))}
+	for i := range wb.Sheets {
+		out.Sheets = append(out.Sheets, readWorksheet(&wb.Sheets[i], rowCap, colCap))
 	}
-	for _, sheetName := range sheetNames {
-		pivots, err := readPivotsForSheet(f, sheetName)
-		if err != nil {
-			return WorkbookModel{}, fmt.Errorf("calc: read pivots for %q: %w", sheetName, err)
-		}
-		out.Pivots = append(out.Pivots, pivots...)
+	pivots, err := readPivots(xlsxBytes)
+	if err != nil {
+		return WorkbookModel{}, fmt.Errorf("calc: read pivots: %w", err)
 	}
 	// Promote any pivot whose target sheet collides with an existing
 	// non-empty data sheet by relocating it to a dedicated "<sheet>
@@ -125,7 +117,7 @@ func ReadWorkbookFromXLSX(xlsxBytes []byte, rowCap, colCap int) (WorkbookModel, 
 	// already places the pivot on a dedicated sheet, so this is a
 	// safety net for the in-sheet case where the user dropped the
 	// pivot into a region that already holds data.
-	out.Pivots = ensureDistinctTargets(out.Pivots, out.Sheets)
+	out.Pivots = ensureDistinctTargets(pivots, out.Sheets)
 	return out, nil
 }
 
@@ -161,46 +153,35 @@ func ensureDistinctTargets(pivots []PivotDefinitionDTO, sheets []WorksheetModel)
 	return pivots
 }
 
-func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (WorksheetModel, error) {
-	rows, err := f.GetRows(sheetName)
-	if err != nil {
-		return WorksheetModel{}, err
-	}
-	// Tab color + visibility live on the worksheet props. Errors here
-	// are non-fatal (fall back to absent / visible) — older xlsx files
-	// without sheet-level styling shouldn't break the import.
-	var tabColor string
-	if props, err := f.GetSheetProps(sheetName); err == nil {
-		if props.TabColorRGB != nil && *props.TabColorRGB != "" {
-			rgb := *props.TabColorRGB
-			if !strings.HasPrefix(rgb, "#") {
-				rgb = "#" + rgb
-			}
-			tabColor = rgb
-		}
-	}
-	hidden := false
-	if visible, err := f.GetSheetVisible(sheetName); err == nil {
-		hidden = !visible
+// readWorksheet converts one parsed doctaculous sheet into the
+// WorksheetModel wire shape. The doctaculous grid is dense over the
+// used range and 0-BASED; every index converts to calc's 1-based
+// convention immediately inside this function so no 0-based index
+// escapes the seam.
+func readWorksheet(sheet *xlsx.Sheet, rowCap, colCap int) WorksheetModel {
+	tabColor := ""
+	if sheet.TabColorRGB != "" {
+		tabColor = "#" + sheet.TabColorRGB
 	}
 	cells := make(map[string]CellValueDTO)
 	maxRow, maxCol := 0, 0
 
-	for rowIdx, row := range rows {
-		rowNumber := rowIdx + 1
+	// maxRow/maxCol track CONTRIBUTING cells only. The dense grid also
+	// covers style-only cells (a border on an otherwise-empty cell
+	// widens the used range), but the model's row/col counts follow the
+	// excelize-era semantics: the extent of cells carrying a value or
+	// formula.
+	for r := range sheet.Cells {
+		rowNumber := r + 1
 		if rowCap > 0 && rowNumber > rowCap {
 			break
 		}
-		for colIdx := range row {
-			colNumber := colIdx + 1
+		for c := range sheet.Cells[r] {
+			colNumber := c + 1
 			if colCap > 0 && colNumber > colCap {
 				break
 			}
-			ref, err := excelize.CoordinatesToCellName(colNumber, rowNumber)
-			if err != nil {
-				continue
-			}
-			cell, ok := readWorkbookCell(f, sheetName, ref)
+			cell, ok := readWorkbookCell(&sheet.Cells[r][c])
 			if !ok {
 				continue
 			}
@@ -221,150 +202,126 @@ func readWorksheet(f *excelize.File, sheetName string, rowCap, colCap int) (Work
 	if colCount < 1 {
 		colCount = 1
 	}
-	merges, _ := readMerges(f, sheetName)
-	frozenRows, frozenCols := readWorksheetFreeze(f, sheetName)
-	rowHeights, rowStyles, err := readWorksheetRowOpts(f, sheetName)
-	if err != nil {
-		return WorksheetModel{}, fmt.Errorf("row opts: %w", err)
+	frozenRows, frozenCols := sheet.FrozenRows, sheet.FrozenCols
+	if frozenRows < 0 {
+		frozenRows = 0
 	}
-	colWidths, err := readWorksheetColWidths(f, sheetName, colCount)
-	if err != nil {
-		return WorksheetModel{}, fmt.Errorf("col widths: %w", err)
-	}
-	cfRules, err := readConditionalFormats(f, sheetName)
-	if err != nil {
-		return WorksheetModel{}, fmt.Errorf("conditional formats: %w", err)
+	if frozenCols < 0 {
+		frozenCols = 0
 	}
 	return WorksheetModel{
-		Name:               sheetName,
+		Name:               sheet.Name,
 		RowCount:           rowCount,
 		ColCount:           colCount,
 		Cells:              cells,
 		Color:              tabColor,
-		Hidden:             hidden,
-		Merges:             merges,
+		Hidden:             sheet.Hidden,
+		Merges:             readMerges(sheet.Merges),
 		FrozenRows:         frozenRows,
 		FrozenCols:         frozenCols,
-		RowHeights:         rowHeights,
-		ColWidths:          colWidths,
-		RowStyles:          rowStyles,
-		ConditionalFormats: cfRules,
-	}, nil
+		RowHeights:         readRowHeights(sheet),
+		ColWidths:          readColWidths(sheet, colCount),
+		RowStyles:          readRowStyles(sheet),
+		ConditionalFormats: readConditionalFormats(sheet),
+	}
 }
 
-// readWorksheetRowOpts streams the sheet's rows via excelize.Rows() and
-// collects per-row Height + StyleID into maps keyed by 1-based row
-// number. Only emits entries whose Height differs from the xlsx default
-// (or whose StyleID is non-zero) so the resulting maps remain sparse:
-// a workbook with no row customizations contributes no Y.Doc bytes.
-//
-// Why both maps come from one pass: excelize's streaming row iterator
-// is the only public API that exposes both the per-row Height (via
-// rows.GetRowOpts().Height) and StyleID without re-decoding the whole
-// worksheet XML. A second pass for styles would double the cost on
-// large sheets.
-//
-// Why errors propagate: a partial seed here is dangerous downstream.
-// If we returned (nil, nil) on a read failure and the user later
-// touched one row, the Y.Doc would carry a one-entry map and the
-// serializer's clear-then-write contract would wipe every other row's
-// original on-disk customization — re-creating the bug class this
-// package is built to prevent. Better to fail bootstrap loudly than
-// silently degrade into a save-time wipe.
-//
-// The default-height epsilon (0.01 pt) catches roundtrip rounding
-// without dropping near-default custom heights.
-func readWorksheetRowOpts(f *excelize.File, sheetName string) (map[int]int, map[int]*CellStyle, error) {
-	rows, err := f.Rows(sheetName)
-	if err != nil {
-		return nil, nil, fmt.Errorf("open row iterator: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	heights := map[int]int{}
-	styles := map[int]*CellStyle{}
-	rowIdx := 0
-	for rows.Next() {
-		rowIdx++
-		opts := rows.GetRowOpts()
-		// excelize's extractRowOpts seeds Height with defaultRowHeight
-		// (15pt). Any value materially different from that is a stored
-		// customization in the xlsx's <row ht="..."> attribute.
-		if opts.Height > 0 && (opts.Height < defaultExcelRowHeight-0.01 || opts.Height > defaultExcelRowHeight+0.01) {
-			heights[rowIdx] = excelPointsToPx(opts.Height)
-		}
-		if opts.StyleID > 0 {
-			style, err := f.GetStyle(opts.StyleID)
-			if err != nil {
-				return nil, nil, fmt.Errorf("read style id %d on row %d: %w", opts.StyleID, rowIdx, err)
-			}
-			if style != nil {
-				if cs := extractStyle(style); cs != nil {
-					styles[rowIdx] = cs
-				}
-			}
-		}
-	}
-	if err := rows.Error(); err != nil {
-		return nil, nil, fmt.Errorf("row iterator: %w", err)
-	}
-	if len(heights) == 0 {
-		heights = nil
-	}
-	if len(styles) == 0 {
-		styles = nil
-	}
-	return heights, styles, nil
-}
-
-// readWorksheetColWidths walks columns 1..colCount and emits any whose
-// stored width differs from the xlsx default. excelize exposes only a
-// per-column lookup (GetColWidth) without an enumerator, so this loop
-// is the simplest correct path — colCount is already bounded by the
-// sheet's used range and capped by the caller.
-//
-// Like readWorksheetRowOpts, the result stays sparse: a workbook with
-// no width customizations contributes no Y.Doc bytes. Errors propagate
-// for the same reason — a partial seed here would let the serializer
-// wipe legitimate on-disk widths on first save (see readWorksheetRowOpts
-// for the full data-loss story).
-//
-// ColumnNumberToName failing inside a 1..colCount walk would mean
-// colCount is out of range for the xlsx column-name encoding (max
-// XFD = 16384), which is a structural invariant violation we should
-// surface rather than skip.
-func readWorksheetColWidths(f *excelize.File, sheetName string, colCount int) (map[int]int, error) {
-	if colCount < 1 {
-		return nil, nil
-	}
+// readRowHeights converts the sheet's explicit per-row heights (points,
+// 0-based keys) into the sparse 1-based pixel map the Y.Doc seeds from.
+// Heights matching the workbook default stay out of the map so a
+// workbook with no real customizations contributes no Y.Doc bytes —
+// producers routinely stamp ht="<default>" on every row without the
+// user having touched anything. Sparseness matters downstream: the
+// serializer's snapshot-is-authoritative contract treats a seeded map
+// as the complete set of customizations, so over-seeding bloats every
+// subsequent save.
+func readRowHeights(sheet *xlsx.Sheet) map[int]int {
 	out := map[int]int{}
-	for col := 1; col <= colCount; col++ {
-		colName, err := excelize.ColumnNumberToName(col)
-		if err != nil {
-			return nil, fmt.Errorf("column name for %d: %w", col, err)
-		}
-		w, err := f.GetColWidth(sheetName, colName)
-		if err != nil {
-			return nil, fmt.Errorf("get col width %s!%s: %w", sheetName, colName, err)
-		}
-		// GetColWidth falls back to defaultColWidth (9.140625) when
-		// the column has no stored width entry; skip those so the
-		// emitted map only carries true customizations.
-		if w <= 0 || (w > defaultExcelColWidth-0.001 && w < defaultExcelColWidth+0.001) {
+	for row, pt := range sheet.RowHeights {
+		if row < 0 || pt <= 0 {
 			continue
 		}
-		out[col] = excelCharWidthToPx(w)
+		if isDefaultRowHeight(pt, sheet.DefaultRowHeight) {
+			continue
+		}
+		out[row+1] = excelPointsToPx(pt)
 	}
 	if len(out) == 0 {
-		return nil, nil
+		return nil
 	}
-	return out, nil
+	return out
 }
 
-// defaultExcelRowHeight and defaultExcelColWidth mirror excelize's
-// internal defaults (rows.go: defaultRowHeight=15, col.go:
-// defaultColWidth=9.140625). Exposed here so the import-side seeding
-// can detect "this row/col uses the workbook default" without taking
-// on a build-time dependency on excelize's private constants.
+// isDefaultRowHeight reports whether a stored row height is a workbook
+// default: either the historical 15pt constant (kept for parity with
+// the excelize-era filter, whose iterator seeded absent heights with
+// it) or the sheet's own declared sheetFormatPr default. The 0.01pt
+// epsilon catches round-trip rounding without dropping near-default
+// custom heights.
+func isDefaultRowHeight(pt, sheetDefault float64) bool {
+	if pt > defaultExcelRowHeight-0.01 && pt < defaultExcelRowHeight+0.01 {
+		return true
+	}
+	return sheetDefault > 0 && pt > sheetDefault-0.01 && pt < sheetDefault+0.01
+}
+
+// readColWidths emits every column whose stored width differs from the
+// workbook default (the historical 9.140625 constant or the sheet's
+// declared sheetFormatPr default). Bounded to colCount — the extent of
+// contributing cells — matching the excelize-era walk: producers write
+// blanket <col> ranges spanning thousands of trailing columns at a
+// near-default width, and seeding those would bloat the Y.Doc while
+// representing no real edit.
+func readColWidths(sheet *xlsx.Sheet, colCount int) map[int]int {
+	out := map[int]int{}
+	for col, w := range sheet.ColWidths {
+		if col < 0 || col+1 > colCount || w <= 0 {
+			continue
+		}
+		if isDefaultColWidth(w, sheet.DefaultColWidth) {
+			continue
+		}
+		out[col+1] = excelCharWidthToPx(w)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// isDefaultColWidth mirrors isDefaultRowHeight for column widths (char
+// units, 0.001 epsilon — the excelize-era filter's tolerance).
+func isDefaultColWidth(w, sheetDefault float64) bool {
+	if w > defaultExcelColWidth-0.001 && w < defaultExcelColWidth+0.001 {
+		return true
+	}
+	return sheetDefault > 0 && w > sheetDefault-0.001 && w < sheetDefault+0.001
+}
+
+// readRowStyles converts the sheet's row-level styles (0-based keys)
+// through the standard read mapper. Rows whose style carries nothing
+// the doc models are skipped, keeping the map sparse.
+func readRowStyles(sheet *xlsx.Sheet) map[int]*CellStyle {
+	out := map[int]*CellStyle{}
+	for row, st := range sheet.RowStyles {
+		if row < 0 {
+			continue
+		}
+		if cs := styleToCellStyle(st); cs != nil {
+			out[row+1] = cs
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// defaultExcelRowHeight and defaultExcelColWidth are the conventional
+// xlsx defaults (15pt rows, 9.140625-char columns — the values Excel
+// and excelize both assume when a sheet declares none). The import-side
+// seeding uses them, alongside the sheet's own sheetFormatPr defaults,
+// to detect "this row/col carries no real customization".
 const (
 	defaultExcelRowHeight = 15.0
 	defaultExcelColWidth  = 9.140625
@@ -395,97 +352,69 @@ func excelCharWidthToPx(chars float64) int {
 	return int(chars*12 + 0.5)
 }
 
-// readMerges extracts the sheet's merged cell rectangles via
-// excelize.GetMergeCells and converts each to a MergeRangeDTO. Returns
-// nil (not error) on any individual parse failure so a malformed entry
+// readMerges converts the sheet's merged ranges (0-based anchors) to
+// MergeRangeDTOs. Degenerate entries are skipped so a malformed range
 // doesn't poison the whole sheet load.
-func readMerges(f *excelize.File, sheetName string) ([]MergeRangeDTO, error) {
-	mergeCells, err := f.GetMergeCells(sheetName)
-	if err != nil {
-		return nil, err
+func readMerges(merges []xlsx.Merge) []MergeRangeDTO {
+	if len(merges) == 0 {
+		return nil
 	}
-	if len(mergeCells) == 0 {
-		return nil, nil
-	}
-	out := make([]MergeRangeDTO, 0, len(mergeCells))
-	for _, mc := range mergeCells {
-		startCol, startRow, err := excelize.CellNameToCoordinates(mc.GetStartAxis())
-		if err != nil {
-			continue
-		}
-		endCol, endRow, err := excelize.CellNameToCoordinates(mc.GetEndAxis())
-		if err != nil {
-			continue
-		}
-		if endRow < startRow || endCol < startCol {
+	out := make([]MergeRangeDTO, 0, len(merges))
+	for _, m := range merges {
+		if m.Row < 0 || m.Col < 0 || m.RowSpan < 1 || m.ColSpan < 1 {
 			continue
 		}
 		out = append(out, MergeRangeDTO{
-			AnchorRow: startRow,
-			AnchorCol: startCol,
-			RowSpan:   endRow - startRow + 1,
-			ColSpan:   endCol - startCol + 1,
+			AnchorRow: m.Row + 1,
+			AnchorCol: m.Col + 1,
+			RowSpan:   m.RowSpan,
+			ColSpan:   m.ColSpan,
 		})
 	}
 	if len(out) == 0 {
-		return nil, nil
+		return nil
 	}
-	return out, nil
-}
-
-// readWorksheetFreeze pulls the xlsx <pane> ySplit/xSplit off the
-// sheet via excelize.GetPanes when state="frozen". Returns (0, 0) for
-// any sheet that isn't frozen — including split-pane sheets, which we
-// don't surface to the doc today (split panes are a different UX
-// affordance with no calc-side equivalent yet).
-func readWorksheetFreeze(f *excelize.File, sheetName string) (int, int) {
-	panes, err := f.GetPanes(sheetName)
-	if err != nil || !panes.Freeze {
-		return 0, 0
-	}
-	rows := panes.YSplit
-	cols := panes.XSplit
-	if rows < 0 {
-		rows = 0
-	}
-	if cols < 0 {
-		cols = 0
-	}
-	return rows, cols
+	return out
 }
 
 // readWorkbookCell extracts a single cell into the typed CellValueDTO shape.
-// Returns ok=false for empty cells (no value, no formula) so the
-// caller can skip them — keeping the on-wire JSON small and matching
-// the TS parser which skips includeEmpty=false cells.
+// Returns ok=false for cells that don't contribute — no formula and no
+// typed value (an empty-string value counts as no value) — so the
+// caller can skip them, keeping the on-wire JSON small and matching
+// the TS parser which skips includeEmpty=false cells. Style-only cells
+// are therefore invisible to the doc, same as the excelize era.
 //
-// Classification rules:
-//   - formula present → kind=formula, raw=cached scalar (best-effort)
-//   - excelize cell type Bool/Number/Date/SharedString/InlineString/...
-func readWorkbookCell(f *excelize.File, sheet, ref string) (CellValueDTO, bool) {
-	formula, _ := f.GetCellFormula(sheet, ref)
-	rawStr, _ := f.GetCellValue(sheet, ref)
-	cellType, _ := f.GetCellType(sheet, ref)
-	style := readWorkbookCellStyle(f, sheet, ref)
-	hasAny := formula != "" || rawStr != ""
-
-	if !hasAny {
+// Classification comes straight off the typed cached value; formulas
+// arrive without the leading "=" and with shared formulas already
+// expanded per member cell.
+func readWorkbookCell(cell *xlsx.Cell) (CellValueDTO, bool) {
+	if cell.Formula == "" && !cellHasValue(cell.Value) {
 		return CellValueDTO{}, false
 	}
+	// Cells on the DEFAULT xf (StyleID 0) are untracked, matching the
+	// excelize-era reader. doctaculous resolves xf 0 like any other, so
+	// without this guard every unstyled cell would seed the workbook's
+	// default font (e.g. Calibri 11) into the Y.Doc as a per-cell style
+	// — bloating the doc and stamping explicit styles back on every
+	// save.
+	var style *CellStyle
+	if cell.StyleID != 0 {
+		style = styleToCellStyle(cell.Style)
+	}
 
-	if formula != "" {
-		raw := classifyScalar(rawStr, cellType)
-		display := formatDisplay("formula", raw, formula)
+	if cell.Formula != "" {
+		raw := classifyScalar(cell.Value)
+		display := formatDisplay("formula", raw, cell.Formula)
 		return CellValueDTO{
 			Kind:    "formula",
 			Raw:     raw,
 			Display: display,
-			Formula: formula,
+			Formula: cell.Formula,
 			Style:   style,
 		}, true
 	}
 
-	kind, raw := classifyValue(rawStr, cellType)
+	kind, raw := classifyValue(cell.Value)
 	display := formatDisplay(kind, raw, "")
 	return CellValueDTO{
 		Kind:    kind,
@@ -495,60 +424,60 @@ func readWorkbookCell(f *excelize.File, sheet, ref string) (CellValueDTO, bool) 
 	}, true
 }
 
-// classifyValue maps an excelize (rawString, cellType) pair to our
-// (kind, raw) shape. excelize returns the cell value as a string in
-// every case — the cell type tells us what semantic interpretation to
-// apply.
-func classifyValue(rawStr string, cellType excelize.CellType) (string, any) {
-	switch cellType {
-	case excelize.CellTypeBool:
-		return "boolean", rawStr == "1" || strings.EqualFold(rawStr, "true")
-	case excelize.CellTypeNumber, excelize.CellTypeUnset:
-		// CellTypeUnset is excelize's default for numeric cells with
-		// no explicit type tag. Fall through to numeric coercion;
-		// non-numeric strings land in the string branch below.
-		if n, err := strconv.ParseFloat(rawStr, 64); err == nil {
-			return "number", n
-		}
-		return "string", rawStr
-	case excelize.CellTypeDate:
-		// excelize formats date cells as their display string; carry
-		// that through as a string raw to match the ISO-string
-		// convention the TS side uses for dates in YDoc.
-		if t, err := time.Parse("2006-01-02", rawStr); err == nil {
-			return "date", t.Format("2006-01-02")
-		}
-		if t, err := time.Parse(time.RFC3339, rawStr); err == nil {
-			if t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0 {
-				return "date", t.Format("2006-01-02")
-			}
-			return "date", t.Format(time.RFC3339)
-		}
-		return "string", rawStr
-	default:
-		return "string", rawStr
+// cellHasValue reports whether a typed value contributes to the doc.
+// KindEmpty is a padding cell; an empty string carries no information
+// the doc models.
+func cellHasValue(v xlsx.Value) bool {
+	if v.Kind == xlsx.KindEmpty {
+		return false
 	}
+	return !(v.Kind == xlsx.KindString && v.S == "")
+}
+
+// classifyValue maps a typed cached value to our (kind, raw) shape.
+// Cached error values ("#DIV/0!") surface as strings — the doc has no
+// error kind and the display text is what the user sees.
+func classifyValue(v xlsx.Value) (string, any) {
+	switch v.Kind {
+	case xlsx.KindNumber:
+		return "number", v.F
+	case xlsx.KindBool:
+		return "boolean", v.B
+	case xlsx.KindDate:
+		return "date", dateRawString(v.T)
+	default: // KindString, KindError
+		return "string", v.S
+	}
+}
+
+// dateRawString renders a date value in the ISO-string convention the
+// TS side stores in the Y.Doc: date-only "2006-01-02" when the value
+// carries no time-of-day, full RFC3339 otherwise.
+func dateRawString(t time.Time) string {
+	if t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0 {
+		return t.Format("2006-01-02")
+	}
+	return t.Format(time.RFC3339)
 }
 
 // classifyScalar is the formula-cached-value variant — we know the
 // cell IS a formula (handled separately) and only need to coerce the
-// cached scalar into raw form.
-func classifyScalar(rawStr string, cellType excelize.CellType) any {
-	switch cellType {
-	case excelize.CellTypeBool:
-		return rawStr == "1" || strings.EqualFold(rawStr, "true")
-	case excelize.CellTypeNumber, excelize.CellTypeUnset:
-		if n, err := strconv.ParseFloat(rawStr, 64); err == nil {
-			return n
-		}
-		return rawStr
-	case excelize.CellTypeDate:
-		return rawStr
-	default:
-		if rawStr == "" {
+// cached scalar into raw form. An empty cache reads as nil.
+func classifyScalar(v xlsx.Value) any {
+	switch v.Kind {
+	case xlsx.KindNumber:
+		return v.F
+	case xlsx.KindBool:
+		return v.B
+	case xlsx.KindDate:
+		return dateRawString(v.T)
+	case xlsx.KindEmpty:
+		return nil
+	default: // KindString, KindError
+		if v.S == "" {
 			return nil
 		}
-		return rawStr
+		return v.S
 	}
 }
 
@@ -612,28 +541,6 @@ func scalarToString(v any) string {
 	default:
 		return fmt.Sprintf("%v", x)
 	}
-}
-
-// readWorkbookCellStyle pulls a cell's excelize style and converts it
-// to *CellStyle via extractStyle (the read-side inverse of
-// overlayStyle). Returns nil when the cell has no registered style or
-// the style is structurally empty so callers can skip the doc-side
-// style key entirely.
-//
-// Adding support for a new attribute happens in
-// style_attribute_registry.go — extractStyle picks it up automatically
-// from there. This function only changes when the registration shape
-// itself changes.
-func readWorkbookCellStyle(f *excelize.File, sheet, ref string) *CellStyle {
-	id, err := f.GetCellStyle(sheet, ref)
-	if err != nil || id == 0 {
-		return nil
-	}
-	style, err := f.GetStyle(id)
-	if err != nil || style == nil {
-		return nil
-	}
-	return extractStyle(style)
 }
 
 // BootstrapYDocFromWorkbook seeds an empty server-side Y.Doc from a
@@ -888,7 +795,7 @@ func normalizeCellRawForY(v any) any {
 // single-element ArrayAny holding a float) and the bare int Set writes
 // for whole numbers. It does NOT coerce numeric-looking strings — a
 // string raw stays a string here so legacy-string handling continues to
-// route through the existing kind-aware fallback in cellValueForExcelize.
+// route through the existing kind-aware fallback in writeSnapshotCellValue.
 func unwrapYRawNumber(raw any) (float64, bool) {
 	switch v := raw.(type) {
 	case float64:

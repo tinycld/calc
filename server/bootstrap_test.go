@@ -278,8 +278,18 @@ func TestBootstrapToSerializerRoundTripPreservesCustomizations(t *testing.T) {
 		}
 	}
 	if props, err := got.GetSheetProps(sheetName); err == nil {
-		if props.TabColorRGB == nil || *props.TabColorRGB != "FF0000" {
-			t.Errorf("tab color: want FF0000, got %v", props.TabColorRGB)
+		// The doctaculous writer stores the spec-shaped ARGB ("FFFF0000",
+		// alpha-prefixed, as Excel itself writes); excelize used to store
+		// the bare RGB. Accept either — the leading alpha strips off.
+		tab := ""
+		if props.TabColorRGB != nil {
+			tab = *props.TabColorRGB
+		}
+		if len(tab) == 8 {
+			tab = tab[2:]
+		}
+		if tab != "FF0000" {
+			t.Errorf("tab color: want FF0000, got %q", tab)
 		}
 	}
 	if visible, _ := got.GetSheetVisible("Other"); visible {

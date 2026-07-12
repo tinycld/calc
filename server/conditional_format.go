@@ -1,408 +1,365 @@
 package calc
 
 import (
-	"encoding/json"
-	"sort"
+	"fmt"
+	"strconv"
 	"strings"
 
-	"github.com/xuri/excelize/v2"
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 )
 
-// Conditional formatting round-trip between excelize and the doc-side
-// rule model.
+// Conditional formatting between the xlsx file and the doc-side rule
+// model.
 //
-// excelize's vocabulary (Type field) overlaps with ours but doesn't
-// match 1:1:
-//   - "cell" + Criteria operator => our number* family
-//   - "text" + Criteria          => our text* family
-//   - "time_period"              => our date* family (subset)
-//   - "blanks" / "no_blanks"     => our isEmpty / isNotEmpty
-//   - "expression"               => our customFormula
-//   - "duplicate" / "unique" / "top" / "bottom" / "average" /
-//     "errors" / "no_errors" / "2_color_scale" / "3_color_scale" /
-//     "data_bar" / "icon_set"    => round-trip as 'xlsxOpaque'
+// READ: the raw OOXML rule vocabulary maps onto ours:
+//   - "cellIs" + operator                    => our number* family
+//   - "containsText" / "notContainsText" /
+//     "beginsWith" / "endsWith"              => our text* family
+//   - "containsBlanks" / "notContainsBlanks" => isEmpty / isNotEmpty
+//   - "expression"                           => customFormula
+//   - everything else (colorScale, dataBar, iconSet, top10,
+//     duplicateValues, timePeriod, ...)      => 'xlsxOpaque' carrying
+//     the verbatim <cfRule> XML for lossless passthrough
 //
-// The dxf style (Format index) reads via GetConditionalStyle and
-// writes via NewConditionalStyle. We restrict the round-trip to the
-// font + fill subset that v1 of the authoring UI offers; anything
-// else excelize provides comes back through extractStyle and rides
-// the same shape.
+// WRITE: one wholesale SetConditionalFormats per sheet — the doc's
+// rules ARE the sheet's rules, in doc order, priorities renumbered
+// 1..N by the editor. Typed rules synthesize the OOXML attributes PLUS
+// the <formula> operands Excel requires (excelize used to build these;
+// doctaculous does not). Opaque rules in the rawXml form re-emit
+// verbatim via CFRule{Raw}; legacy excelize-JSON blobs persisted in
+// old Y.Docs convert through legacy_cf.go.
 
-// readConditionalFormats pulls every CF rule excelize sees on a sheet
-// and converts to ConditionalFormatRule. Map iteration order is
-// non-deterministic; we sort by range string so the bootstrap output
-// is stable across runs (lets tests assert exact equality).
-func readConditionalFormats(f *excelize.File, sheetName string) ([]ConditionalFormatRule, error) {
-	formats, err := f.GetConditionalFormats(sheetName)
-	if err != nil {
-		return nil, err
+// readConditionalFormats maps a doctaculous sheet's conditional-
+// formatting blocks onto ConditionalFormatRule. Rules surface in FILE
+// order (block order, then rule order within each block). That order
+// is deterministic per file, so the bootstrap output is stable across
+// runs without the excelize-era sort-by-range — and it preserves the
+// author's priority stacking, which the sort discarded.
+//
+// The xlsx side is "range-set owns rules" while the doc side is "rule
+// owns ranges": each rule becomes its own ConditionalFormatRule
+// carrying the whole block's ranges. We deliberately do NOT merge
+// rules with identical conditions across blocks — the inverse mapping
+// would lose information.
+func readConditionalFormats(sheet *xlsx.Sheet) []ConditionalFormatRule {
+	if len(sheet.CondFmts) == 0 {
+		return nil
 	}
-	if len(formats) == 0 {
-		return nil, nil
-	}
-	rangeRefs := make([]string, 0, len(formats))
-	for ref := range formats {
-		rangeRefs = append(rangeRefs, ref)
-	}
-	sort.Strings(rangeRefs)
-
-	out := make([]ConditionalFormatRule, 0, len(formats))
-	for _, rangeRef := range rangeRefs {
-		opts := formats[rangeRef]
-		// One xlsx range may carry multiple rules (the priority
-		// stack). Each rule gets its own ConditionalFormatRule entry.
-		// We deliberately do NOT merge rules with identical conditions
-		// across ranges — the doc-side model is "rule owns ranges"
-		// while xlsx is "range owns rules"; the inverse mapping
-		// would lose information.
-		for i := range opts {
-			rule := excelizeOptionsToRule(rangeRef, &opts[i])
-			if i == 0 {
-				rule.ID = "xlsx:" + rangeRef
-			} else {
-				rule.ID = "xlsx:" + rangeRef + ":" + sortableIndex(i)
+	var out []ConditionalFormatRule
+	for _, block := range sheet.CondFmts {
+		baseID := "xlsx:" + strings.Join(block.Ranges, "+")
+		for i := range block.Rules {
+			r := &block.Rules[i]
+			rule := ConditionalFormatRule{
+				ID:        baseID,
+				Ranges:    append([]string(nil), block.Ranges...),
+				Condition: cfRuleCondition(r),
+				// The dxf style attaches for every rule — opaque
+				// included — so the client can preview the formatting
+				// even for rule kinds it doesn't model.
+				Style: styleToCellStyle(r.Style),
 			}
-			rule.Style = readConditionalDxfStyle(f, opts[i].Format)
+			if i > 0 {
+				rule.ID = baseID + ":" + strconv.Itoa(i)
+			}
 			out = append(out, rule)
 		}
 	}
-	return out, nil
+	return out
 }
 
-func sortableIndex(i int) string {
-	const digits = "0123456789"
-	if i < 10 {
-		return string(digits[i])
+// cfRuleCondition maps one OOXML <cfRule> onto the doc-side condition
+// vocabulary. Anything outside the modelled subset rides through as
+// xlsxOpaque carrying the verbatim rule XML.
+func cfRuleCondition(r *xlsx.CFRule) ConditionalCondition {
+	switch r.Type {
+	case "cellIs":
+		return cellIsCondition(r)
+	case "containsText":
+		return textCondition("textContains", r)
+	case "notContainsText":
+		return textCondition("textDoesNotContain", r)
+	case "beginsWith":
+		return textCondition("textStartsWith", r)
+	case "endsWith":
+		return textCondition("textEndsWith", r)
+	case "containsBlanks":
+		return ConditionalCondition{Type: "isEmpty"}
+	case "notContainsBlanks":
+		return ConditionalCondition{Type: "isNotEmpty"}
+	case "expression":
+		if len(r.Formulas) == 0 {
+			return opaqueCondition(r)
+		}
+		formula := strings.TrimPrefix(r.Formulas[0], "=")
+		return ConditionalCondition{Type: "customFormula", Formula: &formula}
 	}
-	// Fallback for the (unlikely) case of >10 stacked rules.
-	return string(digits[i%10]) + sortableIndex(i/10)
+	return opaqueCondition(r)
 }
 
-func excelizeOptionsToRule(rangeRef string, opt *excelize.ConditionalFormatOptions) ConditionalFormatRule {
-	rule := ConditionalFormatRule{
-		Ranges: []string{rangeRef},
-	}
-	switch opt.Type {
-	case "cell":
-		rule.Condition = mapCellCondition(opt)
-	case "text":
-		rule.Condition = mapTextCondition(opt)
-	case "time_period":
-		rule.Condition = mapTimePeriodCondition(opt)
-	case "blanks":
-		rule.Condition = ConditionalCondition{Type: "isEmpty"}
-	case "no_blanks":
-		rule.Condition = ConditionalCondition{Type: "isNotEmpty"}
-	case "expression", "formula":
-		formula := opt.Criteria
-		formula = strings.TrimPrefix(formula, "=")
-		rule.Condition = ConditionalCondition{Type: "customFormula", Formula: &formula}
+// cellIsCondition maps a cellIs rule's operator + formula operands to
+// the number* family. A rule missing its operands (structurally
+// invalid, but files exist) falls back to opaque passthrough rather
+// than fabricating an empty comparison.
+func cellIsCondition(r *xlsx.CFRule) ConditionalCondition {
+	var typ string
+	operands := 1
+	switch r.Operator {
+	case "equal":
+		typ = "numberEquals"
+	case "notEqual":
+		typ = "numberNotEquals"
+	case "greaterThan":
+		typ = "numberGreater"
+	case "greaterThanOrEqual":
+		typ = "numberGreaterOrEqual"
+	case "lessThan":
+		typ = "numberLess"
+	case "lessThanOrEqual":
+		typ = "numberLessOrEqual"
+	case "between":
+		typ, operands = "numberBetween", 2
+	case "notBetween":
+		typ, operands = "numberNotBetween", 2
 	default:
-		rule.Condition = mapOpaqueCondition(opt)
+		return opaqueCondition(r)
 	}
-	return rule
+	if len(r.Formulas) < operands {
+		return opaqueCondition(r)
+	}
+	cond := ConditionalCondition{Type: typ, Value1: ptr(r.Formulas[0])}
+	if operands == 2 {
+		cond.Value2 = ptr(r.Formulas[1])
+	}
+	return cond
 }
 
-func mapCellCondition(opt *excelize.ConditionalFormatOptions) ConditionalCondition {
-	v1 := opt.Value
-	switch normalizeCriteria(opt.Criteria) {
-	case "==":
-		return ConditionalCondition{Type: "numberEquals", Value1: &v1}
-	case "!=":
-		return ConditionalCondition{Type: "numberNotEquals", Value1: &v1}
-	case ">":
-		return ConditionalCondition{Type: "numberGreater", Value1: &v1}
-	case ">=":
-		return ConditionalCondition{Type: "numberGreaterOrEqual", Value1: &v1}
-	case "<":
-		return ConditionalCondition{Type: "numberLess", Value1: &v1}
-	case "<=":
-		return ConditionalCondition{Type: "numberLessOrEqual", Value1: &v1}
-	case "between":
-		v2 := opt.MaxValue
-		min := opt.MinValue
-		return ConditionalCondition{Type: "numberBetween", Value1: &min, Value2: &v2}
-	case "not between":
-		v2 := opt.MaxValue
-		min := opt.MinValue
-		return ConditionalCondition{Type: "numberNotBetween", Value1: &min, Value2: &v2}
-	}
-	return mapOpaqueCondition(opt)
+func textCondition(typ string, r *xlsx.CFRule) ConditionalCondition {
+	return ConditionalCondition{Type: typ, Value1: ptr(r.Text)}
 }
 
-func mapTextCondition(opt *excelize.ConditionalFormatOptions) ConditionalCondition {
-	v1 := opt.Value
-	switch strings.ToLower(strings.TrimSpace(opt.Criteria)) {
-	case "containing", "contains":
-		return ConditionalCondition{Type: "textContains", Value1: &v1}
-	case "not containing":
-		return ConditionalCondition{Type: "textDoesNotContain", Value1: &v1}
-	case "begins with", "starts with":
-		return ConditionalCondition{Type: "textStartsWith", Value1: &v1}
-	case "ends with":
-		return ConditionalCondition{Type: "textEndsWith", Value1: &v1}
-	case "equal to", "==":
-		return ConditionalCondition{Type: "textEquals", Value1: &v1}
+// opaqueCondition wraps the verbatim <cfRule> XML under the "rawXml"
+// key. This replaces the excelize-era opaque representation (a JSON
+// round-trip of excelize.ConditionalFormatOptions with PascalCase
+// keys); the TS side treats opaqueXlsx as opaque either way. The save
+// path re-emits rawXml via CFRule{Raw}; legacy PascalCase blobs
+// persisted in old Y.Docs are converted by legacy_cf.go.
+func opaqueCondition(r *xlsx.CFRule) ConditionalCondition {
+	return ConditionalCondition{
+		Type:       "xlsxOpaque",
+		OpaqueXlsx: map[string]interface{}{"rawXml": string(r.Raw)},
 	}
-	return mapOpaqueCondition(opt)
 }
 
-// mapTimePeriodCondition handles excelize's "time_period" type. Its
-// criteria are relative ("yesterday", "today", "last 7 days") which
-// the v1 authoring UI doesn't model; the only one we map to a
-// native condition is exact-date matches, which excelize doesn't
-// surface as time_period (those come through the "cell" type with a
-// date value). So time_period always round-trips as opaque.
-func mapTimePeriodCondition(opt *excelize.ConditionalFormatOptions) ConditionalCondition {
-	return mapOpaqueCondition(opt)
-}
-
-func mapOpaqueCondition(opt *excelize.ConditionalFormatOptions) ConditionalCondition {
-	// Round-trip the whole excelize options blob as JSON-serializable
-	// map so the serializer can re-emit it verbatim on save. JSON
-	// here is just a "deep clone via the language's reflect path";
-	// the doc stores it as a nested Y.Map.
-	raw, err := json.Marshal(opt)
-	if err != nil {
-		return ConditionalCondition{Type: "xlsxOpaque"}
-	}
-	var blob map[string]interface{}
-	if err := json.Unmarshal(raw, &blob); err != nil {
-		return ConditionalCondition{Type: "xlsxOpaque"}
-	}
-	return ConditionalCondition{Type: "xlsxOpaque", OpaqueXlsx: blob}
-}
-
-// normalizeCriteria collapses excelize's two accepted criteria
-// dialects (textual "greater than" vs symbolic ">") onto a single
-// symbolic key.
-func normalizeCriteria(c string) string {
-	switch strings.ToLower(strings.TrimSpace(c)) {
-	case "equal to", "==":
-		return "=="
-	case "not equal to", "!=":
-		return "!="
-	case "greater than", ">":
-		return ">"
-	case "greater than or equal to", ">=":
-		return ">="
-	case "less than", "<":
-		return "<"
-	case "less than or equal to", "<=":
-		return "<="
-	case "between":
-		return "between"
-	case "not between":
-		return "not between"
-	}
-	return strings.ToLower(strings.TrimSpace(c))
-}
-
-// readConditionalDxfStyle resolves the differential format index a CF
-// rule points at into a *CellStyle. excelize 2.10.1's
-// GetConditionalStyle returns the registered dxf style; we route it
-// through extractStyle (the same code path cell styles use) so font
-// + fill + alignment + borders + numFmt all round-trip.
+// writeConditionalFormats replaces a sheet's conditional formatting
+// wholesale with the doc-side rules. Called from persist.go's
+// serializeSnapshotToXLSX after the per-cell value/style writes and
+// before pivots.
 //
-// Returns nil when the rule has no format (some rules just stop
-// propagation) or the lookup fails. The serializer treats nil as
-// "no style overlay".
-func readConditionalDxfStyle(f *excelize.File, idx *int) *CellStyle {
-	if idx == nil {
-		return nil
-	}
-	style, err := f.GetConditionalStyle(*idx)
-	if err != nil || style == nil {
-		return nil
-	}
-	return extractStyle(style)
-}
-
-// writeConditionalFormats serializes a sheet's rules back into xlsx.
-// Called from persist.go's serializeSnapshotToXLSX after the per-
-// sheet cell writes and before pivots.
-//
-// Two conventions:
-//   - one excelize SetConditionalFormat call per range. Multiple
-//     ranges on a doc-side rule produce multiple calls with the same
-//     options (excelize SetConditionalFormat accepts a comma-
-//     separated rangeRef too, but per-call is clearer for testing).
-//   - opaque-passthrough rules re-emit their stored OpaqueXlsx blob
-//     via json round-trip back into excelize options.
-func writeConditionalFormats(f *excelize.File, sheetName string, rules []ConditionalFormatRule) error {
-	for _, rule := range rules {
-		opts, err := ruleToExcelizeOptions(f, &rule)
+// Each doc rule becomes ONE <conditionalFormatting> block carrying all
+// of the rule's ranges (the doc side is "rule owns ranges"), in doc
+// order; the editor renumbers priorities 1..N. Rules the writer cannot
+// express (unknown native types authored by a newer client) are
+// skipped; when nothing survives, the sheet's on-disk rules are left
+// untouched (the caller already skips sheets whose docs carry no
+// rules, so legacy docs bootstrapped before CF seeding keep their
+// file-side rules).
+func writeConditionalFormats(sh *xlsx.SheetEdit, rules []ConditionalFormatRule) error {
+	blocks := make([]xlsx.ConditionalFormatting, 0, len(rules))
+	for i := range rules {
+		rule := &rules[i]
+		ranges := make([]string, 0, len(rule.Ranges))
+		for _, r := range rule.Ranges {
+			if r != "" {
+				ranges = append(ranges, r)
+			}
+		}
+		if len(ranges) == 0 {
+			continue
+		}
+		cfRule, ok, err := ruleToCFRule(rule, ranges)
 		if err != nil {
 			return err
 		}
-		if len(opts) == 0 {
+		if !ok {
 			continue
 		}
-		for _, rangeRef := range rule.Ranges {
-			if rangeRef == "" {
-				continue
-			}
-			if err := f.SetConditionalFormat(sheetName, rangeRef, opts); err != nil {
-				return err
-			}
-		}
+		blocks = append(blocks, xlsx.ConditionalFormatting{
+			Ranges: ranges,
+			Rules:  []xlsx.CFRule{cfRule},
+		})
 	}
-	return nil
+	if len(blocks) == 0 {
+		return nil
+	}
+	return sh.SetConditionalFormats(blocks)
 }
 
-func ruleToExcelizeOptions(f *excelize.File, rule *ConditionalFormatRule) ([]excelize.ConditionalFormatOptions, error) {
+// ruleToCFRule maps one doc-side rule onto a doctaculous CFRule.
+// Returns ok=false for rules outside the writable vocabulary (skipped
+// rather than corrupting the file).
+//
+// Typed rules carry the OOXML type/operator/text attributes PLUS the
+// <formula> operands Excel requires to evaluate them — the SEARCH /
+// LEFT / RIGHT / LEN patterns excelize synthesized are reproduced here
+// verbatim, anchored at the relative top-left of the rule's first
+// range (Excel evaluates the formula per cell by relative shift).
+func ruleToCFRule(rule *ConditionalFormatRule, ranges []string) (xlsx.CFRule, bool, error) {
 	if rule.Condition.Type == "xlsxOpaque" {
-		return restoreOpaqueOptions(f, rule)
+		return opaqueToCFRule(rule, ranges)
 	}
-	opt := excelize.ConditionalFormatOptions{}
+
+	anchor := ruleAnchor(ranges)
+	v1 := derefString(rule.Condition.Value1)
+	out := xlsx.CFRule{}
 	switch rule.Condition.Type {
 	case "isEmpty":
-		opt.Type = "blanks"
+		out.Type = "containsBlanks"
+		out.Formulas = []string{fmt.Sprintf("LEN(TRIM(%s))=0", anchor)}
 	case "isNotEmpty":
-		opt.Type = "no_blanks"
+		out.Type = "notContainsBlanks"
+		out.Formulas = []string{fmt.Sprintf("LEN(TRIM(%s))>0", anchor)}
 	case "textContains":
-		opt.Type = "text"
-		opt.Criteria = "containing"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "containsText"
+		out.Operator = "containsText"
+		out.Text = v1
+		out.Formulas = []string{fmt.Sprintf(`NOT(ISERROR(SEARCH("%s",%s)))`, cfQuote(v1), anchor)}
 	case "textDoesNotContain":
-		opt.Type = "text"
-		opt.Criteria = "not containing"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "notContainsText"
+		out.Operator = "notContains"
+		out.Text = v1
+		out.Formulas = []string{fmt.Sprintf(`ISERROR(SEARCH("%s",%s))`, cfQuote(v1), anchor)}
 	case "textStartsWith":
-		opt.Type = "text"
-		opt.Criteria = "begins with"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "beginsWith"
+		out.Operator = "beginsWith"
+		out.Text = v1
+		out.Formulas = []string{fmt.Sprintf(`LEFT(%[2]s,LEN("%[1]s"))="%[1]s"`, cfQuote(v1), anchor)}
 	case "textEndsWith":
-		opt.Type = "text"
-		opt.Criteria = "ends with"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "endsWith"
+		out.Operator = "endsWith"
+		out.Text = v1
+		out.Formulas = []string{fmt.Sprintf(`RIGHT(%[2]s,LEN("%[1]s"))="%[1]s"`, cfQuote(v1), anchor)}
 	case "textEquals":
-		opt.Type = "text"
-		opt.Criteria = "equal to"
-		opt.Value = derefString(rule.Condition.Value1)
-	case "dateIs", "dateBefore", "dateAfter":
+		// A quoted string literal against cellIs/equal — the same shape
+		// excelize emitted for "text" + "equal to".
+		out.Type = "cellIs"
+		out.Operator = "equal"
+		out.Formulas = []string{`"` + cfQuote(v1) + `"`}
+	case "dateIs":
 		// Date conditions round-trip as cell-value comparisons against
-		// the operand interpreted as a date serial. The Excel side
-		// will display it as a date because the cell's number format
-		// already does; our condition value is the literal serial /
-		// ISO operand text the doc carries.
-		opt.Type = "cell"
-		opt.Value = derefString(rule.Condition.Value1)
-		switch rule.Condition.Type {
-		case "dateIs":
-			opt.Criteria = "equal to"
-		case "dateBefore":
-			opt.Criteria = "less than"
-		case "dateAfter":
-			opt.Criteria = "greater than"
-		}
+		// the operand interpreted as a date serial; the cell's number
+		// format supplies the date rendering.
+		out.Type = "cellIs"
+		out.Operator = "equal"
+		out.Formulas = []string{v1}
+	case "dateBefore":
+		out.Type = "cellIs"
+		out.Operator = "lessThan"
+		out.Formulas = []string{v1}
+	case "dateAfter":
+		out.Type = "cellIs"
+		out.Operator = "greaterThan"
+		out.Formulas = []string{v1}
 	case "numberEquals":
-		opt.Type = "cell"
-		opt.Criteria = "equal to"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "cellIs"
+		out.Operator = "equal"
+		out.Formulas = []string{v1}
 	case "numberNotEquals":
-		opt.Type = "cell"
-		opt.Criteria = "not equal to"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "cellIs"
+		out.Operator = "notEqual"
+		out.Formulas = []string{v1}
 	case "numberGreater":
-		opt.Type = "cell"
-		opt.Criteria = "greater than"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "cellIs"
+		out.Operator = "greaterThan"
+		out.Formulas = []string{v1}
 	case "numberGreaterOrEqual":
-		opt.Type = "cell"
-		opt.Criteria = "greater than or equal to"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "cellIs"
+		out.Operator = "greaterThanOrEqual"
+		out.Formulas = []string{v1}
 	case "numberLess":
-		opt.Type = "cell"
-		opt.Criteria = "less than"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "cellIs"
+		out.Operator = "lessThan"
+		out.Formulas = []string{v1}
 	case "numberLessOrEqual":
-		opt.Type = "cell"
-		opt.Criteria = "less than or equal to"
-		opt.Value = derefString(rule.Condition.Value1)
+		out.Type = "cellIs"
+		out.Operator = "lessThanOrEqual"
+		out.Formulas = []string{v1}
 	case "numberBetween":
-		opt.Type = "cell"
-		opt.Criteria = "between"
-		opt.MinValue = derefString(rule.Condition.Value1)
-		opt.MaxValue = derefString(rule.Condition.Value2)
+		out.Type = "cellIs"
+		out.Operator = "between"
+		out.Formulas = []string{v1, derefString(rule.Condition.Value2)}
 	case "numberNotBetween":
-		opt.Type = "cell"
-		opt.Criteria = "not between"
-		opt.MinValue = derefString(rule.Condition.Value1)
-		opt.MaxValue = derefString(rule.Condition.Value2)
+		out.Type = "cellIs"
+		out.Operator = "notBetween"
+		out.Formulas = []string{v1, derefString(rule.Condition.Value2)}
 	case "customFormula":
-		opt.Type = "formula"
-		formula := derefString(rule.Condition.Formula)
-		if formula != "" && !strings.HasPrefix(formula, "=") {
-			formula = "=" + formula
+		formula := strings.TrimPrefix(derefString(rule.Condition.Formula), "=")
+		if formula == "" {
+			return out, false, nil
 		}
-		opt.Criteria = formula
+		out.Type = "expression"
+		out.Formulas = []string{formula}
 	default:
 		// Unknown native type — skip rather than corrupting the file.
-		return nil, nil
+		return out, false, nil
 	}
 	if rule.Style != nil {
-		styleIdx, err := newConditionalDxfStyle(f, rule.Style)
-		if err != nil {
-			return nil, err
-		}
-		opt.Format = &styleIdx
+		st := cellStyleToDxfStyle(rule.Style)
+		out.Style = &st
 	}
-	return []excelize.ConditionalFormatOptions{opt}, nil
+	return out, true, nil
 }
 
-// restoreOpaqueOptions re-marshals the stored opaqueXlsx blob back
-// into an excelize.ConditionalFormatOptions. The blob carries every
-// field excelize exposed at import time — Type, Criteria, Min/Max
-// values, color-scale stops, icon-set names, etc. JSON round-trip is
-// the simplest deep-copy mechanism.
-func restoreOpaqueOptions(f *excelize.File, rule *ConditionalFormatRule) ([]excelize.ConditionalFormatOptions, error) {
-	if rule.Condition.OpaqueXlsx == nil {
-		return nil, nil
-	}
-	raw, err := json.Marshal(rule.Condition.OpaqueXlsx)
-	if err != nil {
-		return nil, err
-	}
-	var opt excelize.ConditionalFormatOptions
-	if err := json.Unmarshal(raw, &opt); err != nil {
-		return nil, err
-	}
-	// The opaque blob's Format pointer references a dxf id from the
-	// *source* workbook. We have no guarantee that id still resolves
-	// in the destination workbook (it would when we're writing back
-	// to the same xlsx, but on a fresh save the dxfs table is
-	// rebuilt). If we kept a doc-side style, re-register it; else
-	// drop the format reference so excelize doesn't dangle.
-	if rule.Style != nil {
-		idx, err := newConditionalDxfStyle(f, rule.Style)
-		if err != nil {
-			return nil, err
-		}
-		opt.Format = &idx
-	}
-	return []excelize.ConditionalFormatOptions{opt}, nil
-}
-
-// newConditionalDxfStyle materializes a doc-side CellStyle as a new
-// dxf entry in the workbook and returns its index. We rebuild on
-// every save rather than try to dedupe — excelize will compact
-// equivalent dxfs internally and the dxf table is cheap.
+// opaqueToCFRule re-emits an opaque-passthrough rule.
 //
-// dxf-specific fill quirk: excelize validates `Fill.Color` against
-// `Fill.Pattern` differently for conditional styles than for cell
-// styles. Pattern="pattern" requires exactly one color entry. The
-// regular overlayStyle path produces two entries [fg, bg]; we trim
-// to a single entry here. The fg slot wins (which matches what a
-// user picks via the "fill color" swatch — the same slot dxf solid
-// fills land on in Excel).
-func newConditionalDxfStyle(f *excelize.File, style *CellStyle) (int, error) {
-	base := &excelize.Style{}
-	overlayStyle(base, style)
-	if base.Fill.Type != "" && len(base.Fill.Color) > 1 {
-		base.Fill.Color = base.Fill.Color[:1]
+// The rawXml form (rules read since the doctaculous migration) hands
+// the verbatim <cfRule> element back via CFRule{Raw}. Any dxfId inside
+// stays valid INDUCTIVELY: the save always applies onto the same file
+// the rule was read from, and the doctaculous editor only ever appends
+// to <dxfs> (dedupe-or-append; never compacts), so an index that
+// resolved at read time still resolves at save time. The doc-side
+// Style attached at read time is for client previews only and is
+// deliberately NOT passed here — passing it would mint a new (lossy)
+// dxf and override the original.
+//
+// Legacy PascalCase excelize-JSON blobs (persisted before the
+// migration; detected by the absence of the "rawXml" key) convert
+// through legacy_cf.go into equivalent rule XML; those DO carry the
+// doc-side Style so the editor can mint a dxf (the blob's stored
+// Format index pointed into a dxfs table excelize used to rebuild —
+// it is meaningless now).
+func opaqueToCFRule(rule *ConditionalFormatRule, ranges []string) (xlsx.CFRule, bool, error) {
+	blob := rule.Condition.OpaqueXlsx
+	if blob == nil {
+		return xlsx.CFRule{}, false, nil
 	}
-	return f.NewConditionalStyle(base)
+	if rawAny, ok := blob["rawXml"]; ok {
+		raw, _ := rawAny.(string)
+		if raw == "" {
+			return xlsx.CFRule{}, false, nil
+		}
+		return xlsx.CFRule{Raw: []byte(raw)}, true, nil
+	}
+	return legacyOpaqueToCFRule(blob, rule.Style, ruleAnchor(ranges))
+}
+
+// ruleAnchor returns the relative top-left cell of the rule's first
+// range — the reference the synthesized <formula> operands anchor on.
+// Falls back to A1 when the range is malformed (matching where Excel
+// anchors a rule with no better information).
+func ruleAnchor(ranges []string) string {
+	if len(ranges) > 0 {
+		if r, err := xlsx.ParseRange(ranges[0]); err == nil {
+			return xlsx.CellRef(r.StartRow, r.StartCol)
+		}
+	}
+	return "A1"
+}
+
+// cfQuote doubles embedded double-quotes for use inside a quoted
+// formula string literal.
+func cfQuote(s string) string {
+	return strings.ReplaceAll(s, `"`, `""`)
 }
 
 func derefString(p *string) string {

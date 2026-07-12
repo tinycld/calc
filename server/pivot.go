@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/xuri/excelize/v2"
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 )
 
 // PivotDefinitionDTO mirrors the TS PivotDefinition (see
@@ -40,12 +40,12 @@ type PivotFieldDTO struct {
 //
 // NumFmt is a free-form Excel format pattern (e.g. "#,##0.00") used by
 // the TS-side render engine. It deliberately does NOT round-trip
-// through xlsx: excelize's PivotTableField.NumFmt is an int (built-in
-// numFmt ID) and only accepts that catalog, so a custom string
-// pattern has nowhere to land. We carry the field on the DTO so the
-// preview endpoint and Y.Doc bootstrap can ferry it from xlsx import
-// (always empty today) to engine render, but the export path drops
-// it. See docs/pivot.md for the divergence note.
+// through xlsx: the dataField numFmt slot is a built-in numFmt ID and
+// only accepts that catalog, so a custom string pattern has nowhere
+// to land. We carry the field on the DTO so the preview endpoint and
+// Y.Doc bootstrap can ferry it from xlsx import (always empty today)
+// to engine render, but the export path drops it. See docs/pivot.md
+// for the divergence note.
 type PivotValueFieldDTO struct {
 	SourceColumn string `json:"sourceColumn"`
 	DisplayName  string `json:"displayName,omitempty"`
@@ -53,85 +53,116 @@ type PivotValueFieldDTO struct {
 	NumFmt       string `json:"numFmt,omitempty"`
 }
 
-// readPivotsForSheet pulls excelize's PivotTableOptions and maps them
-// onto PivotDefinitionDTO. excelize returns one PivotTableOptions per
-// pivot whose target lives on the given sheet (the "anchor" — the
-// sheet the user passed to AddPivotTable's PivotTableRange).
+// readPivots pulls every pivot definition out of the workbook bytes
+// and maps them onto PivotDefinitionDTOs. The doctaculous read
+// Workbook doesn't expose pivots, so we open an editor handle purely
+// for PivotTables() — reads don't dirty any part, and the handle is
+// discarded without Save.
+//
+// PivotTables walks sheets in workbook order, so the per-target-sheet
+// index — and with it the deterministic "p_<sheet>_<n>" ID scheme —
+// is stable per import, matching the excelize-era per-anchor-sheet
+// numbering.
 //
 // The function does not promote in-sheet pivots to dedicated sheets;
 // that is the caller's job (ensureDistinctTargets) so the collision
-// rule can see the full sheet list, not just one anchor at a time.
-func readPivotsForSheet(f *excelize.File, anchorSheet string) ([]PivotDefinitionDTO, error) {
-	opts, err := f.GetPivotTables(anchorSheet)
+// rule can see the full sheet list, not just one target at a time.
+func readPivots(xlsxBytes []byte) ([]PivotDefinitionDTO, error) {
+	ed, err := xlsx.Edit(xlsxBytes)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]PivotDefinitionDTO, 0, len(opts))
-	for i, o := range opts {
-		dto := PivotDefinitionDTO{
-			ID:              fmt.Sprintf("p_%s_%d", sanitizeID(anchorSheet), i+1),
-			SourceRange:     o.DataRange,
-			TargetSheetName: extractSheetName(o.PivotTableRange, anchorSheet),
-			Rows:            mapFields(o.Rows),
-			Cols:            mapFields(o.Columns),
-			Values:          mapValueFields(o.Data),
-			Filters:         mapFields(o.Filter),
-			RowGrandTotals:  o.RowGrandTotals,
-			ColGrandTotals:  o.ColGrandTotals,
-			StyleName:       o.PivotTableStyleName,
-		}
-		out = append(out, dto)
+	pts := ed.PivotTables()
+	if len(pts) == 0 {
+		return nil, nil
+	}
+	perTarget := map[string]int{}
+	out := make([]PivotDefinitionDTO, 0, len(pts))
+	for _, pt := range pts {
+		perTarget[pt.TargetSheet]++
+		out = append(out, PivotDefinitionDTO{
+			ID:              fmt.Sprintf("p_%s_%d", sanitizeID(pt.TargetSheet), perTarget[pt.TargetSheet]),
+			SourceRange:     combineSourceRange(pt.SourceSheet, pt.SourceRange),
+			TargetSheetName: pt.TargetSheet,
+			Rows:            mapAxisFields(pt.Rows),
+			Cols:            mapAxisFields(pt.Cols),
+			Values:          mapPivotValues(pt.Values),
+			Filters:         mapAxisFields(pt.Filters),
+			RowGrandTotals:  pt.RowGrandTotals,
+			ColGrandTotals:  pt.ColGrandTotals,
+			StyleName:       pt.StyleName,
+		})
 	}
 	return out, nil
 }
 
-func mapFields(in []excelize.PivotTableField) []PivotFieldDTO {
+// mapAxisFields converts axis field names (rows/cols/filters) to the
+// DTO shape. doctaculous surfaces only the source-column name for axis
+// fields; the per-field DisplayName the excelize reader carried
+// best-effort is not available (accepted loss — Excel-authored files
+// leave it empty in practice).
+func mapAxisFields(in []string) []PivotFieldDTO {
 	out := make([]PivotFieldDTO, 0, len(in))
-	for _, f := range in {
-		out = append(out, PivotFieldDTO{
-			SourceColumn: f.Data,
-			DisplayName:  fieldDisplayName(f),
-		})
+	for _, name := range in {
+		out = append(out, PivotFieldDTO{SourceColumn: name})
 	}
 	return out
 }
 
-func mapValueFields(in []excelize.PivotTableField) []PivotValueFieldDTO {
+func mapPivotValues(in []xlsx.PivotValueField) []PivotValueFieldDTO {
 	out := make([]PivotValueFieldDTO, 0, len(in))
-	for _, f := range in {
+	for _, v := range in {
+		display := v.DisplayName
+		if display == v.Field {
+			display = ""
+		}
 		out = append(out, PivotValueFieldDTO{
-			SourceColumn: f.Data,
-			DisplayName:  fieldDisplayName(f),
-			Aggregation:  normalizeAgg(f.Subtotal),
+			SourceColumn: v.Field,
+			DisplayName:  display,
+			Aggregation:  normalizeAgg(v.Aggregation),
 		})
 	}
 	return out
 }
 
-func fieldDisplayName(f excelize.PivotTableField) string {
-	if f.Name == "" || f.Name == f.Data {
-		return ""
+// combineSourceRange rebuilds the combined "<sheet>!<range>" form the
+// DTO carries (and the TS side + write path consume). doctaculous
+// surfaces the pivot cache's source sheet and ref separately;
+// excelize's DataRange arrived pre-combined.
+func combineSourceRange(sheet, ref string) string {
+	if sheet == "" {
+		return ref
 	}
-	return f.Name
+	return quoteSheetIfNeeded(sheet) + "!" + ref
 }
 
-// extractSheetName returns the sheet name portion of an A1 range like
-// "Sheet2!A1:F10". Falls back to the anchor sheet name if parsing
-// fails — that preserves the design's promotion rule for in-sheet
-// pivots (the caller renames if collision).
-func extractSheetName(rangeStr, fallback string) string {
-	if !strings.Contains(rangeStr, "!") {
-		return fallback
+// quoteSheetIfNeeded wraps a sheet name in single quotes (doubling any
+// embedded quotes) when a bare "<sheet>!" prefix would be ambiguous —
+// the inverse of the unquoting the excelize-era reader applied to
+// PivotTableRange.
+func quoteSheetIfNeeded(name string) string {
+	if !sheetNameNeedsQuoting(name) {
+		return name
 	}
-	parts := strings.SplitN(rangeStr, "!", 2)
-	name := strings.TrimSpace(parts[0])
-	if strings.HasPrefix(name, "'") && strings.HasSuffix(name, "'") && len(name) >= 2 {
-		name = strings.ReplaceAll(name[1:len(name)-1], "''", "'")
+	return "'" + strings.ReplaceAll(name, "'", "''") + "'"
+}
+
+// sheetNameNeedsQuoting reports whether an A1-style reference needs
+// the sheet name quoted: anything beyond letters, digits, and
+// underscores, or a leading digit.
+func sheetNameNeedsQuoting(name string) bool {
+	for i, r := range name {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r == '_':
+		case r >= '0' && r <= '9':
+			if i == 0 {
+				return true
+			}
+		default:
+			return true
+		}
 	}
-	if name == "" {
-		return fallback
-	}
-	return name
+	return false
 }
 
 // sanitizeID maps an arbitrary sheet name to a stable, ASCII-only id
@@ -155,8 +186,10 @@ func sanitizeID(s string) string {
 	return b.String()
 }
 
-// normalizeAgg maps excelize's Subtotal strings to the lowercase
-// PivotAggregation union the TS side uses.
+// normalizeAgg maps an OOXML dataField subtotal string (as surfaced
+// raw by doctaculous, e.g. "average" / "countNums"; excelize's
+// capitalized variants normalize identically) to the PivotAggregation
+// union the TS side uses.
 func normalizeAgg(s string) string {
 	switch strings.ToLower(s) {
 	case "sum", "":

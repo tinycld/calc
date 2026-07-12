@@ -1,41 +1,34 @@
 package calc
 
 import (
-	"reflect"
-	"slices"
-
-	"github.com/xuri/excelize/v2"
+	"github.com/nathanstitt/doctaculous/pkg/xlsx"
 )
 
 // This file is the single source of truth for every leaf attribute on
-// CellStyle. Each entry describes: a deterministic canary value the
-// audit injects, an excelize read-back probe, and an extractor used by
-// extractStyle's override map for the not-1:1 paths.
+// CellStyle. Each entry describes a deterministic canary value the
+// round-trip audit injects and a probe that reads the leaf back off a
+// fully resolved xlsx.Style (the doctaculous read model).
 //
-// Most entries are tiny — for structurally-1:1 paths the canary alone
-// is enough; reflect handles the rest. Divergent paths (Font.Name ↔
-// Font.Family, NumFmt ↔ CustomNumFmt, Borders, Fill) get an extractor
-// and a custom read probe that lines up with their excelize shape.
+// The audit (style_roundtrip_audit_test.go) drives each leaf through
+// the real pipeline — cellStyleToPatch → PatchCellStyle → Save →
+// OpenBytes → probe + styleToCellStyle — so a probe here is the
+// independent read-back check that the write mapper actually landed
+// the value in the file.
 //
-// Adding a new CellStyle leaf:
-//   - 1:1 with an excelize.Style field of the same name and type:
-//     add a single entry here (canary only). overlayStyle picks it up
-//     via reflect; extractStyle picks it up via reflect; the audit
-//     verifies symmetry automatically.
-//   - Not 1:1 (different field name, different type, or a non-trivial
-//     mapping): add an entry here AND a matching overlay override in
-//     styleOverlayOverrides (style_reflect.go). For the read side,
-//     set ExtractFromExcelize on the registry entry.
+// Adding a new CellStyle leaf: add the field in snapshot.go (+ the TS
+// CellStyle), map it in style_map.go's three mappers, and add an entry
+// here. The audit fails with a missing-registry-entry error until the
+// entry exists, and with a per-stage breakdown until the mappers
+// handle it.
 
-// attributeProbe pulls a value out of an *excelize.Style at the given
+// attributeProbe pulls a value out of an *xlsx.Style at the given
 // CellStyle path. Returns (value, true) when present, (nil, false)
-// when absent — absent means "excelize doesn't carry this leaf", and
-// after a round-trip means the writer lost it.
-type attributeProbe func(*excelize.Style) (any, bool)
+// when absent — absent after a round-trip means the writer lost it.
+type attributeProbe func(*xlsx.Style) (any, bool)
 
 // attributeSpec describes one CellStyle leaf for the audit. Path is
-// dotted Go field names rooted at CellStyle, matching the keys in
-// styleOverlayOverrides.
+// dotted Go field names rooted at CellStyle (e.g. "Font.Bold",
+// "Borders.Top.Style").
 type attributeSpec struct {
 	// Canary is a deterministic non-zero value to inject when testing
 	// this attribute in isolation. The audit constructs a *CellStyle
@@ -43,323 +36,227 @@ type attributeSpec struct {
 	// full pipeline.
 	Canary any
 
-	// CanaryReadBack is the value we expect to read back from excelize
-	// (and the YDoc bootstrap) after a round-trip. Defaults to Canary
-	// when nil. Diverges for attributes the writer normalizes — e.g.
-	// "#FF8800" is accepted by the writer but excelize strips the "#"
-	// before storing it, so CanaryReadBack is "FF8800".
+	// CanaryReadBack is the value we expect to read back after a
+	// round-trip. Defaults to Canary when nil. Diverges for attributes
+	// the writer normalizes — e.g. "#FF8800" is accepted by the writer
+	// but the file stores bare "FF8800".
 	CanaryReadBack any
 
-	// ReadFromExcelize returns the value of this leaf on an
-	// *excelize.Style. Used by both extractStyle (to invert the
-	// writer) and the audit (to verify the writer succeeded).
-	ReadFromExcelize attributeProbe
-
-	// ExtractTo writes the value (when present) into the matching
-	// leaf on a *CellStyle. Only set for not-1:1 paths; nil means
-	// "extractStyle handles this leaf structurally". The reflect walk
-	// in extractStyle calls this *instead of* the structural copy.
-	ExtractTo func(dst *CellStyle, value any)
+	// ReadFromXlsx returns the value of this leaf on a resolved
+	// *xlsx.Style, mirroring styleToCellStyle's per-leaf policy. Used
+	// by the audit to verify the write mapper succeeded independently
+	// of the read mapper.
+	ReadFromXlsx attributeProbe
 
 	// CoRequiredPaths names other registry entries that must be set
-	// alongside this leaf for the resulting CellStyle to be a valid
-	// xlsx fill / border / etc. Used by the audit when this leaf in
-	// isolation is not representable in OOXML.
+	// alongside this leaf for the resulting CellStyle to be a sensible
+	// xlsx fill / border / etc. The audit constructs the CellStyle with
+	// the co-required leaves at their own canaries, then asserts only
+	// the target leaf's round-trip.
 	//
-	// Example: Fill.FgColor alone is not a valid xlsx fill — OOXML
-	// fills require both a Pattern code AND a Type. The audit
-	// constructs a CellStyle with FgColor + Pattern + Type set
-	// together to their respective canaries, then asserts only the
-	// target leaf's round-trip (the others are independently audited
-	// by their own iterations).
+	// Example: Fill.Type is dropped on write (an excelize-ism kept only
+	// on the read wire), so it reads back only when an actual fill —
+	// pattern + color — is present.
 	CoRequiredPaths []string
-
-	// ReadOnly marks an attribute that the writer cannot produce
-	// from a doc-side edit but the reader must still extract from
-	// imported xlsx files. Example: Fill.BgColor is meaningful for
-	// hatched patterns but the writer only emits solid fills (which
-	// reject a bg color). The audit verifies the read path via a
-	// hand-rolled excelize.Style + extractStyle pass; the xlsx /
-	// bootstrap legs are skipped because the overlay path cannot
-	// represent the leaf.
-	ReadOnly bool
 }
 
 // styleAttributeRegistry enumerates every leaf on CellStyle the writer
-// must round-trip. The audit (style_roundtrip_audit_test.go) loops over
-// this map; missing an entry for a new CellStyle leaf is the audit's
-// own failure mode.
+// must round-trip. The audit loops over this map; missing an entry for
+// a new CellStyle leaf is the audit's own failure mode.
 var styleAttributeRegistry = map[string]attributeSpec{
 	"Font.Bold": {
-		Canary:           true,
-		ReadFromExcelize: probeFontBool(func(f *excelize.Font) bool { return f.Bold }),
+		Canary:       true,
+		ReadFromXlsx: probeBool(func(s *xlsx.Style) bool { return s.Font.Bold }),
 	},
 	"Font.Italic": {
-		Canary:           true,
-		ReadFromExcelize: probeFontBool(func(f *excelize.Font) bool { return f.Italic }),
+		Canary:       true,
+		ReadFromXlsx: probeBool(func(s *xlsx.Style) bool { return s.Font.Italic }),
 	},
 	"Font.Strike": {
-		Canary:           true,
-		ReadFromExcelize: probeFontBool(func(f *excelize.Font) bool { return f.Strike }),
+		Canary:       true,
+		ReadFromXlsx: probeBool(func(s *xlsx.Style) bool { return s.Font.Strike }),
 	},
 	"Font.Underline": {
 		Canary: true,
-		ReadFromExcelize: func(s *excelize.Style) (any, bool) {
-			if s == nil || s.Font == nil {
-				return nil, false
-			}
-			// excelize uses "single"/"double" for the underline variants and
-			// "none"/"" when the attribute isn't set. The writer only ever
-			// produces "single" or "none"; on read we collapse anything
-			// non-empty and non-"none" to a single underlined-bool. See the
-			// rationale in the plan: lossy on save, but consistent with the
-			// "borders are uniform thin black" simplification — keeps an
-			// externally-double-underlined cell visibly underlined.
-			u := s.Font.Underline
-			if u == "" || u == "none" {
+		// The file stores an underline variant ("single", "double",
+		// ...); the doc models a bool. The writer only produces
+		// "single"; on read anything non-empty and non-"none" collapses
+		// to underlined=true — lossy on save, but an externally
+		// double-underlined cell stays visibly underlined.
+		ReadFromXlsx: func(s *xlsx.Style) (any, bool) {
+			if s == nil || s.Font.Underline == "" || s.Font.Underline == "none" {
 				return nil, false
 			}
 			return true, true
 		},
-		ExtractTo: func(dst *CellStyle, value any) {
-			if dst.Font == nil {
-				dst.Font = &CellFont{}
-			}
-			b := value.(bool)
-			dst.Font.Underline = &b
-		},
 	},
 	"Font.Size": {
-		Canary:           13.5,
-		ReadFromExcelize: probeFontFloat(func(f *excelize.Font) float64 { return f.Size }),
+		Canary:       13.5,
+		ReadFromXlsx: probeFloat(func(s *xlsx.Style) float64 { return s.Font.Size }),
 	},
 	"Font.Name": {
-		Canary: "Courier New",
-		ReadFromExcelize: func(s *excelize.Style) (any, bool) {
-			if s == nil || s.Font == nil || s.Font.Family == "" {
-				return nil, false
-			}
-			return s.Font.Family, true
-		},
-		ExtractTo: func(dst *CellStyle, value any) {
-			if dst.Font == nil {
-				dst.Font = &CellFont{}
-			}
-			s := value.(string)
-			dst.Font.Name = &s
-		},
+		Canary:       "Courier New",
+		ReadFromXlsx: probeString(func(s *xlsx.Style) string { return s.Font.Name }),
 	},
 	"Font.Color": {
 		Canary:         "#112233",
 		CanaryReadBack: "112233",
-		ReadFromExcelize: func(s *excelize.Style) (any, bool) {
-			if s == nil || s.Font == nil || s.Font.Color == "" {
-				return nil, false
-			}
-			return normalizeHex(s.Font.Color), true
-		},
+		ReadFromXlsx:   probeString(func(s *xlsx.Style) string { return s.Font.Color.RGB }),
 	},
 	"NumFmt": {
-		Canary: "#,##0.00",
-		ReadFromExcelize: func(s *excelize.Style) (any, bool) {
-			if s == nil || s.CustomNumFmt == nil || *s.CustomNumFmt == "" {
+		// A non-builtin pattern, so the round-trip also proves custom
+		// numFmt minting; builtin patterns round-trip too — the writer
+		// resolves them to their builtin id and the read rule
+		// (styleToCellStyle) surfaces any non-General format's resolved
+		// pattern, precisely so a UI preset that matches a builtin
+		// ("#,##0.00", "0.00%", "@", ...) survives a save/bootstrap
+		// cycle instead of being dropped by the excelize-era
+		// custom-ids-only rule.
+		Canary: "#,##0.000",
+		ReadFromXlsx: func(s *xlsx.Style) (any, bool) {
+			if s == nil || s.NumFmtID == 0 || s.NumFmt == "" {
 				return nil, false
 			}
-			return *s.CustomNumFmt, true
-		},
-		ExtractTo: func(dst *CellStyle, value any) {
-			s := value.(string)
-			dst.NumFmt = &s
+			return s.NumFmt, true
 		},
 	},
 	"Alignment.Horizontal": {
-		Canary:           "right",
-		ReadFromExcelize: probeAlignmentString(func(a *excelize.Alignment) string { return a.Horizontal }),
+		Canary:       "right",
+		ReadFromXlsx: probeString(func(s *xlsx.Style) string { return s.Alignment.Horizontal }),
 	},
 	"Alignment.Vertical": {
-		Canary:           "middle",
-		ReadFromExcelize: probeAlignmentString(func(a *excelize.Alignment) string { return a.Vertical }),
+		Canary:       "middle",
+		ReadFromXlsx: probeString(func(s *xlsx.Style) string { return s.Alignment.Vertical }),
 	},
 	"Alignment.WrapText": {
-		Canary: true,
-		ReadFromExcelize: func(s *excelize.Style) (any, bool) {
-			if s == nil || s.Alignment == nil {
-				return nil, false
-			}
-			if !s.Alignment.WrapText {
-				return nil, false
-			}
-			return true, true
-		},
+		Canary:       true,
+		ReadFromXlsx: probeBool(func(s *xlsx.Style) bool { return s.Alignment.WrapText }),
 	},
-	// Fill.Type / Fill.Pattern / Fill.FgColor are co-dependent: an
-	// OOXML fill record needs a non-zero Pattern code plus exactly one
-	// foreground color (for "solid"). Auditing any one of these in
-	// isolation produces an xlsx with no fill at all (excelize drops
-	// the empty-color "solid" pattern) or a NewStyle error (a "pattern"
-	// type with only a background color). The audit sets all three
-	// together when checking any of them — the per-leaf assertion
-	// still tests one leaf's round-trip; the others ride along as
-	// "valid fill" scaffolding and are independently audited by
-	// their own iterations.
+	// Fill.Type is dropped on write (see fillToPatch) and re-synthesized
+	// on read whenever a pattern fill is declared, so it round-trips
+	// only alongside an actual fill. Pattern + FgColor ride along as
+	// "valid fill" scaffolding; each is independently audited by its
+	// own iteration.
 	"Fill.Type": {
-		Canary:           "pattern",
-		ReadFromExcelize: probeFillString(func(f excelize.Fill) string { return f.Type }),
-		ExtractTo: func(dst *CellStyle, value any) {
-			if dst.Fill == nil {
-				dst.Fill = &CellFill{}
+		Canary: "pattern",
+		ReadFromXlsx: func(s *xlsx.Style) (any, bool) {
+			if s == nil || !fillDeclared(s.Fill) {
+				return nil, false
 			}
-			s := value.(string)
-			dst.Fill.Type = &s
+			return "pattern", true
 		},
 		CoRequiredPaths: []string{"Fill.Pattern", "Fill.FgColor"},
 	},
 	"Fill.Pattern": {
 		Canary: "solid",
-		ReadFromExcelize: func(s *excelize.Style) (any, bool) {
-			if s == nil {
-				return nil, false
-			}
-			// We model only "solid" vs. unset today. Any positive non-1
-			// pattern (hatched, etc.) from an external editor collapses
-			// to "solid" so the fill color stays visible — see plan
-			// rationale (lossy on save, faithful to user intent on read).
-			if s.Fill.Pattern == 0 {
+		// Any declared pattern (hatched included) collapses to "solid"
+		// on read so the fill color stays visible — see fillLeaves.
+		ReadFromXlsx: func(s *xlsx.Style) (any, bool) {
+			if s == nil || !fillDeclared(s.Fill) {
 				return nil, false
 			}
 			return "solid", true
 		},
-		ExtractTo: func(dst *CellStyle, value any) {
-			if dst.Fill == nil {
-				dst.Fill = &CellFill{}
-			}
-			s := value.(string)
-			dst.Fill.Pattern = &s
-		},
-		CoRequiredPaths: []string{"Fill.Type", "Fill.FgColor"},
+		// A solid fill without a color is legal but nonsensical; keep
+		// the audit fixture realistic.
+		CoRequiredPaths: []string{"Fill.FgColor"},
 	},
 	"Fill.FgColor": {
 		Canary:         "#FF8800",
 		CanaryReadBack: "FF8800",
-		ReadFromExcelize: func(s *excelize.Style) (any, bool) {
-			if s == nil || len(s.Fill.Color) == 0 || s.Fill.Color[0] == "" {
-				return nil, false
-			}
-			return normalizeHex(s.Fill.Color[0]), true
-		},
-		ExtractTo: func(dst *CellStyle, value any) {
-			if dst.Fill == nil {
-				dst.Fill = &CellFill{}
-			}
-			s := value.(string)
-			dst.Fill.FgColor = &s
-		},
-		// FgColor on its own (no Pattern/Type) currently relies on
-		// overlayStyle's defensive default of Pattern=solid + Type=pattern
-		// to produce a valid xlsx. That works — but to keep the audit
-		// from depending on that fallback (which would mask a future
-		// regression in the default), we still flag the OOXML
-		// co-requirements explicitly.
-		CoRequiredPaths: []string{"Fill.Type", "Fill.Pattern"},
+		ReadFromXlsx:   probeString(func(s *xlsx.Style) string { return s.Fill.Fg.RGB }),
+		// FgColor on its own relies on the write mapper's defensive
+		// Pattern=solid default (independently locked by
+		// TestFillColorPatchWithoutPatternForcesSolid); the audit keeps
+		// the OOXML co-requirement explicit so it doesn't depend on
+		// that fallback.
+		CoRequiredPaths: []string{"Fill.Pattern"},
 	},
-	// Fill.BgColor is read-only end-to-end. In OOXML, bgColor is
-	// meaningful only for non-solid (hatched) patterns; the writer
-	// currently emits only solid fills (Pattern=1), which excelize
-	// rejects as invalid when paired with two colors. The TS side
-	// uses bgColor only as a read-side fallback for imported xlsx
-	// files that stored the cell color in the bgColor slot — the
-	// toolbar never produces a bgColor edit. The audit honors that
-	// asymmetry: the read leg must work (an imported sheet with
-	// bgColor must surface it), the write leg is skipped.
+	// Fill.BgColor is meaningful for hatched patterns; the toolbar
+	// never produces a bgColor edit, but imported workbooks carry it
+	// and the doc must round-trip it. doctaculous writes and reads it
+	// symmetrically (the excelize-era write validation that forced
+	// this leaf to be read-only is gone).
 	"Fill.BgColor": {
-		Canary:         "001122",
-		CanaryReadBack: "001122",
-		ReadFromExcelize: func(s *excelize.Style) (any, bool) {
-			if s == nil || len(s.Fill.Color) < 2 || s.Fill.Color[1] == "" {
-				return nil, false
-			}
-			return normalizeHex(s.Fill.Color[1]), true
-		},
-		ExtractTo: func(dst *CellStyle, value any) {
-			if dst.Fill == nil {
-				dst.Fill = &CellFill{}
-			}
-			s := value.(string)
-			dst.Fill.BgColor = &s
-		},
-		ReadOnly: true,
+		Canary:          "001122",
+		ReadFromXlsx:    probeString(func(s *xlsx.Style) string { return s.Fill.Bg.RGB }),
+		CoRequiredPaths: []string{"Fill.Pattern", "Fill.FgColor"},
 	},
-	// Per-edge leaves — the audit auto-discovers these via reflection
-	// over CellBorders → CellBorderEdge → {Style, Color}. Each style /
-	// color entry uses a per-edge canary so an accidental cross-edge
-	// swap surfaces immediately. The clear-signal (false on the wire,
-	// IsClear=true in Go) is NOT in the leaf walk; it's covered by
-	// TestSerializerStyleClearViaFalseWire in serializer_test.go.
+	// Per-edge leaves. Each style entry uses a distinct canary so an
+	// accidental cross-edge swap surfaces immediately. The clear-signal
+	// (false on the wire, IsClear=true in Go) is NOT in the leaf walk;
+	// it's covered by TestSerializerStyleClearViaFalseWire in
+	// serializer_test.go.
 	"Borders.Top.Style": {
-		Canary:           "thin",
-		ReadFromExcelize: probeBorderStyle("top"),
-		ExtractTo:        extractBorderEdgeStyle("Top"),
+		Canary:       "thin",
+		ReadFromXlsx: probeBorderStyle(func(b xlsx.Border) xlsx.Edge { return b.Top }),
 	},
 	"Borders.Top.Color": {
-		Canary:           "#FF8800",
-		CanaryReadBack:   "FF8800",
-		ReadFromExcelize: probeBorderColor("top"),
-		ExtractTo:        extractBorderEdgeColor("Top"),
+		Canary:         "#FF8800",
+		CanaryReadBack: "FF8800",
+		ReadFromXlsx:   probeString(func(s *xlsx.Style) string { return s.Border.Top.Color.RGB }),
 	},
 	"Borders.Right.Style": {
-		Canary:           "medium",
-		ReadFromExcelize: probeBorderStyle("right"),
-		ExtractTo:        extractBorderEdgeStyle("Right"),
+		Canary:       "medium",
+		ReadFromXlsx: probeBorderStyle(func(b xlsx.Border) xlsx.Edge { return b.Right }),
 	},
 	"Borders.Right.Color": {
-		Canary:           "#FF8800",
-		CanaryReadBack:   "FF8800",
-		ReadFromExcelize: probeBorderColor("right"),
-		ExtractTo:        extractBorderEdgeColor("Right"),
+		Canary:         "#FF8800",
+		CanaryReadBack: "FF8800",
+		ReadFromXlsx:   probeString(func(s *xlsx.Style) string { return s.Border.Right.Color.RGB }),
 	},
 	"Borders.Bottom.Style": {
-		Canary:           "dashed",
-		ReadFromExcelize: probeBorderStyle("bottom"),
-		ExtractTo:        extractBorderEdgeStyle("Bottom"),
+		Canary:       "dashed",
+		ReadFromXlsx: probeBorderStyle(func(b xlsx.Border) xlsx.Edge { return b.Bottom }),
 	},
 	"Borders.Bottom.Color": {
-		Canary:           "#FF8800",
-		CanaryReadBack:   "FF8800",
-		ReadFromExcelize: probeBorderColor("bottom"),
-		ExtractTo:        extractBorderEdgeColor("Bottom"),
+		Canary:         "#FF8800",
+		CanaryReadBack: "FF8800",
+		ReadFromXlsx:   probeString(func(s *xlsx.Style) string { return s.Border.Bottom.Color.RGB }),
 	},
 	"Borders.Left.Style": {
-		Canary:           "double",
-		ReadFromExcelize: probeBorderStyle("left"),
-		ExtractTo:        extractBorderEdgeStyle("Left"),
+		Canary:       "double",
+		ReadFromXlsx: probeBorderStyle(func(b xlsx.Border) xlsx.Edge { return b.Left }),
 	},
 	"Borders.Left.Color": {
-		Canary:           "#FF8800",
-		CanaryReadBack:   "FF8800",
-		ReadFromExcelize: probeBorderColor("left"),
-		ExtractTo:        extractBorderEdgeColor("Left"),
+		Canary:         "#FF8800",
+		CanaryReadBack: "FF8800",
+		ReadFromXlsx:   probeString(func(s *xlsx.Style) string { return s.Border.Left.Color.RGB }),
 	},
 }
 
-func probeFontBool(get func(*excelize.Font) bool) attributeProbe {
-	return func(s *excelize.Style) (any, bool) {
-		if s == nil || s.Font == nil {
-			return nil, false
-		}
-		v := get(s.Font)
-		if !v {
+// probeBool wraps a bool getter: false reads as "leaf absent",
+// mirroring the leaves-only read policy.
+func probeBool(get func(*xlsx.Style) bool) attributeProbe {
+	return func(s *xlsx.Style) (any, bool) {
+		if s == nil || !get(s) {
 			return nil, false
 		}
 		return true, true
 	}
 }
 
-func probeFontFloat(get func(*excelize.Font) float64) attributeProbe {
-	return func(s *excelize.Style) (any, bool) {
-		if s == nil || s.Font == nil {
+// probeString wraps a string getter: "" reads as "leaf absent".
+func probeString(get func(*xlsx.Style) string) attributeProbe {
+	return func(s *xlsx.Style) (any, bool) {
+		if s == nil {
 			return nil, false
 		}
-		v := get(s.Font)
+		v := get(s)
+		if v == "" {
+			return nil, false
+		}
+		return v, true
+	}
+}
+
+// probeFloat wraps a float getter: 0 reads as "leaf absent".
+func probeFloat(get func(*xlsx.Style) float64) attributeProbe {
+	return func(s *xlsx.Style) (any, bool) {
+		if s == nil {
+			return nil, false
+		}
+		v := get(s)
 		if v == 0 {
 			return nil, false
 		}
@@ -367,113 +264,17 @@ func probeFontFloat(get func(*excelize.Font) float64) attributeProbe {
 	}
 }
 
-func probeAlignmentString(get func(*excelize.Alignment) string) attributeProbe {
-	return func(s *excelize.Style) (any, bool) {
-		if s == nil || s.Alignment == nil {
-			return nil, false
-		}
-		v := get(s.Alignment)
-		if v == "" {
-			return nil, false
-		}
-		return v, true
-	}
-}
-
-func probeFillString(get func(excelize.Fill) string) attributeProbe {
-	return func(s *excelize.Style) (any, bool) {
+// probeBorderStyle reads one edge's style name, collapsed to the six
+// names the doc models (same collapse styleToCellStyle applies).
+func probeBorderStyle(edge func(xlsx.Border) xlsx.Edge) attributeProbe {
+	return func(s *xlsx.Style) (any, bool) {
 		if s == nil {
 			return nil, false
 		}
-		v := get(s.Fill)
-		if v == "" {
+		e := edge(s.Border)
+		if e.Style == "" {
 			return nil, false
 		}
-		return v, true
+		return collapseBorderStyleName(e.Style), true
 	}
-}
-
-func probeBorderStyle(edge string) attributeProbe {
-	return func(s *excelize.Style) (any, bool) {
-		if s == nil {
-			return nil, false
-		}
-		for _, b := range s.Border {
-			if b.Type == edge {
-				if b.Style == 0 {
-					return nil, false
-				}
-				return borderStyleNameForCode(b.Style), true
-			}
-		}
-		return nil, false
-	}
-}
-
-func probeBorderColor(edge string) attributeProbe {
-	return func(s *excelize.Style) (any, bool) {
-		if s == nil {
-			return nil, false
-		}
-		for _, b := range s.Border {
-			if b.Type == edge {
-				if b.Color == "" {
-					return nil, false
-				}
-				return normalizeHex(b.Color), true
-			}
-		}
-		return nil, false
-	}
-}
-
-func ensureBorderEdge(dst *CellStyle, goField string) *CellBorderEdge {
-	if dst.Borders == nil {
-		dst.Borders = &CellBorders{}
-	}
-	bordersValue := reflect.ValueOf(dst.Borders).Elem()
-	field := bordersValue.FieldByName(goField)
-	if field.IsNil() {
-		field.Set(reflect.New(field.Type().Elem()))
-	}
-	return field.Interface().(*CellBorderEdge)
-}
-
-func extractBorderEdgeStyle(goField string) func(*CellStyle, any) {
-	return func(dst *CellStyle, value any) {
-		edge := ensureBorderEdge(dst, goField)
-		s := value.(string)
-		edge.Style = &s
-	}
-}
-
-func extractBorderEdgeColor(goField string) func(*CellStyle, any) {
-	return func(dst *CellStyle, value any) {
-		edge := ensureBorderEdge(dst, goField)
-		s := value.(string)
-		edge.Color = &s
-	}
-}
-
-// normalizeHex strips a leading "#" if present. excelize stores hex
-// colors without the prefix; the doc-side canonical form is also bare
-// hex. Callers feed both shapes through this before comparison or
-// extraction so canaries that originated as "#RRGGBB" round-trip
-// cleanly.
-func normalizeHex(s string) string {
-	if len(s) > 0 && s[0] == '#' {
-		return s[1:]
-	}
-	return s
-}
-
-// styleAttributePaths returns every registered path in alphabetical
-// order — deterministic iteration matters in audit failure messages.
-func styleAttributePaths() []string {
-	out := make([]string, 0, len(styleAttributeRegistry))
-	for p := range styleAttributeRegistry {
-		out = append(out, p)
-	}
-	slices.Sort(out)
-	return out
 }

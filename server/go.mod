@@ -1,8 +1,9 @@
 module tinycld.org/packages/calc
 
-go 1.25.0
+go 1.26.0
 
 require (
+	github.com/nathanstitt/doctaculous v0.0.2
 	github.com/pocketbase/pocketbase v0.38.1
 	github.com/skyterra/y-crdt v0.0.0-20260224023949-c0cb10d3f33e
 	github.com/xuri/excelize/v2 v2.10.1
@@ -11,6 +12,7 @@ require (
 
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
+	github.com/beevik/etree v1.6.0 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/domodwyer/mailyak/v3 v3.6.2 // indirect
@@ -19,6 +21,7 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/ganigeorgiev/fexpr v0.5.0 // indirect
+	github.com/getsentry/sentry-go v0.44.1 // indirect
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
@@ -40,12 +43,12 @@ require (
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/image v0.40.0 // indirect
+	golang.org/x/image v0.43.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
