@@ -74,8 +74,6 @@ export interface ToolbarProps {
 
     onOpenFind: () => void
 
-    onDownloadCsvCurrent: () => void
-    onDownloadCsvAll: () => void
     onDownloadXlsx?: () => void
 
     onOpenPrint: () => void

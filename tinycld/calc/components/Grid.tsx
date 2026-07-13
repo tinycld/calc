@@ -3,7 +3,6 @@ import { type LayoutChangeEvent, Platform, View } from 'react-native'
 import { useFindActions } from '../hooks/find/use-find-actions'
 import { createFindStore } from '../hooks/find/use-find-store'
 import { FindStoreProvider, useFindStoreApi } from '../hooks/find/use-find-store-context'
-import { useCsvDownload } from '../hooks/grid/use-csv-download'
 import { useGridColumnResize } from '../hooks/grid/use-grid-column-resize'
 import { useGridFilterControls } from '../hooks/grid/use-grid-filter-controls'
 import { useGridFormatControls } from '../hooks/grid/use-grid-format-controls'
@@ -516,7 +515,6 @@ function GridInner({
         onSelectAll,
     })
 
-    const csvDownload = useCsvDownload(doc, sheetId, sheets, sheet?.name)
     const filter = useGridFilterControls({ doc, sheetId, store: instance.store })
     useReactiveFilter(doc, sheetId, sheet?.frozenRows ?? 0)
     const printDialog = useGridPrintDialog(sheetId)
@@ -596,8 +594,6 @@ function GridInner({
         isFormatPainterActive,
         onActivateFormatPainter: activateFormatPainter,
         onOpenFind: onOpenFind,
-        onDownloadCsvCurrent: csvDownload.downloadCurrent,
-        onDownloadCsvAll: csvDownload.downloadAll,
         onOpenPrint: printDialog.open,
         onOpenSort: toolbarActions.openSort,
         onToggleFilter: filter.toggleFilter,

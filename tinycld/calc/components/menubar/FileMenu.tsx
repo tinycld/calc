@@ -6,7 +6,7 @@ import { PromptDialog } from '@tinycld/core/ui/PromptDialog'
 import { TemplatePickerDialog } from '@tinycld/drive/components/TemplatePickerDialog'
 import { useHasTemplates } from '@tinycld/drive/hooks/use-template-items'
 import { useCopyDriveItem } from '@tinycld/drive/lib/copy-drive-item'
-import { exportItemToPdf } from '@tinycld/drive/lib/export-pdf'
+import { exportItemToFormat, exportTargetsFor } from '@tinycld/drive/lib/export-pdf'
 import {
     fromTemplateName,
     isTemplateName,
@@ -15,6 +15,7 @@ import {
 } from '@tinycld/drive/lib/template-naming'
 import { router } from 'expo-router'
 import { lazy, Suspense, useState } from 'react'
+import { XLSX_MIME_TYPE } from '../../types'
 import type { MenuBarProps } from './MenuBar'
 import { SaveVersionDialog } from './SaveVersionDialog'
 
@@ -87,11 +88,9 @@ export function FileMenu(props: MenuBarProps) {
         setTrashOpen(false)
     }
 
-    // Exports the stored .xlsx blob to PDF on the server (doctaculous),
-    // reflecting the last persisted state like the XLSX/CSV downloads.
-    const downloadPdf = () => {
-        exportItemToPdf(props.workbookId, props.workbookName)
-    }
+    // Server-side "Download as" targets for a workbook (PDF, CSV, HTML) — the
+    // stored .xlsx converted by doctaculous. Reflects the last persisted state.
+    const exportTargets = exportTargetsFor(XLSX_MIME_TYPE)
 
     return (
         <>
@@ -137,15 +136,16 @@ export function FileMenu(props: MenuBarProps) {
                                 <Menu.ItemTitle>Download as XLSX</Menu.ItemTitle>
                             </Menu.Item>
                         )}
-                        <Menu.Item onPress={props.onDownloadCsvCurrent}>
-                            <Menu.ItemTitle>Download as CSV (current sheet)</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={props.onDownloadCsvAll}>
-                            <Menu.ItemTitle>Download as CSV (all sheets)</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={downloadPdf}>
-                            <Menu.ItemTitle>Download as PDF</Menu.ItemTitle>
-                        </Menu.Item>
+                        {exportTargets.map(target => (
+                            <Menu.Item
+                                key={target.to}
+                                onPress={() =>
+                                    exportItemToFormat(props.workbookId, props.workbookName, target)
+                                }
+                            >
+                                <Menu.ItemTitle>Download as {target.label}</Menu.ItemTitle>
+                            </Menu.Item>
+                        ))}
                     </Menu.SubContent>
                 </Menu.Sub>
                 <Separator />
