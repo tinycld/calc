@@ -6,7 +6,7 @@ import { PromptDialog } from '@tinycld/core/ui/PromptDialog'
 import { TemplatePickerDialog } from '@tinycld/drive/components/TemplatePickerDialog'
 import { useHasTemplates } from '@tinycld/drive/hooks/use-template-items'
 import { useCopyDriveItem } from '@tinycld/drive/lib/copy-drive-item'
-import { exportItemToFormat, exportTargetsFor } from '@tinycld/drive/lib/export-pdf'
+import { CSV_TARGET, exportItemToFormat, exportTargetsFor } from '@tinycld/drive/lib/export-pdf'
 import {
     fromTemplateName,
     isTemplateName,
@@ -88,9 +88,20 @@ export function FileMenu(props: MenuBarProps) {
         setTrashOpen(false)
     }
 
-    // Server-side "Download as" targets for a workbook (PDF, CSV, HTML) — the
-    // stored .xlsx converted by doctaculous. Reflects the last persisted state.
-    const exportTargets = exportTargetsFor(XLSX_MIME_TYPE)
+    // Server-side "Download as" targets for a workbook (PDF, HTML) — the stored
+    // .xlsx converted by doctaculous. Reflects the last persisted state. CSV is
+    // handled separately below so it can offer the current-sheet / all-sheets
+    // split via the export route's optional `sheet` param.
+    const exportTargets = exportTargetsFor(XLSX_MIME_TYPE).filter(t => t.to !== 'csv')
+
+    const downloadCsvCurrentSheet = () => {
+        exportItemToFormat(props.workbookId, props.workbookName, CSV_TARGET, {
+            sheet: props.sheetName,
+        })
+    }
+    const downloadCsvAllSheets = () => {
+        exportItemToFormat(props.workbookId, props.workbookName, CSV_TARGET)
+    }
 
     return (
         <>
@@ -136,6 +147,12 @@ export function FileMenu(props: MenuBarProps) {
                                 <Menu.ItemTitle>Download as XLSX</Menu.ItemTitle>
                             </Menu.Item>
                         )}
+                        <Menu.Item onPress={downloadCsvCurrentSheet}>
+                            <Menu.ItemTitle>Download as CSV (current sheet)</Menu.ItemTitle>
+                        </Menu.Item>
+                        <Menu.Item onPress={downloadCsvAllSheets}>
+                            <Menu.ItemTitle>Download as CSV (all sheets)</Menu.ItemTitle>
+                        </Menu.Item>
                         {exportTargets.map(target => (
                             <Menu.Item
                                 key={target.to}

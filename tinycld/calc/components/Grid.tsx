@@ -594,6 +594,7 @@ function GridInner({
         isFormatPainterActive,
         onActivateFormatPainter: activateFormatPainter,
         onOpenFind: onOpenFind,
+        sheetName: activeSheetName,
         onOpenPrint: printDialog.open,
         onOpenSort: toolbarActions.openSort,
         onToggleFilter: filter.toggleFilter,

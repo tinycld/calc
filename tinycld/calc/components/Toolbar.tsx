@@ -75,6 +75,8 @@ export interface ToolbarProps {
     onOpenFind: () => void
 
     onDownloadXlsx?: () => void
+    /** Active sheet name — used for the "current sheet" CSV export. */
+    sheetName: string
 
     onOpenPrint: () => void
 
