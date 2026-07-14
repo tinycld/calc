@@ -3,6 +3,7 @@ import type * as Y from 'yjs'
 import { useRenderedPivot } from '../../hooks/use-rendered-pivot'
 import { usePivotPanelStore } from '../../lib/stores/pivot-panel-store'
 import type { PivotDefinition } from '../../lib/workbook-types'
+import { GridCanvasTheme } from '../grid/GridCanvasTheme'
 import { PivotBanner } from './PivotBanner'
 import { PivotEmptyState } from './PivotEmptyState'
 import { PivotSidePanel } from './PivotSidePanel'
@@ -74,17 +75,22 @@ interface PivotMatrixProps {
 }
 
 function PivotMatrix({ matrix }: PivotMatrixProps) {
+    // Pinned to the light palette for the same reason as the main grid:
+    // the pivot data area reads as a spreadsheet canvas, so it stays a
+    // light "paper" surface in dark mode (see GridCanvasTheme).
     return (
-        <ScrollView horizontal className="flex-1 bg-background">
-            <ScrollView className="flex-1">
-                <View>
-                    {matrix.map((row, rIdx) => (
-                        // biome-ignore lint/suspicious/noArrayIndexKey: rendered pivot matrix is a positional grid recomputed wholesale; row identity is its position
-                        <PivotRow key={`r${rIdx + 1}`} cells={row} />
-                    ))}
-                </View>
+        <GridCanvasTheme>
+            <ScrollView horizontal className="flex-1 bg-background">
+                <ScrollView className="flex-1">
+                    <View>
+                        {matrix.map((row, rIdx) => (
+                            // biome-ignore lint/suspicious/noArrayIndexKey: rendered pivot matrix is a positional grid recomputed wholesale; row identity is its position
+                            <PivotRow key={`r${rIdx + 1}`} cells={row} />
+                        ))}
+                    </View>
+                </ScrollView>
             </ScrollView>
-        </ScrollView>
+        </GridCanvasTheme>
     )
 }
 
