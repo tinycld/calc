@@ -58,6 +58,7 @@ import { CommentPopover } from './grid/CommentPopover'
 import { CornerCell } from './grid/CornerCell'
 import { MIN_COLS, MIN_ROWS } from './grid/constants'
 import { FilterColumnDialog } from './grid/FilterColumnDialog'
+import { GridCanvasTheme } from './grid/GridCanvasTheme'
 import { HandleContextMenu } from './grid/HandleContextMenu'
 import { HeaderContextMenu } from './grid/HeaderContextMenu'
 import { RowHeader } from './grid/RowHeader'
@@ -675,62 +676,68 @@ function GridInner({
                 onSpecialKey={suggestions.onSpecialKey}
                 onAnchorLayout={formulaBar.onAnchorLayout}
             />
-            <View className="flex-row">
-                <CornerCell store={instance.store} rowCount={rows} colCount={cols} />
-                <ColumnHeader
-                    scrollRef={viewport.headerScrollRef}
-                    contentWidth={contentWidth}
-                    colOffsets={colOffsets}
-                    firstCol={viewport.visible.firstCol}
-                    lastCol={viewport.visible.lastCol}
-                    rowCount={rows}
-                    frozenCols={frozenCols}
-                    makeHandleProps={colResize.makeHandleProps}
-                    dragState={colResize.dragState}
-                    filterRange={filter.filterRange}
-                    activeFilterCols={filter.activeFilterCols}
-                    filterMode={filter.filterView?.mode ?? null}
-                    onRemoveColumnCriterion={filter.removeHeaderCriterion}
-                    onFormatPainterApply={applyFormatPainterIfActive}
-                />
-            </View>
-            <View className="flex-1 flex-row" onLayout={onBodyContainerLayout}>
-                <RowHeader
-                    scrollRef={viewport.leftColumnScrollRef}
-                    contentHeight={contentHeight}
-                    rowOffsets={rowOffsets}
-                    firstRow={viewport.visible.firstRow}
-                    lastRow={viewport.visible.lastRow}
-                    colCount={cols}
-                    frozenRows={frozenRows}
-                    makeHandleProps={rowResize.makeHandleProps}
-                    dragState={rowResize.dragState}
-                    onFormatPainterApply={applyFormatPainterIfActive}
-                />
-                <Body
-                    horizontalRef={viewport.horizontalRef}
-                    verticalRef={viewport.verticalRef}
-                    contentWidth={contentWidth}
-                    contentHeight={contentHeight}
-                    colOffsets={colOffsets}
-                    rowOffsets={rowOffsets}
-                    colDragState={colResize.dragState}
-                    rowDragState={rowResize.dragState}
-                    visible={viewport.visible}
-                    sheet={sheet}
-                    cellEditorInputRef={instance.cellEditorInputRef}
-                    presenceOnSheet={presenceOnSheet}
-                    readOnly={readOnly}
-                    frozenRows={frozenRows}
-                    frozenCols={frozenCols}
-                    frozenRowHorizontalRef={viewport.frozenRowHorizontalRef}
-                    frozenColVerticalRef={viewport.frozenColVerticalRef}
-                    onSpecialKey={suggestions.onSpecialKey}
-                    onLayout={viewport.onBodyLayout}
-                    onHorizontalScroll={viewport.onHorizontalScroll}
-                    onVerticalScroll={viewport.onVerticalScroll}
-                />
-            </View>
+            {/* The grid data area (row/column headers + cells) is pinned to
+                the light palette so imported .xlsx colors, authored for a
+                white page, stay faithful and readable in dark mode. Chrome
+                above/below stays theme-following. */}
+            <GridCanvasTheme>
+                <View className="flex-row">
+                    <CornerCell store={instance.store} rowCount={rows} colCount={cols} />
+                    <ColumnHeader
+                        scrollRef={viewport.headerScrollRef}
+                        contentWidth={contentWidth}
+                        colOffsets={colOffsets}
+                        firstCol={viewport.visible.firstCol}
+                        lastCol={viewport.visible.lastCol}
+                        rowCount={rows}
+                        frozenCols={frozenCols}
+                        makeHandleProps={colResize.makeHandleProps}
+                        dragState={colResize.dragState}
+                        filterRange={filter.filterRange}
+                        activeFilterCols={filter.activeFilterCols}
+                        filterMode={filter.filterView?.mode ?? null}
+                        onRemoveColumnCriterion={filter.removeHeaderCriterion}
+                        onFormatPainterApply={applyFormatPainterIfActive}
+                    />
+                </View>
+                <View className="flex-1 flex-row" onLayout={onBodyContainerLayout}>
+                    <RowHeader
+                        scrollRef={viewport.leftColumnScrollRef}
+                        contentHeight={contentHeight}
+                        rowOffsets={rowOffsets}
+                        firstRow={viewport.visible.firstRow}
+                        lastRow={viewport.visible.lastRow}
+                        colCount={cols}
+                        frozenRows={frozenRows}
+                        makeHandleProps={rowResize.makeHandleProps}
+                        dragState={rowResize.dragState}
+                        onFormatPainterApply={applyFormatPainterIfActive}
+                    />
+                    <Body
+                        horizontalRef={viewport.horizontalRef}
+                        verticalRef={viewport.verticalRef}
+                        contentWidth={contentWidth}
+                        contentHeight={contentHeight}
+                        colOffsets={colOffsets}
+                        rowOffsets={rowOffsets}
+                        colDragState={colResize.dragState}
+                        rowDragState={rowResize.dragState}
+                        visible={viewport.visible}
+                        sheet={sheet}
+                        cellEditorInputRef={instance.cellEditorInputRef}
+                        presenceOnSheet={presenceOnSheet}
+                        readOnly={readOnly}
+                        frozenRows={frozenRows}
+                        frozenCols={frozenCols}
+                        frozenRowHorizontalRef={viewport.frozenRowHorizontalRef}
+                        frozenColVerticalRef={viewport.frozenColVerticalRef}
+                        onSpecialKey={suggestions.onSpecialKey}
+                        onLayout={viewport.onBodyLayout}
+                        onHorizontalScroll={viewport.onHorizontalScroll}
+                        onVerticalScroll={viewport.onVerticalScroll}
+                    />
+                </View>
+            </GridCanvasTheme>
             <CellContextMenu doc={doc} sheetId={sheetId} />
             <CommentPopover driveItemId={driveItemId} sheetId={sheetId} />
             <CalcCommentDrawer
