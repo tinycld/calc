@@ -425,10 +425,26 @@ function GridInner({
     // stack between the Grid root and the body has changed heights more
     // than once and is conditional in places, which has bitten the
     // popover's vertical anchor.
+    //
+    // Measure the body row RELATIVE TO THE GRID ROOT via measureLayout
+    // rather than reading LayoutChangeEvent's y — the latter is
+    // parent-relative, so any wrapper inserted between the root and the
+    // body row (e.g. GridCanvasTheme's light-scope backing View) would
+    // silently shift bodyTop and misplace the popover. Measuring against
+    // the root keeps the invariant regardless of intermediate nesting.
+    const gridRootRef = useRef<View>(null)
+    const bodyRowRef = useRef<View>(null)
     const setBodyTop = useGridStore(s => s.setBodyTop)
     const onBodyContainerLayout = useCallback(
-        (e: LayoutChangeEvent) => {
-            setBodyTop(e.nativeEvent.layout.y)
+        (_e: LayoutChangeEvent) => {
+            const root = gridRootRef.current
+            const bodyRow = bodyRowRef.current
+            if (root == null || bodyRow == null) return
+            bodyRow.measureLayout(
+                root,
+                (_x, y) => setBodyTop(y),
+                () => {}
+            )
         },
         [setBodyTop]
     )
@@ -636,7 +652,7 @@ function GridInner({
     }
 
     return (
-        <View className="flex-1 bg-background web:select-none">
+        <View ref={gridRootRef} className="flex-1 bg-background web:select-none">
             {/* Focus sentinel: zero-size focusable element that holds keyboard
                 focus between edit sessions so arrow keys / typing work without
                 requiring a double-click to re-activate the grid. */}
@@ -680,7 +696,7 @@ function GridInner({
                 the light palette so imported .xlsx colors, authored for a
                 white page, stay faithful and readable in dark mode. Chrome
                 above/below stays theme-following. */}
-            <GridCanvasTheme>
+            <GridCanvasTheme onLayout={onBodyContainerLayout}>
                 <View className="flex-row">
                     <CornerCell store={instance.store} rowCount={rows} colCount={cols} />
                     <ColumnHeader
@@ -700,7 +716,7 @@ function GridInner({
                         onFormatPainterApply={applyFormatPainterIfActive}
                     />
                 </View>
-                <View className="flex-1 flex-row" onLayout={onBodyContainerLayout}>
+                <View ref={bodyRowRef} className="flex-1 flex-row" onLayout={onBodyContainerLayout}>
                     <RowHeader
                         scrollRef={viewport.leftColumnScrollRef}
                         contentHeight={contentHeight}

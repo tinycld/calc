@@ -1,3 +1,4 @@
+import type { LayoutChangeEvent } from 'react-native'
 import { View } from 'react-native'
 import { ScopedTheme } from 'uniwind'
 
@@ -27,10 +28,24 @@ import { ScopedTheme } from 'uniwind'
 // that 90%-transparent tint would reveal the dark app background through
 // the cell and read as a near-black block. The backing guarantees the
 // tint always composites over light paper.
-export function GridCanvasTheme({ children }: { children: React.ReactNode }) {
+// `onLayout` fires when the backing View's own geometry OR its position
+// within the Grid root changes — including when conditional chrome above
+// it (the status banners) mounts/unmounts and shifts the canvas down.
+// Grid wires this to its body-top re-measure so the formula-suggestion
+// popover anchor stays correct across those shifts (the backing View is
+// the popover overlay's offset context on the body axis).
+export function GridCanvasTheme({
+    children,
+    onLayout,
+}: {
+    children: React.ReactNode
+    onLayout?: (e: LayoutChangeEvent) => void
+}) {
     return (
         <ScopedTheme theme="light">
-            <View className="flex-1 bg-background">{children}</View>
+            <View className="flex-1 bg-background" onLayout={onLayout}>
+                {children}
+            </View>
         </ScopedTheme>
     )
 }
