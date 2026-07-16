@@ -439,7 +439,7 @@ server/
                               and dxf builds)
     parity_oracle_test.go     excelize-as-oracle parity suite — the one
                               place excelize is still used (test-only)
-    api.go                    GET /api/calc/preview/:id (thumbnail / file preview)
+    api.go                    GET /api/calc/render/{id} (thumbnail / file preview)
 ```
 
 Go module: `tinycld.org/packages/calc`. Imports `tinycld.org/core/realtime`

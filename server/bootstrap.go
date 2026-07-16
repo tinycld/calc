@@ -13,7 +13,7 @@ import (
 
 // WorkbookModel mirrors the TS WorkbookModel
 // (tinycld/calc/lib/workbook-types.ts). It is the same shape returned
-// by the /api/calc/preview/:id endpoint and consumed by the YDoc
+// by the /api/calc/render/{id} endpoint and consumed by the YDoc
 // bootstrap path on first joiner. Field names use camelCase JSON tags
 // so the wire shape matches the TS interface byte-for-byte.
 type WorkbookModel struct {
