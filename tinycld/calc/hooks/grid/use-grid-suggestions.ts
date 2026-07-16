@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type * as Y from 'yjs'
 import type { FormulaSpecialKey } from '../../components/FormulaBar'
 import { HEADER_HEIGHT, ROW_HEADER_WIDTH } from '../../components/grid/constants'
@@ -87,18 +87,27 @@ export function useGridSuggestions({
         return filterSuggestions(functionNames, namedRangeNames, t.token)
     }, [editSession, functionNames, namedRangeNames, store])
 
-    // Reset suggestionIndex whenever the items list identity changes —
-    // the user is now looking at a different list and starting from 0 is
-    // the expected UX. Done during render (React's sanctioned "adjust
-    // state when an input changes" pattern) rather than an effect: the
-    // index lives in the shared store, and a ref tracks the previous
-    // items identity so the reset fires exactly on change, not on every
-    // render.
-    const prevItemsRef = useRef(items)
-    if (prevItemsRef.current !== items) {
-        prevItemsRef.current = items
+    // Reset suggestionIndex to 0 whenever the items list identity
+    // changes — the user is now looking at a different list and starting
+    // from 0 is the expected UX. suggestionIndex lives in the SHARED grid
+    // store, which sibling components (NameBox, FormulaBar) also
+    // subscribe to. Writing to it during render therefore schedules an
+    // update to those already-committed components, which React rejects
+    // ("Cannot update a component while rendering a different one"). So
+    // the store write happens in an effect (after commit) instead.
+    // (store, the Zustand API handle, is stable for the component's
+    // lifetime, so items is the only reactive dependency.)
+    useEffect(() => {
+        if (items.length === 0) return
         store.getState().setSuggestionIndex(0)
-    }
+    }, [items, store])
+
+    // Until that effect runs, the store's suggestionIndex may still point
+    // into the PREVIOUS list and be out of range for the new one. Clamp
+    // the value we hand out so no consumer highlights / selects a missing
+    // item during the intervening frame.
+    const effectiveSelectedIndex =
+        items.length === 0 ? 0 : Math.min(selectedIndex, items.length - 1)
 
     // Mirror the latest items into a ref so onSpecialKey can be a
     // stable identity. Without this, items would be a dep of
@@ -214,7 +223,7 @@ export function useGridSuggestions({
 
     return {
         items,
-        selectedIndex,
+        selectedIndex: effectiveSelectedIndex,
         anchor,
         onSelect,
         onHover,
