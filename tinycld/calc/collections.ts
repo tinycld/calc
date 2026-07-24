@@ -12,7 +12,7 @@ export function registerCollections(
 ) {
     const calc_comments = newCollection('calc_comments', {
         omitOnInsert: ['created', 'updated'] as const,
-        expand: { author: coreStores.user_org },
+        expand: { author: coreStores.users },
         collectionOptions: {
             autoIndex: 'eager' as const,
             defaultIndexType: BasicIndex,

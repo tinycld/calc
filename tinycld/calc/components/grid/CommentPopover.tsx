@@ -1,5 +1,5 @@
+import { useAuth } from '@tinycld/core/lib/auth'
 import { errorToString } from '@tinycld/core/lib/errors'
-import { useCurrentRole } from '@tinycld/core/lib/use-current-role'
 import { FormErrorSummary, TextAreaInput, useForm, z, zodResolver } from '@tinycld/core/ui/form'
 import { Menu } from '@tinycld/core/ui/menu'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -111,7 +111,8 @@ interface PopoverBodyProps {
 
 function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: PopoverBodyProps) {
     const { add, reply, editBody, resolve, reopen, remove } = useCommentMutations()
-    const { userOrgId } = useCurrentRole()
+    const { user } = useAuth()
+    const currentUserId = user.id
 
     // Prefer the most-recent unresolved thread so the "Re-open" path
     // doesn't accidentally reopen the oldest one when multiple resolved
@@ -212,7 +213,7 @@ function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: Popov
                         <ThreadView
                             key={thread.root.id}
                             thread={thread}
-                            currentUserOrgId={userOrgId}
+                            currentUserOrgId={currentUserId}
                             onEdit={(id, body) => editBody.mutate({ id, body })}
                             onDelete={id => remove.mutate({ id })}
                         />
