@@ -91,11 +91,11 @@ migrate(
             // commented-on drive_item can read/write comments. Mutating someone
             // else's comment is forbidden — Sheets parity.
             listRule:
-                '@request.auth.id != "" && drive_item.drive_shares_via_item.user_org ?= @request.auth.id',
+                '@request.auth.id != "" && drive_item.drive_shares_via_item.user ?= @request.auth.id',
             viewRule:
-                '@request.auth.id != "" && drive_item.drive_shares_via_item.user_org ?= @request.auth.id',
+                '@request.auth.id != "" && drive_item.drive_shares_via_item.user ?= @request.auth.id',
             createRule:
-                '@request.auth.id != "" && drive_item.drive_shares_via_item.user_org ?= @request.auth.id && author = @request.auth.id',
+                '@request.auth.id != "" && drive_item.drive_shares_via_item.user ?= @request.auth.id && author = @request.auth.id',
             updateRule: '@request.auth.id != "" && author = @request.auth.id',
             deleteRule: '@request.auth.id != "" && author = @request.auth.id',
         })

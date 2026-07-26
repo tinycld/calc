@@ -71,7 +71,7 @@ export function CalcCommentDrawer({
             isOpen={isOpen}
             onClose={close}
             groups={groups}
-            currentUserOrgId={currentUserId}
+            currentUserId={currentUserId}
             focusedThreadId={focusedThreadId}
             onJump={group => {
                 const anchor = anchorByKey.get(group.key)

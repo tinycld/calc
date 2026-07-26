@@ -71,10 +71,7 @@ export default function CalcDetail() {
     const orgHref = useOrgHref()
 
     const { data: items = [], isLoading: isItemLoading } = useOrgLiveQuery(
-        query =>
-            query
-                .from({ item: driveItems })
-                .where(({ item }) => eq(item.id, id ?? '')),
+        query => query.from({ item: driveItems }).where(({ item }) => eq(item.id, id ?? '')),
         [id]
     )
 
@@ -109,7 +106,6 @@ export default function CalcDetail() {
         identity: {
             kind: 'member',
             userId: user.id,
-            userOrgId: user.id,
             displayName: user.name,
             color: colorForUser(user.id),
         },

@@ -213,7 +213,7 @@ function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: Popov
                         <ThreadView
                             key={thread.root.id}
                             thread={thread}
-                            currentUserOrgId={currentUserId}
+                            currentUserId={currentUserId}
                             onEdit={(id, body) => editBody.mutate({ id, body })}
                             onDelete={id => remove.mutate({ id })}
                         />
@@ -259,18 +259,18 @@ function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: Popov
 
 interface ThreadViewProps {
     thread: Thread
-    currentUserOrgId: string
+    currentUserId: string
     onEdit: (id: string, body: string) => void
     onDelete: (id: string) => void
 }
 
-function ThreadView({ thread, currentUserOrgId, onEdit, onDelete }: ThreadViewProps) {
+function ThreadView({ thread, currentUserId, onEdit, onDelete }: ThreadViewProps) {
     const dim = thread.resolvedAt != null
     return (
         <View className={`px-3 py-2 ${dim ? 'opacity-60' : ''}`}>
             <CommentLine
                 comment={thread.root}
-                isOwn={thread.root.author === currentUserOrgId}
+                isOwn={thread.root.author === currentUserId}
                 onEdit={onEdit}
                 onDelete={onDelete}
             />
@@ -278,7 +278,7 @@ function ThreadView({ thread, currentUserOrgId, onEdit, onDelete }: ThreadViewPr
                 <View key={reply.id} className="mt-2 ml-2">
                     <CommentLine
                         comment={reply}
-                        isOwn={reply.author === currentUserOrgId}
+                        isOwn={reply.author === currentUserId}
                         onEdit={onEdit}
                         onDelete={onDelete}
                     />

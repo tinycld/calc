@@ -9,6 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
+	"tinycld.org/core/driveshare"
 	"tinycld.org/core/realtime"
 	"tinycld.org/core/sharelink"
 )
@@ -51,7 +52,7 @@ func setupShareTestApp(t *testing.T) *tests.TestApp {
 // the 64-char token and the item id. Mirrors sharelink's own test helper.
 func seedShareLink(t *testing.T, app *tests.TestApp, role string, active bool) (token, itemID string) {
 	t.Helper()
-	item := seedDriveItemInOrg(t, app, "org-acme", "workbook.xlsx")
+	item := seedSharedItem(t, app, nil, "workbook.xlsx")
 
 	// 64-char token, unique per item to avoid token collisions.
 	tok := strings.Repeat("a", 64-len(item.Id)) + item.Id
@@ -123,7 +124,7 @@ func TestAuthorizeAnonShare_AdmitsEditor(t *testing.T) {
 
 // TestAuthorizeAnonShare_RejectsEmptyRole checks that a link with an
 // empty/unknown role string is rejected by the switch default branch.
-// This exercises the errNoShare path without needing a real DB link for
+// This exercises the ErrNoAccess path without needing a real DB link for
 // the unknown role (we use a valid token/itemID pair but an unrecognized
 // role stored in the link record is not possible via normal seeding —
 // instead we verify that claims.ItemID mismatch is rejected, and rely
@@ -145,8 +146,8 @@ func TestAuthorizeAnonShare_RejectsItemIDMismatch(t *testing.T) {
 		Role:       sharelink.RoleViewer,
 	}
 	err := authorizeAnonShare(app, claims, "different-room-id")
-	if !errors.Is(err, errNoShare) {
-		t.Errorf("itemID mismatch: expected errNoShare, got %v", err)
+	if !errors.Is(err, driveshare.ErrNoAccess) {
+		t.Errorf("itemID mismatch: expected ErrNoAccess, got %v", err)
 	}
 }
 
@@ -182,7 +183,7 @@ func TestAuthorizeAnonShare_AnonIsReadOnly(t *testing.T) {
 		{sharelink.RoleEditor, false},
 	}
 	app := setupShareTestApp(t)
-	item := seedDriveItemInOrg(t, app, "org-acme", "wb.xlsx")
+	item := seedSharedItem(t, app, nil, "wb.xlsx")
 
 	for _, c := range cases {
 		t.Run(c.shareRole, func(t *testing.T) {
@@ -200,7 +201,7 @@ func TestAuthorizeAnonShare_AnonIsReadOnly(t *testing.T) {
 func TestAuthorizeAnonShare_Expired(t *testing.T) {
 	app := setupShareTestApp(t)
 
-	item := seedDriveItemInOrg(t, app, "org-acme", "wb.xlsx")
+	item := seedSharedItem(t, app, nil, "wb.xlsx")
 	tok := strings.Repeat("b", 64-len(item.Id)) + item.Id
 
 	linksCol, err := app.FindCollectionByNameOrId("drive_share_links")

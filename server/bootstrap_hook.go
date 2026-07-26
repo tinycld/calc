@@ -3,7 +3,7 @@ package calc
 import (
 	"fmt"
 
-	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/core"
 	ycrdt "github.com/skyterra/y-crdt"
 )
 
@@ -21,7 +21,7 @@ import (
 // as zero bytes; the closure returns nil and the room continues with
 // an empty Y.Doc. Subsequent edits flow normally; SaveRoom will write
 // the xlsx out from scratch on the first save.
-func makeXLSXBootstrap(app *pocketbase.PocketBase) func(roomID string, doc *ycrdt.Doc) error {
+func makeXLSXBootstrap(app core.App) func(roomID string, doc *ycrdt.Doc) error {
 	return func(roomID string, doc *ycrdt.Doc) error {
 		item, err := app.FindRecordById(driveItemsCollection, roomID)
 		if err != nil {

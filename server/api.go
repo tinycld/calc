@@ -6,18 +6,18 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"tinycld.org/core/driveshare"
 	"tinycld.org/packages/calc/render"
 )
 
 // registerAPI binds the calc HTTP endpoints. Called from Register at
 // startup. Each endpoint runs through the standard PocketBase auth
 // middleware (so re.Auth is non-nil) and additionally enforces drive
-// share access via checkDriveItemAccess — same gate the realtime
+// share access via driveshare.CheckRead — same gate the realtime
 // authorize uses.
-func registerAPI(app *pocketbase.PocketBase) {
+func registerAPI(app core.App) {
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		e.Router.GET("/api/calc/render/{id}", func(re *core.RequestEvent) error {
 			return handleRender(app, re)
@@ -54,12 +54,12 @@ func requireAuthCalc(re *core.RequestEvent) error {
 //
 // ETag: derived from drive_item `updated` + renderer version. Honors
 // `If-None-Match` → 304.
-func handleRender(app *pocketbase.PocketBase, re *core.RequestEvent) error {
+func handleRender(app core.App, re *core.RequestEvent) error {
 	driveItemID := re.Request.PathValue("id")
 	if driveItemID == "" {
 		return re.BadRequestError("missing drive_item id", nil)
 	}
-	if err := checkDriveItemAccess(app, re.Auth.Id, driveItemID); err != nil {
+	if err := driveshare.CheckRead(app, re.Auth.Id, driveItemID); err != nil {
 		return re.ForbiddenError("no access to this drive item", nil)
 	}
 	item, err := app.FindRecordById(driveItemsCollection, driveItemID)
@@ -73,7 +73,7 @@ func handleRender(app *pocketbase.PocketBase, re *core.RequestEvent) error {
 // HTML for a calc drive_item. Shared by the authenticated render
 // endpoint and the public share-link render endpoint — both arrive here
 // after their own access check, so this performs no authorization.
-func writeRenderedItem(app *pocketbase.PocketBase, re *core.RequestEvent, item *core.Record) error {
+func writeRenderedItem(app core.App, re *core.RequestEvent, item *core.Record) error {
 	etag := renderETag(item.Id, item.GetString("updated"))
 	if match := re.Request.Header.Get("If-None-Match"); match == etag {
 		re.Response.Header().Set("ETag", etag)
@@ -115,7 +115,7 @@ func writeRenderedItem(app *pocketbase.PocketBase, re *core.RequestEvent, item *
 // (registered in this package) can reuse it after validating a share
 // session — members are separate modules, so reuse goes through this
 // exported func, not an import of drive.
-func RenderItemHTML(app *pocketbase.PocketBase, item *core.Record, opts render.RenderOpts) (string, error) {
+func RenderItemHTML(app core.App, item *core.Record, opts render.RenderOpts) (string, error) {
 	xlsxBytes, err := readDriveItemBytes(app, item)
 	if err != nil {
 		return "", fmt.Errorf("could not read file: %w", err)

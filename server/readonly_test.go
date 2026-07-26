@@ -16,14 +16,11 @@ func TestIsReadOnlyForConn(t *testing.T) {
 	viewer := mustCreateUser(t, app, "viewer@example.com")
 	owner := mustCreateUser(t, app, "owner@example.com")
 	stranger := mustCreateUser(t, app, "stranger@example.com")
-	item := seedDriveItemInOrg(t, app, "org-acme", "workbook.xlsx")
+	item := seedSharedItem(t, app, nil, "workbook.xlsx")
 
-	editorUO := seedUserOrg(t, app, editor.Id, "org-acme")
-	seedShare(t, app, item.Id, editorUO, "editor")
-	viewerUO := seedUserOrg(t, app, viewer.Id, "org-acme")
-	seedShare(t, app, item.Id, viewerUO, "viewer")
-	ownerUO := seedUserOrg(t, app, owner.Id, "org-acme")
-	seedShare(t, app, item.Id, ownerUO, "owner")
+	seedShare(t, app, item.Id, editor.Id, "editor")
+	seedShare(t, app, item.Id, viewer.Id, "viewer")
+	seedShare(t, app, item.Id, owner.Id, "owner")
 	// stranger has no share row
 
 	cases := []struct {
@@ -53,12 +50,10 @@ func TestMakeOnConnect_ServerHello(t *testing.T) {
 	app := setupAuthTestApp(t)
 	editor := mustCreateUser(t, app, "editor2@example.com")
 	viewer := mustCreateUser(t, app, "viewer2@example.com")
-	item := seedDriveItemInOrg(t, app, "org-acme", "workbook2.xlsx")
+	item := seedSharedItem(t, app, nil, "workbook2.xlsx")
 
-	editorUO := seedUserOrg(t, app, editor.Id, "org-acme")
-	seedShare(t, app, item.Id, editorUO, "editor")
-	viewerUO := seedUserOrg(t, app, viewer.Id, "org-acme")
-	seedShare(t, app, item.Id, viewerUO, "viewer")
+	seedShare(t, app, item.Id, editor.Id, "editor")
+	seedShare(t, app, item.Id, viewer.Id, "viewer")
 
 	helloFn := makeOnConnect(app)
 

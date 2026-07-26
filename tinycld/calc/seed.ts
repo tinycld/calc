@@ -6,8 +6,6 @@ const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadshee
 
 interface SeedContext {
     user: { id: string; email: string; name: string }
-    org: { id: string }
-    userOrg: { id: string }
 }
 
 function log(...args: unknown[]) {
@@ -25,7 +23,7 @@ async function loadSampleWorkbook(): Promise<{ blob: Blob; size: number }> {
 }
 
 export default async function seed(pb: PocketBase, ctx: SeedContext): Promise<void> {
-    const { org, userOrg } = ctx
+    const { user } = ctx
     // Disambiguate from the drive seed's own "Team Roster.xlsx" sample, which
     // is a financial-data fixture from the Drive package's `sample.xlsx`. Both
     // seeds run for every dev/test reset, and the existing-name check below
@@ -34,7 +32,7 @@ export default async function seed(pb: PocketBase, ctx: SeedContext): Promise<vo
     const fileName = 'Team Scorecard.xlsx'
 
     const existing = await pb.collection('drive_items').getList(1, 1, {
-        filter: pb.filter('org = {:org} && name = {:name}', { org: org.id, name: fileName }),
+        filter: pb.filter('name = {:name}', { name: fileName }),
     })
     if (existing.items.length > 0) {
         log(`Skipping (already seeded): ${fileName}`)
@@ -45,12 +43,11 @@ export default async function seed(pb: PocketBase, ctx: SeedContext): Promise<vo
     log(`Uploading sample sheet: ${fileName} (${size} bytes)`)
 
     const formData = new FormData()
-    formData.append('org', org.id)
     formData.append('name', fileName)
     formData.append('is_folder', 'false')
     formData.append('mime_type', XLSX_MIME_TYPE)
     formData.append('parent', '')
-    formData.append('created_by', userOrg.id)
+    formData.append('created_by', user.id)
     formData.append('size', String(size))
     formData.append('description', '')
     formData.append('file', blob, fileName)
