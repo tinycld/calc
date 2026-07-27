@@ -87,9 +87,16 @@ migrate(
                     onUpdate: true,
                 },
             ],
-            // Mirror drive_items access: anyone with a drive_shares row for the
-            // commented-on drive_item can read/write comments. Mutating someone
-            // else's comment is forbidden — Sheets parity.
+            // Anyone with a drive_shares row for the commented-on drive_item
+            // can read/write comments. Mutating someone else's comment is
+            // forbidden — Sheets parity.
+            //
+            // NOTE (corrected by 1782200000): this said it mirrored
+            // drive_items access, but drive_items reads
+            // `created_by ?= @request.auth.id || <has-share>` and these rules
+            // carried only the share half, so the document's own creator saw
+            // no comments unless they also held a share row. The creator
+            // disjunct and the disabled clause are added there.
             listRule:
                 '@request.auth.id != "" && drive_item.drive_shares_via_item.user ?= @request.auth.id',
             viewRule:
