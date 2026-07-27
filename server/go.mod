@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/google/go-cmp v0.6.0
-	github.com/nathanstitt/doctaculous v0.0.4
+	github.com/nathanstitt/doctaculous v0.0.6
 	github.com/pocketbase/pocketbase v0.39.8
 	github.com/skyterra/y-crdt v0.0.0-20260224023949-c0cb10d3f33e
 	github.com/xuri/excelize/v2 v2.10.1
