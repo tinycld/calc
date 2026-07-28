@@ -55,7 +55,7 @@ func TestRegisterRealtimeDuplicatePanics(t *testing.T) {
 // cross-org staleness tests were deleted rather than adapted: single-org
 // has no second org for a share to be stale against, and the property
 // they guarded — a departed member's grants not surviving — is now
-// userorg.OffboardUser's, which has its own tests.
+// offboard.OffboardUser's, which has its own tests.
 
 // TestRoomAdmission_DeniesNonExistentItem pins calc's wiring of the core
 // predicate: a request for a drive_item that doesn't exist is denied

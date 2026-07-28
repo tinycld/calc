@@ -6,7 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 
 	"tinycld.org/core/blankfile"
-	"tinycld.org/core/userorg"
+	"tinycld.org/core/offboard"
 )
 
 // xlsxMimeType is the drive_items.mime_type for spreadsheets — matches the
@@ -51,7 +51,7 @@ func RegisterTenant(app *pocketbase.PocketBase) {
 
 // registerShared is the single source of truth for what BOTH compositions run.
 func registerShared(app *pocketbase.PocketBase) {
-	userorg.RegisterReassignable(userorg.ReassignableRef{Collection: "calc_comments", Field: "author"})
+	offboard.RegisterReassignable(offboard.ReassignableRef{Collection: "calc_comments", Field: "author"})
 
 	// Attach a blank workbook server-side when a new sheet is created with no
 	// file — the client just inserts the drive_items row (no Blob upload).
