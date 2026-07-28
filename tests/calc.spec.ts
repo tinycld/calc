@@ -1659,9 +1659,8 @@ async function typeIntoCell(
 // grid being interactive).
 async function openNewSpreadsheet(page: import('@playwright/test').Page): Promise<void> {
     // Wait for the No-File panel's headline to render before clicking the
-    // create button. handleCreateNew throws "Organization context not
-    // ready" if useOrgInfo / useCurrentUserOrg haven't resolved yet; when
-    // that happens the click silently does nothing.
+    // create button, so the click lands on a mounted, hydrated button
+    // instead of racing the panel's first render.
     await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
     const newBtn = page.getByRole('button', { name: 'New sheet' })
     await newBtn.click()

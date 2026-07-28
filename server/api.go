@@ -70,9 +70,10 @@ func handleRender(app core.App, re *core.RequestEvent) error {
 }
 
 // writeRenderedItem handles ETag negotiation and writes the rendered
-// HTML for a calc drive_item. Shared by the authenticated render
-// endpoint and the public share-link render endpoint — both arrive here
-// after their own access check, so this performs no authorization.
+// HTML for a calc drive_item. Its only caller today is the
+// authenticated render endpoint (requireAuthCalc), which does the
+// access check before calling — so this performs no authorization, and
+// any future caller (e.g. a share-link render) must bring its own.
 func writeRenderedItem(app core.App, re *core.RequestEvent, item *core.Record) error {
 	etag := renderETag(item.Id, item.GetString("updated"))
 	if match := re.Request.Header.Get("If-None-Match"); match == etag {
@@ -111,10 +112,10 @@ func writeRenderedItem(app core.App, re *core.RequestEvent, item *core.Record) e
 }
 
 // RenderItemHTML reads an xlsx drive_item's bytes and returns the
-// rendered HTML fragment. Exported so the public share-link render path
-// (registered in this package) can reuse it after validating a share
-// session — members are separate modules, so reuse goes through this
-// exported func, not an import of drive.
+// rendered HTML fragment. Exported for reuse by future render paths
+// (e.g. a share-link render, not built yet) — members are separate
+// modules, so reuse goes through this exported func, not an import of
+// drive.
 func RenderItemHTML(app core.App, item *core.Record, opts render.RenderOpts) (string, error) {
 	xlsxBytes, err := readDriveItemBytes(app, item)
 	if err != nil {

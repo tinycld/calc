@@ -483,9 +483,8 @@ async function seedTwoRegionsTwoRows(
 // — kept inline so this spec is self-contained.
 async function openNewSpreadsheet(page: Page): Promise<void> {
     // Wait for the No-File panel's headline to render before clicking
-    // the create button — handleCreateNew needs useOrgInfo /
-    // useCurrentUserOrg to resolve first, and if the click races that
-    // the create silently no-ops and waitForURL hangs.
+    // the create button, so the click lands on a mounted, hydrated
+    // button instead of racing the panel's first render.
     await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
     await page.getByRole('button', { name: 'New sheet' }).click()
     await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })

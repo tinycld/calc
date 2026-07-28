@@ -122,30 +122,20 @@ func TestAuthorizeAnonShare_AdmitsEditor(t *testing.T) {
 	}
 }
 
-// TestAuthorizeAnonShare_RejectsEmptyRole checks that a link with an
-// empty/unknown role string is rejected by the switch default branch.
-// This exercises the ErrNoAccess path without needing a real DB link for
-// the unknown role (we use a valid token/itemID pair but an unrecognized
-// role stored in the link record is not possible via normal seeding —
-// instead we verify that claims.ItemID mismatch is rejected, and rely
-// on the ResolveLink gate). For a direct unknown-role test we use a
-// revoked (inactive) link to trigger ErrLinkGone, which means an
-// empty-role DB row is unnecessary.
-//
-// The authoritative "empty role → rejected" path is exercised by
-// TestAuthorizeAnonShare_RejectsRevokedLink below, which shows the
-// function rejects anything that can't pass ResolveLink.
+// TestAuthorizeAnonShare_RejectsItemIDMismatch verifies that a valid
+// token presented for a room the link does not cover is refused with
+// ErrNoAccess — a stolen-but-real token must not open other documents.
 func TestAuthorizeAnonShare_RejectsItemIDMismatch(t *testing.T) {
 	app := setupShareTestApp(t)
 	tok, itemID := seedShareLink(t, app, sharelink.RoleViewer, true)
-	_ = itemID
 
+	otherRoom := itemID + "-other"
 	claims := realtime.ShareClaims{
 		ShareToken: tok,
-		ItemID:     "different-room-id",
+		ItemID:     otherRoom,
 		Role:       sharelink.RoleViewer,
 	}
-	err := authorizeAnonShare(app, claims, "different-room-id")
+	err := authorizeAnonShare(app, claims, otherRoom)
 	if !errors.Is(err, driveshare.ErrNoAccess) {
 		t.Errorf("itemID mismatch: expected ErrNoAccess, got %v", err)
 	}
