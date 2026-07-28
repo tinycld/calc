@@ -652,7 +652,11 @@ function GridInner({
     }
 
     return (
-        <View ref={gridRootRef} className="flex-1 bg-background web:select-none">
+        <View
+            ref={gridRootRef}
+            testID="calc-grid-root"
+            className="flex-1 bg-background web:select-none"
+        >
             {/* Focus sentinel: zero-size focusable element that holds keyboard
                 focus between edit sessions so arrow keys / typing work without
                 requiring a double-click to re-activate the grid. */}
