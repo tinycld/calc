@@ -88,23 +88,6 @@ func registerRealtime(app core.App) {
 	})
 }
 
-// isReadOnlyForConn decides whether the connecting client gets a
-// read-only editor. Anonymous share-session visitors are admitted only
-// for editor-role links today (see authorizeAnonShare), so an anon here
-// is writable iff its share role is editor. Authenticated members are
-// writable iff they hold an owner/editor drive_shares role; viewer
-// members (and any lookup failure) are read-only — fail closed.
-func isReadOnlyForConn(app core.App, roomID string, conn *realtime.Client) bool {
-	if conn.IsAnonymous() {
-		return conn.ShareRole() != sharelink.RoleEditor
-	}
-	userID := conn.AuthID()
-	if userID == "" {
-		return true
-	}
-	return !driveshare.CanWrite(app, userID, roomID)
-}
-
 // calcServerHello is the JSON payload of the MsgServerHello frame calc
 // sends each joining client. The client decodes it via the symmetric TS
 // type in @tinycld/calc/hooks/use-realtime. Mirrors text's serverHello
@@ -116,7 +99,7 @@ type calcServerHello struct {
 // makeOnConnect builds the per-client ServerHelloFn: { readOnly }.
 func makeOnConnect(app core.App) realtime.ServerHelloFn {
 	return func(roomID string, conn *realtime.Client) ([]byte, error) {
-		readOnly := isReadOnlyForConn(app, roomID, conn)
+		readOnly := sharelink.ReadOnlyForConn(app, roomID, conn)
 		// Cache on the connection so the broker's WritePredicate (hot
 		// path, every MsgDocUpdate) is a pure field read, not a per-frame
 		// DB query. Role can't change mid-session.
@@ -125,31 +108,9 @@ func makeOnConnect(app core.App) realtime.ServerHelloFn {
 	}
 }
 
-// authorizeAnonShare admits an anonymous share-link visitor to a calc room.
-// It re-resolves the share link (so a revoked/expired/downgraded link is
-// rejected at connect time, not just at mint time) and admits any recognized
-// share role (viewer, commentor, or editor) bound to this exact drive_item.
-// Non-editor roles are admitted read-only: write enforcement is delegated to
-// the broker's WritePredicate (isReadOnlyForConn / SetReadOnly in OnConnect).
+// authorizeAnonShare admits an anonymous share-link visitor to a calc room —
+// the shared sharelink.AuthorizeAnonRoom policy adapted to realtime's
+// ShareClaims shape.
 func authorizeAnonShare(app core.App, claims realtime.ShareClaims, roomID string) error {
-	if claims.ItemID != roomID {
-		return driveshare.ErrNoAccess
-	}
-	link, item, err := sharelink.ResolveLink(app, claims.ShareToken)
-	if err != nil {
-		return err
-	}
-	if item.Id != roomID {
-		return driveshare.ErrNoAccess
-	}
-	role := link.GetString("role")
-	switch role {
-	case sharelink.RoleViewer, sharelink.RoleCommentor, sharelink.RoleEditor:
-		// Admit — read-only enforcement for non-editor roles happens via
-		// the broker WritePredicate (isReadOnlyForConn), so viewers and
-		// commentors may open the room but cannot write.
-	default:
-		return driveshare.ErrNoAccess
-	}
-	return nil
+	return sharelink.AuthorizeAnonRoom(app, claims.ShareToken, claims.ItemID, roomID)
 }

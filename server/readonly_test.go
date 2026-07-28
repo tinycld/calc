@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"tinycld.org/core/realtime"
+	"tinycld.org/core/sharelink"
 )
 
 // TestIsReadOnlyForConn covers the read-only signal that gets shipped in
@@ -37,8 +38,8 @@ func TestIsReadOnlyForConn(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			conn := realtime.NewClientForTest(c.authID)
-			if got := isReadOnlyForConn(app, item.Id, conn); got != c.wantRO {
-				t.Errorf("isReadOnlyForConn(%s): got %v, want %v", c.name, got, c.wantRO)
+			if got := sharelink.ReadOnlyForConn(app, item.Id, conn); got != c.wantRO {
+				t.Errorf("sharelink.ReadOnlyForConn(%s): got %v, want %v", c.name, got, c.wantRO)
 			}
 		})
 	}
