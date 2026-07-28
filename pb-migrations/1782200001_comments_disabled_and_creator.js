@@ -1,6 +1,9 @@
 /// <reference path="../../tinycld/server/pb_data/types.d.ts" />
 // Two corrections to calc_comments' access rules — the same pair text_comments
-// needed, for the same reasons. See text's 1782200000.
+// needed, for the same reasons. See text's 1782200000. (This file is
+// 1782200001 because materialized migration filenames must be globally unique
+// across packages; it originally shared text's timestamp and broke the
+// generator. Idempotent, so DBs that applied it under the old name are fine.)
 //
 // 1. EXCLUDE SUSPENDED USERS. No calc_comments rule carries
 //    `@request.auth.disabled != true`, and the Go gate never runs for
