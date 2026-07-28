@@ -84,7 +84,6 @@ function PivotMatrix({ matrix }: PivotMatrixProps) {
                 <ScrollView className="flex-1">
                     <View>
                         {matrix.map((row, rIdx) => (
-                            // biome-ignore lint/suspicious/noArrayIndexKey: rendered matrix rows have no stable identity; the whole matrix is rebuilt on every pivot render
                             <PivotRow key={`r${rIdx + 1}`} cells={row} />
                         ))}
                     </View>
