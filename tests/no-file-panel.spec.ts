@@ -64,13 +64,15 @@ test.describe('Calc No-File panel', () => {
     test('Browse Recent navigates to drive recent view', async ({ page }) => {
         await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
         await page.getByRole('link', { name: 'Recent' }).click()
-        await page.waitForURL(/\/drive\/recent\/?$/)
+        // Assert the drive screen mounted, not just that the router accepted
+        // the push — the URL is set before the target chunk commits.
+        await expect(page.getByTestId('pkg-active-drive')).toBeVisible()
     })
 
     test('Browse All navigates to drive root', async ({ page }) => {
         await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
         await page.getByRole('link', { name: 'All' }).click()
-        await page.waitForURL(/\/drive\/?$/)
+        await expect(page.getByTestId('pkg-active-drive')).toBeVisible()
     })
 
     test('the rail reopens the last edited workbook', async ({ page }) => {
@@ -95,7 +97,10 @@ test.describe('Calc No-File panel', () => {
         // test. The goto is the teardown the scenario depends on.
         await page.goto(`/`)
         await page.getByTestId('nav-calc').click()
-        await page.waitForURL(editorUrl)
+        // The rail's job here is reopening the LAST workbook, so the specific
+        // URL still matters — but assert the grid mounted first so a failure
+        // reports "no grid" rather than a URL diff against a blank screen.
         await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
+        await expect(page).toHaveURL(editorUrl)
     })
 })

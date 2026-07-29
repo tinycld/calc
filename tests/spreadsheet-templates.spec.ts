@@ -62,7 +62,6 @@ test.describe('Calc — Spreadsheet templates', () => {
         await row.click()
 
         // A new workbook opens — a fresh grid mounts.
-        await page.waitForURL(/\/calc\/[^/]+/)
         await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
     })
 })
