@@ -64,6 +64,8 @@ github.com/mitchellh/reflectwalk v1.0.2 h1:G2LzWKi524PWgd3mLHV8Y5k7s6XUvT0Gef6zx
 github.com/mitchellh/reflectwalk v1.0.2/go.mod h1:mSTlrgnPZtwu0c4WaC2kGObEpuNDbx0jmZXqmk4esnw=
 github.com/nathanstitt/doctaculous v0.0.6 h1:DDQ1jxnIqXmKaBO3Us89FlOHnO4Q2ew5v5xQ31IDV40=
 github.com/nathanstitt/doctaculous v0.0.6/go.mod h1:Tl2BoZfptodH5YLrhynkaSXcm6xaWBNc5TkUlWkcbew=
+github.com/nathanstitt/doctaculous v0.1.0 h1:09/Z8CPPbFJjckBCq/KX4JShDIqkUFDuLTR7SKtk24k=
+github.com/nathanstitt/doctaculous v0.1.0/go.mod h1:eCxnRN448fA9qbTMWWW8/JxMJsvB9RsPrDM47hYYook=
 github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOFAw7w=
 github.com/ncruces/go-strftime v1.0.0/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
 github.com/pingcap/errors v0.11.4 h1:lFuQV/oaUMGcD2tqt+01ROSmJs75VG1ToEOkZIZ4nE4=
