@@ -49,14 +49,14 @@ export default function CalcIndex() {
         [copyTemplate, orgHref]
     )
 
+    // mutate + onSuccess, not a void'd mutateAsync: the async wrapper
+    // swallowed a rejected create as an unhandled rejection, leaving the
+    // "New sheet" button silently dead on failure.
     const handleCreateNew = useCallback(() => {
-        void (async () => {
-            const result = await createBlank.mutateAsync({
-                name: 'Untitled.xlsx',
-                mimeType: XLSX_MIME_TYPE,
-            })
-            router.replace(orgHref('calc/[id]', { id: result.itemId }))
-        })()
+        createBlank.mutate(
+            { name: 'Untitled.xlsx', mimeType: XLSX_MIME_TYPE },
+            { onSuccess: result => router.replace(orgHref('calc/[id]', { id: result.itemId })) }
+        )
     }, [createBlank, orgHref])
 
     const handleUpload = useCallback(
