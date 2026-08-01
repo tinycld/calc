@@ -42,7 +42,7 @@ export function PivotGrid({ doc, def, sheetId, onOpenSidePanel, readOnly }: Pivo
     const view = selectPivotGridViewState(def, result)
     const panelOpen = selectPivotPanelOpen(openForSheetId, sheetId)
     return (
-        <View className="flex-1">
+        <View testID="calc-grid-root" className="flex-1">
             <PivotBody view={view} onOpenSidePanel={onOpenSidePanel} />
             <PivotSidePanel
                 doc={doc}
@@ -84,7 +84,6 @@ function PivotMatrix({ matrix }: PivotMatrixProps) {
                 <ScrollView className="flex-1">
                     <View>
                         {matrix.map((row, rIdx) => (
-                            // biome-ignore lint/suspicious/noArrayIndexKey: rendered pivot matrix is a positional grid recomputed wholesale; row identity is its position
                             <PivotRow key={`r${rIdx + 1}`} cells={row} />
                         ))}
                     </View>

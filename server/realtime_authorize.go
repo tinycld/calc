@@ -2,12 +2,11 @@ package calc
 
 import (
 	"encoding/json"
-	"errors"
 	"math"
 
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"tinycld.org/core/driveshare"
 	"tinycld.org/core/realtime"
 	"tinycld.org/core/sharelink"
 )
@@ -16,12 +15,6 @@ import (
 // Each connection at /api/realtime/calc/<drive_item_id> is gated by
 // the authorize handler registered below.
 const roomKindCalc = "calc"
-
-// errNoShare is returned when the user has no drive_shares row for the
-// requested drive_item. It is the only kind of denial calc emits;
-// distinguishing share roles (viewer vs. editor) happens client-side
-// for now (a future save-back effort will enforce roles server-side).
-var errNoShare = errors.New("calc: no drive_shares row for this user/item")
 
 // registerRealtime is called once at startup from Register(). It plugs
 // the calc authorize handler, the y-crdt Runtime, and the
@@ -39,7 +32,7 @@ var errNoShare = errors.New("calc: no drive_shares row for this user/item")
 //   - Runtime.SetBootstrap: server reads the drive_items xlsx and
 //     populates the doc before the broker's first SyncReply, so
 //     clients never see xlsx bytes.
-func registerRealtime(app *pocketbase.PocketBase) {
+func registerRealtime(app core.App) {
 	runtime := NewRuntime()
 	runtime.SetBootstrap(makeXLSXBootstrap(app))
 
@@ -50,9 +43,9 @@ func registerRealtime(app *pocketbase.PocketBase) {
 	realtime.RegisterRoomKindWith(roomKindCalc, realtime.RoomKindOptions{
 		Authorize: func(auth *core.Record, roomID string) error {
 			if auth == nil || auth.Id == "" {
-				return errNoShare
+				return driveshare.ErrNoAccess
 			}
-			return checkDriveItemAccess(app, auth.Id, roomID)
+			return driveshare.CheckRead(app, auth.Id, roomID)
 		},
 		// Anonymous editable-link visitors: admit only when the share
 		// link is still live and grants edit. The session token was
@@ -95,63 +88,6 @@ func registerRealtime(app *pocketbase.PocketBase) {
 	})
 }
 
-// memberCanWrite reports whether the authenticated user holds an
-// owner/editor drive_shares role on the item (viewers get read-only).
-// Returns false on any lookup error — fail closed. Mirrors text's
-// resolveShareRole().canWrite() but collapsed to a bool since calc only
-// needs the write decision.
-//
-// Org isolation: the share's user_org.org must equal the item's owning
-// org. Without this check, a stale share row pointing at item X (added
-// when X belonged to org A) would still grant write after the auth
-// user has left org A and X has been moved to org B — PB SDK methods
-// bypass API rules, so the implicit org filter from the collection
-// rule does NOT apply here. We re-implement the predicate explicitly,
-// matching the canonical filter in text/server/authorize.go.
-func memberCanWrite(app core.App, userID, driveItemID string) bool {
-	item, err := app.FindRecordById(driveItemsCollection, driveItemID)
-	if err != nil {
-		return false
-	}
-	orgID := item.GetString("org")
-	if orgID == "" {
-		return false
-	}
-	rows, err := app.FindRecordsByFilter(
-		"drive_shares",
-		"item = {:item} && user_org.user = {:user} && user_org.org = {:org}",
-		"", 0, 0,
-		map[string]any{"item": driveItemID, "user": userID, "org": orgID},
-	)
-	if err != nil || len(rows) == 0 {
-		return false
-	}
-	for _, r := range rows {
-		switch r.GetString("role") {
-		case "owner", "editor":
-			return true
-		}
-	}
-	return false
-}
-
-// isReadOnlyForConn decides whether the connecting client gets a
-// read-only editor. Anonymous share-session visitors are admitted only
-// for editor-role links today (see authorizeAnonShare), so an anon here
-// is writable iff its share role is editor. Authenticated members are
-// writable iff they hold an owner/editor drive_shares role; viewer
-// members (and any lookup failure) are read-only — fail closed.
-func isReadOnlyForConn(app core.App, roomID string, conn *realtime.Client) bool {
-	if conn.IsAnonymous() {
-		return conn.ShareRole() != sharelink.RoleEditor
-	}
-	userID := conn.AuthID()
-	if userID == "" {
-		return true
-	}
-	return !memberCanWrite(app, userID, roomID)
-}
-
 // calcServerHello is the JSON payload of the MsgServerHello frame calc
 // sends each joining client. The client decodes it via the symmetric TS
 // type in @tinycld/calc/hooks/use-realtime. Mirrors text's serverHello
@@ -163,7 +99,7 @@ type calcServerHello struct {
 // makeOnConnect builds the per-client ServerHelloFn: { readOnly }.
 func makeOnConnect(app core.App) realtime.ServerHelloFn {
 	return func(roomID string, conn *realtime.Client) ([]byte, error) {
-		readOnly := isReadOnlyForConn(app, roomID, conn)
+		readOnly := sharelink.ReadOnlyForConn(app, roomID, conn)
 		// Cache on the connection so the broker's WritePredicate (hot
 		// path, every MsgDocUpdate) is a pure field read, not a per-frame
 		// DB query. Role can't change mid-session.
@@ -172,74 +108,9 @@ func makeOnConnect(app core.App) realtime.ServerHelloFn {
 	}
 }
 
-// authorizeAnonShare admits an anonymous share-link visitor to a calc room.
-// It re-resolves the share link (so a revoked/expired/downgraded link is
-// rejected at connect time, not just at mint time) and admits any recognized
-// share role (viewer, commentor, or editor) bound to this exact drive_item.
-// Non-editor roles are admitted read-only: write enforcement is delegated to
-// the broker's WritePredicate (isReadOnlyForConn / SetReadOnly in OnConnect).
+// authorizeAnonShare admits an anonymous share-link visitor to a calc room —
+// the shared sharelink.AuthorizeAnonRoom policy adapted to realtime's
+// ShareClaims shape.
 func authorizeAnonShare(app core.App, claims realtime.ShareClaims, roomID string) error {
-	if claims.ItemID != roomID {
-		return errNoShare
-	}
-	link, item, err := sharelink.ResolveLink(app, claims.ShareToken)
-	if err != nil {
-		return err
-	}
-	if item.Id != roomID {
-		return errNoShare
-	}
-	role := link.GetString("role")
-	switch role {
-	case sharelink.RoleViewer, sharelink.RoleCommentor, sharelink.RoleEditor:
-		// Admit — read-only enforcement for non-editor roles happens via
-		// the broker WritePredicate (isReadOnlyForConn), so viewers and
-		// commentors may open the room but cannot write.
-	default:
-		return errNoShare
-	}
-	return nil
-}
-
-// checkDriveItemAccess returns nil iff the user identified by userID has
-// at least one drive_shares row connecting them (via a user_org in the
-// same org that owns the drive_item) to the given drive_item.
-//
-// Mirrors the shape of the PB RLS rule:
-//
-//	item.drive_shares_via_item.user_org.user ?= @request.auth.id
-//
-// We do the lookup directly against drive_shares rather than walking
-// through drive_items because the room admission only cares whether
-// *any* share row exists for this (user, item) pair — role-level
-// distinctions are enforced elsewhere.
-//
-// Org isolation: the share's user_org.org must equal the item's owning
-// org so a stale share row from a previous org membership cannot
-// silently grant access after the item is moved to a different org.
-// Mirrors the canonical filter in text/server/authorize.go.
-func checkDriveItemAccess(app core.App, userID, driveItemID string) error {
-	item, err := app.FindRecordById(driveItemsCollection, driveItemID)
-	if err != nil {
-		return errNoShare
-	}
-	orgID := item.GetString("org")
-	if orgID == "" {
-		return errNoShare
-	}
-	rows, err := app.FindRecordsByFilter(
-		"drive_shares",
-		"item = {:item} && user_org.user = {:user} && user_org.org = {:org}",
-		"",
-		1,
-		0,
-		map[string]any{"item": driveItemID, "user": userID, "org": orgID},
-	)
-	if err != nil {
-		return err
-	}
-	if len(rows) == 0 {
-		return errNoShare
-	}
-	return nil
+	return sharelink.AuthorizeAnonRoom(app, claims.ShareToken, claims.ItemID, roomID)
 }

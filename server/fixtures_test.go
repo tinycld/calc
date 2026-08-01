@@ -12,8 +12,10 @@ import (
 // because go:embed paths cannot escape the containing package.
 const tinyXlsxPath = "../tests/assets/tiny.xlsx"
 
-// setupAuthTestApp creates a tests.TestApp with the minimal drive_items,
-// user_org, and drive_shares collections needed by authorize tests.
+// setupAuthTestApp creates a tests.TestApp with the minimal drive_items
+// and drive_shares collections needed by authorize tests. Single-org:
+// drive_shares.user points straight at the users auth collection, so
+// there is no junction to synthesize.
 // Mirrors text/server/fixtures_test.go::setupAuthTestApp.
 func setupAuthTestApp(t *testing.T) *tests.TestApp {
 	t.Helper()
@@ -23,27 +25,29 @@ func setupAuthTestApp(t *testing.T) *tests.TestApp {
 	}
 	t.Cleanup(func() { app.Cleanup() })
 
-	items := core.NewBaseCollection(driveItemsCollection)
-	items.Fields.Add(&core.TextField{Name: "name"})
-	items.Fields.Add(&core.TextField{Name: "org"})
-	items.Fields.Add(&core.NumberField{Name: "size"})
-	if err := app.Save(items); err != nil {
-		t.Fatalf("save drive_items collection: %v", err)
+	users, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatalf("find users collection: %v", err)
 	}
 
-	userOrg := core.NewBaseCollection("user_org")
-	userOrg.Fields.Add(&core.TextField{Name: "user", Required: true})
-	userOrg.Fields.Add(&core.TextField{Name: "org", Required: true})
-	if err := app.Save(userOrg); err != nil {
-		t.Fatalf("save user_org collection: %v", err)
+	items := core.NewBaseCollection(driveItemsCollection)
+	items.Fields.Add(&core.TextField{Name: "name"})
+	items.Fields.Add(&core.NumberField{Name: "size"})
+	items.Fields.Add(&core.RelationField{
+		Name:         "created_by",
+		CollectionId: users.Id,
+		MaxSelect:    1,
+	})
+	if err := app.Save(items); err != nil {
+		t.Fatalf("save drive_items collection: %v", err)
 	}
 
 	shares := core.NewBaseCollection("drive_shares")
 	shares.Fields.Add(&core.TextField{Name: "item", Required: true})
 	shares.Fields.Add(&core.RelationField{
-		Name:          "user_org",
+		Name:          "user",
 		Required:      true,
-		CollectionId:  userOrg.Id,
+		CollectionId:  users.Id,
 		MaxSelect:     1,
 		CascadeDelete: true,
 	})
@@ -60,9 +64,12 @@ func setupAuthTestApp(t *testing.T) *tests.TestApp {
 	return app
 }
 
-// seedDriveItemInOrg creates a drive_items record in the given org and
-// returns its saved record.
-func seedDriveItemInOrg(t *testing.T, app *tests.TestApp, orgID, name string) *core.Record {
+// seedSharedItem creates a drive_items record for the authorization
+// tests and returns its saved record. Pass a nil creator to isolate the
+// share-row path from the created_by branch driveshare also honors.
+// (persist_test.go's seedDriveItem is a different helper — it attaches
+// file bytes and returns only the id.)
+func seedSharedItem(t *testing.T, app *tests.TestApp, creator *core.Record, name string) *core.Record {
 	t.Helper()
 	collection, err := app.FindCollectionByNameOrId(driveItemsCollection)
 	if err != nil {
@@ -71,33 +78,18 @@ func seedDriveItemInOrg(t *testing.T, app *tests.TestApp, orgID, name string) *c
 	rec := core.NewRecord(collection)
 	rec.Set("name", name)
 	rec.Set("size", 0)
-	rec.Set("org", orgID)
+	if creator != nil {
+		rec.Set("created_by", creator.Id)
+	}
 	if err := app.Save(rec); err != nil {
 		t.Fatalf("save drive_item record: %v", err)
 	}
 	return rec
 }
 
-// seedUserOrg creates a user_org row binding the user to the org and
-// returns its saved record id.
-func seedUserOrg(t *testing.T, app *tests.TestApp, userID, orgID string) string {
-	t.Helper()
-	collection, err := app.FindCollectionByNameOrId("user_org")
-	if err != nil {
-		t.Fatalf("find user_org collection: %v", err)
-	}
-	rec := core.NewRecord(collection)
-	rec.Set("user", userID)
-	rec.Set("org", orgID)
-	if err := app.Save(rec); err != nil {
-		t.Fatalf("save user_org record: %v", err)
-	}
-	return rec.Id
-}
-
-// seedShare creates a drive_shares row binding the user_org row to the
+// seedShare creates a drive_shares row binding the user to the
 // drive_item with the given role.
-func seedShare(t *testing.T, app *tests.TestApp, itemID, userOrgID, role string) {
+func seedShare(t *testing.T, app *tests.TestApp, itemID, userID, role string) {
 	t.Helper()
 	collection, err := app.FindCollectionByNameOrId("drive_shares")
 	if err != nil {
@@ -105,19 +97,21 @@ func seedShare(t *testing.T, app *tests.TestApp, itemID, userOrgID, role string)
 	}
 	rec := core.NewRecord(collection)
 	rec.Set("item", itemID)
-	rec.Set("user_org", userOrgID)
+	rec.Set("user", userID)
 	rec.Set("role", role)
 	if err := app.Save(rec); err != nil {
 		t.Fatalf("save drive_shares record: %v", err)
 	}
 }
 
-// mustCreateUser creates a minimal _superusers record and returns it.
+// mustCreateUser creates a minimal users record and returns it. Must be
+// the real users collection, not _superusers: drive_shares.user is a
+// relation that validates its target collection.
 func mustCreateUser(t *testing.T, app *tests.TestApp, email string) *core.Record {
 	t.Helper()
-	collection, err := app.FindCollectionByNameOrId("_superusers")
+	collection, err := app.FindCollectionByNameOrId("users")
 	if err != nil {
-		t.Fatalf("find _superusers collection: %v", err)
+		t.Fatalf("find users collection: %v", err)
 	}
 	rec := core.NewRecord(collection)
 	rec.Set("email", email)

@@ -1,4 +1,4 @@
-import type { DriveItems, UserOrg } from '@tinycld/core/types/pbSchema'
+import type { DriveItems, Users } from '@tinycld/core/types/pbSchema'
 
 export const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -27,7 +27,7 @@ export type CalcSchema = {
         relations: {
             drive_item: DriveItems
             parent_comment?: CalcComments
-            author: UserOrg
+            author: Users
         }
     }
 }

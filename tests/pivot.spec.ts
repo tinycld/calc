@@ -1,6 +1,12 @@
 import { expect, type Page, test } from '@playwright/test'
 import { login, navigateToPackage } from '../../tinycld/tests/e2e/helpers'
 
+// Cell/value assertions are scoped to the grid root: a bare page-wide match on
+// a number or region name can be satisfied — or broken — by another package's
+// UI (a mail unread badge rendering "20"), and toHaveCount(0) also counts
+// frozen (hidden) screens the navigator keeps mounted.
+const grid = (page: Page) => page.getByTestId('calc-grid-root')
+
 // End-to-end coverage for the pivot UI surface. Each test owns its
 // own workbook so a destructive action (rename, delete, undo) can't
 // poison sibling tests that run in the same DB.
@@ -59,14 +65,14 @@ test.describe('Calc pivot tables', () => {
 
         // Pivot output renders. Region values plus the grand-total row
         // (rowGrandTotals defaults to true on a freshly-built pivot).
-        await expect(page.getByText('East', { exact: true })).toBeVisible()
-        await expect(page.getByText('West', { exact: true })).toBeVisible()
-        await expect(page.getByText('Grand Total').first()).toBeVisible()
+        await expect(grid(page).getByText('East', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('West', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('Grand Total').first()).toBeVisible()
 
         // Sum aggregation: East=10, West=20, Grand Total=30.
         // 30 appears twice (column-total row + row-totals column intersect),
         // so just confirm at least one appears.
-        await expect(page.getByText('30', { exact: true }).first()).toBeVisible()
+        await expect(grid(page).getByText('30', { exact: true }).first()).toBeVisible()
 
         // Close the pivot panel — its modal backdrop covers the sheet-tab
         // strip and would intercept the click below.
@@ -83,7 +89,7 @@ test.describe('Calc pivot tables', () => {
         // East=99, West=20, Grand Total=119. (119 appears twice — at the
         // row-totals column intersect and the column-total row.)
         await page.getByLabel('Sheet Summary').first().click()
-        await expect(page.getByText('119', { exact: true }).first()).toBeVisible()
+        await expect(grid(page).getByText('119', { exact: true }).first()).toBeVisible()
     })
 
     test('swap value aggregation from sum to count', async ({ page }) => {
@@ -114,8 +120,8 @@ test.describe('Calc pivot tables', () => {
 
         // Default sum aggregation renders the West row's 20 and the
         // grand total 30.
-        await expect(page.getByText('20', { exact: true }).first()).toBeVisible()
-        await expect(page.getByText('30', { exact: true }).first()).toBeVisible()
+        await expect(grid(page).getByText('20', { exact: true }).first()).toBeVisible()
+        await expect(grid(page).getByText('30', { exact: true }).first()).toBeVisible()
 
         // Switch the aggregation to 'count'. The chip's
         // accessibilityLabel is "Use count" (AggregationChip in
@@ -124,9 +130,9 @@ test.describe('Calc pivot tables', () => {
 
         // Each region has 1 row → count is 1 per region, total 2.
         // The 20 and 30 totals from sum should be gone from the output.
-        await expect(page.getByText('2', { exact: true }).first()).toBeVisible()
-        await expect(page.getByText('20', { exact: true })).toHaveCount(0)
-        await expect(page.getByText('30', { exact: true })).toHaveCount(0)
+        await expect(grid(page).getByText('2', { exact: true }).first()).toBeVisible()
+        await expect(grid(page).getByText('20', { exact: true })).toHaveCount(0)
+        await expect(grid(page).getByText('30', { exact: true })).toHaveCount(0)
     })
 
     test('option toggles flip checked state on click', async ({ page }) => {
@@ -209,11 +215,11 @@ test.describe('Calc pivot tables', () => {
 
         // Pre-filter: all three region totals are present in the
         // rendered output.
-        await expect(page.getByText('10', { exact: true }).first()).toBeVisible()
-        await expect(page.getByText('20', { exact: true }).first()).toBeVisible()
-        await expect(page.getByText('30', { exact: true }).first()).toBeVisible()
+        await expect(grid(page).getByText('10', { exact: true }).first()).toBeVisible()
+        await expect(grid(page).getByText('20', { exact: true }).first()).toBeVisible()
+        await expect(grid(page).getByText('30', { exact: true }).first()).toBeVisible()
         // Grand total = 10 + 20 + 30 = 60.
-        await expect(page.getByText('60', { exact: true }).first()).toBeVisible()
+        await expect(grid(page).getByText('60', { exact: true }).first()).toBeVisible()
 
         // Pick "East" only. The chip's accessibility label is
         // "Toggle East" (FilterValueChip in FilterFieldRow.tsx).
@@ -224,9 +230,9 @@ test.describe('Calc pivot tables', () => {
 
         // West=20 and North=30 are out of the rendered pivot; East=10
         // is the only data row, so the grand total drops from 60 to 10.
-        await expect(page.getByText('20', { exact: true })).toHaveCount(0)
-        await expect(page.getByText('30', { exact: true })).toHaveCount(0)
-        await expect(page.getByText('60', { exact: true })).toHaveCount(0)
+        await expect(grid(page).getByText('20', { exact: true })).toHaveCount(0)
+        await expect(grid(page).getByText('30', { exact: true })).toHaveCount(0)
+        await expect(grid(page).getByText('60', { exact: true })).toHaveCount(0)
     })
 
     test('empty-state CTA opens the side panel; close button closes it', async ({ page }) => {
@@ -334,7 +340,7 @@ test.describe('Calc pivot tables', () => {
         })
         await page.getByLabel('Add Region to R').click()
         await page.getByLabel('Add Sales to V').click()
-        await expect(page.getByText('East', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('East', { exact: true })).toBeVisible()
 
         // Close the pivot panel — its backdrop would intercept the
         // right-click on the sheet tab below.
@@ -354,7 +360,7 @@ test.describe('Calc pivot tables', () => {
         // or the new name matching def.targetSheetName).
         await expect(page.getByLabel('Sheet AfterRename')).toBeVisible()
         await expect(page.getByLabel('Sheet BeforeRename')).toHaveCount(0)
-        await expect(page.getByText('East', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('East', { exact: true })).toBeVisible()
     })
 
     test('deleting the pivot output sheet removes the pivot from the workbook', async ({
@@ -378,7 +384,7 @@ test.describe('Calc pivot tables', () => {
         await page.getByLabel('Add Region to R').click()
         await page.getByLabel('Add Sales to V').click()
         // Make sure the pivot fully rendered before we destroy its sheet.
-        await expect(page.getByText('East', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('East', { exact: true })).toBeVisible()
 
         // Close the pivot panel — its backdrop would intercept the
         // right-click on the sheet tab below.
@@ -477,9 +483,8 @@ async function seedTwoRegionsTwoRows(
 // — kept inline so this spec is self-contained.
 async function openNewSpreadsheet(page: Page): Promise<void> {
     // Wait for the No-File panel's headline to render before clicking
-    // the create button — handleCreateNew needs useOrgInfo /
-    // useCurrentUserOrg to resolve first, and if the click races that
-    // the create silently no-ops and waitForURL hangs.
+    // the create button, so the click lands on a mounted, hydrated
+    // button instead of racing the panel's first render.
     await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
     await page.getByRole('button', { name: 'New sheet' }).click()
     await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })

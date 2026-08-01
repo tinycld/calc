@@ -26,9 +26,36 @@ jobs:
       - uses: actions/checkout@v5
         with:
           path: ws/${{ env.PACKAGE }}
+      - name: Resolve sibling refs
+        id: sibling
+        run: |
+          # Coordinated cross-repo work (e.g. the single-org migration) lives on
+          # the SAME branch name in every repo. Assembling siblings from their
+          # default branch then typechecks this PR against a core that predates
+          # it — the branch's own APIs are simply absent, so every consumer
+          # fails with errors that look like the PR's fault.
+          #
+          # For each sibling, prefer a branch matching this PR's HEAD and fall
+          # back to its default branch when there is none (the ordinary
+          # single-repo PR, where every sibling should be at its release state).
+          BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          for repo in tinycld drive; do
+            if [ -n "$BRANCH" ] && \
+               git ls-remote --exit-code --heads "https://github.com/tinycld/$repo" "$BRANCH" >/dev/null 2>&1; then
+              echo "${repo}_ref=@$BRANCH" >> "$GITHUB_OUTPUT"
+              echo "$repo -> $BRANCH"
+            else
+              echo "${repo}_ref=" >> "$GITHUB_OUTPUT"
+              echo "$repo -> (default branch)"
+            fi
+          done
       - name: Assemble workspace (app + core + drive)
         working-directory: ws
-        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive
+        run: |
+          TINYCLD_REPO_BASE=https://github.com/tinycld \
+            npx @tinycld/bootstrap@latest --assemble-only \
+            --with "tinycld${{ steps.sibling.outputs.tinycld_ref }}" \
+            --with "drive${{ steps.sibling.outputs.drive_ref }}"
       - uses: actions/setup-node@v5
         with:
           node-version-file: ws/.node-version
@@ -49,9 +76,36 @@ jobs:
       - uses: actions/checkout@v5
         with:
           path: ws/${{ env.PACKAGE }}
+      - name: Resolve sibling refs
+        id: sibling
+        run: |
+          # Coordinated cross-repo work (e.g. the single-org migration) lives on
+          # the SAME branch name in every repo. Assembling siblings from their
+          # default branch then typechecks this PR against a core that predates
+          # it — the branch's own APIs are simply absent, so every consumer
+          # fails with errors that look like the PR's fault.
+          #
+          # For each sibling, prefer a branch matching this PR's HEAD and fall
+          # back to its default branch when there is none (the ordinary
+          # single-repo PR, where every sibling should be at its release state).
+          BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          for repo in tinycld drive; do
+            if [ -n "$BRANCH" ] && \
+               git ls-remote --exit-code --heads "https://github.com/tinycld/$repo" "$BRANCH" >/dev/null 2>&1; then
+              echo "${repo}_ref=@$BRANCH" >> "$GITHUB_OUTPUT"
+              echo "$repo -> $BRANCH"
+            else
+              echo "${repo}_ref=" >> "$GITHUB_OUTPUT"
+              echo "$repo -> (default branch)"
+            fi
+          done
       - name: Assemble workspace (app + core + drive)
         working-directory: ws
-        run: TINYCLD_REPO_BASE=https://github.com/tinycld npx @tinycld/bootstrap@latest --assemble-only --with drive
+        run: |
+          TINYCLD_REPO_BASE=https://github.com/tinycld \
+            npx @tinycld/bootstrap@latest --assemble-only \
+            --with "tinycld${{ steps.sibling.outputs.tinycld_ref }}" \
+            --with "drive${{ steps.sibling.outputs.drive_ref }}"
       - uses: actions/setup-node@v5
         with:
           node-version-file: ws/.node-version

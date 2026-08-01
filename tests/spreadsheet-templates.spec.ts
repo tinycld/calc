@@ -10,7 +10,7 @@
 //   3. Verify a new workbook opens (a fresh grid mounts).
 
 import { expect, type Page, test } from '@playwright/test'
-import { login, navigateToPackage, ORG_SLUG } from '../../tinycld/tests/e2e/helpers'
+import { login, navigateToPackage } from '../../tinycld/tests/e2e/helpers'
 import { openNewSpreadsheet, waitForTemplateItem } from './_menubar-helpers'
 
 test.describe('Calc — Spreadsheet templates', () => {
@@ -62,7 +62,6 @@ test.describe('Calc — Spreadsheet templates', () => {
         await row.click()
 
         // A new workbook opens — a fresh grid mounts.
-        await page.waitForURL(new RegExp(`/a/${ORG_SLUG}/calc/[^/]+`))
         await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
     })
 })

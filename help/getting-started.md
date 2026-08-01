@@ -1,6 +1,6 @@
 ---
 title: Getting started with Calc
-summary: A quick tour of spreadsheets in your organization
+summary: A quick tour of spreadsheets in TinyCld
 tags: [intro, basics, tour]
 order: 10
 ---
@@ -13,7 +13,7 @@ Calc is the spreadsheet package. Workbooks are stored as `.xlsx` files in [Drive
 
 Three ways to open a spreadsheet:
 
-- From the nav rail, click **Calc** to see every workbook in this org, then click one.
+- From the nav rail, click **Calc** to see every workbook, then click one.
 - From **Drive**, click any `.xlsx` file. The preview opens with an **Open in Calc** action.
 - From a share link someone sent you — if the link grants access, the workbook opens directly.
 

@@ -9,9 +9,9 @@ order: 70
 
 With a spreadsheet open, choose **File → Share**. The same dialog you'd see in Drive opens — you don't have to leave the editor to invite people or generate a link.
 
-## Adding people from your org
+## Adding teammates
 
-Type a name or email in the **Add people** input. Matches from your org show up as you type. For each person you add, pick a role:
+Type a name or email in the **Add people** input. Matches from your team show up as you type. For each person you add, pick a role:
 
 - **Viewer** — can open the spreadsheet and read it. Cannot edit, rename, move, or re-share.
 - **Editor** — can edit cells, formulas, and structure, rename, move, and re-share.
@@ -20,7 +20,7 @@ Click **Send**. The spreadsheet appears in their **Shared with me** section in D
 
 ## Generating a public link
 
-To share with someone outside your org — or anyone without an account — use **Get link**. The dialog generates a tokenized URL of the form `https://<your-instance>/p/drive/share/<token>` that opens the spreadsheet directly, no sign-in required. You choose what the link grants:
+To share with someone without an account — or anyone outside your team — use **Get link**. The dialog generates a tokenized URL of the form `https://{{server-host}}/p/drive/share/<token>` that opens the spreadsheet directly, no sign-in required. You choose what the link grants:
 
 - **Viewer** — read-only, no comments, no sign-in.
 - **Commentor** — read-only, but the visitor can leave comments on cells after a one-time email verification (OTP).

@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { expect, type Locator, type Page, test } from '@playwright/test'
 import { clickSidebarItem, login, navigateToPackage } from '../../tinycld/tests/e2e/helpers'
 
+// Cell/value assertions are scoped to the grid root: a bare page-wide match on
+// a number or region name can be satisfied — or broken — by another package's
+// UI (a mail unread badge rendering "20"), and toHaveCount(0) also counts
+// frozen (hidden) screens the navigator keeps mounted.
+const grid = (page: Page) => page.getByTestId('calc-grid-root')
+
 // Drag the selection fill-handle (the small dot at the bottom-right of the
 // current selection) onto a destination cell. The handle is a ~12px target
 // that repaints whenever the selection changes, so the previous approach —
@@ -110,12 +116,12 @@ test.describe('Calc', () => {
         await expect(page.getByLabel('Cell B1', { exact: true })).toHaveText('Role')
         await expect(page.getByLabel('Cell C1', { exact: true })).toHaveText('Score')
 
-        await expect(page.getByText('Alice', { exact: true })).toBeVisible()
-        await expect(page.getByText('Engineer', { exact: true })).toBeVisible()
-        await expect(page.getByText('Bob', { exact: true })).toBeVisible()
-        await expect(page.getByText('Designer', { exact: true })).toBeVisible()
-        await expect(page.getByText('Carol', { exact: true })).toBeVisible()
-        await expect(page.getByText('Manager', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('Alice', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('Engineer', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('Bob', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('Designer', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('Carol', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('Manager', { exact: true })).toBeVisible()
 
         // Verify columns are correctly aligned by reading the DOM
         // through the stable Cell-A1/B1/C1 aria-labels (not text content,
@@ -145,8 +151,8 @@ test.describe('Calc', () => {
         await openNewSpreadsheet(page)
         // Header columns are virtualized — only the ones in the viewport
         // render. A through E are always visible at default viewport width.
-        await expect(page.getByText('A', { exact: true })).toBeVisible()
-        await expect(page.getByText('E', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('A', { exact: true })).toBeVisible()
+        await expect(grid(page).getByText('E', { exact: true })).toBeVisible()
     })
 
     test('dragging a column-resize handle widens the column', async ({ page }) => {
@@ -1069,7 +1075,7 @@ test.describe('Calc', () => {
             // The text node sits inside the cell rect — its top edge
             // should be within the cell's own height, not floating
             // somewhere below it (the visible symptom of the bug).
-            const textBox = await page.getByText('MERGED', { exact: true }).boundingBox()
+            const textBox = await grid(page).getByText('MERGED', { exact: true }).boundingBox()
             if (textBox == null) throw new Error('merged text box missing')
             expect(textBox.y).toBeGreaterThanOrEqual(mergedBox.y - 1)
             expect(textBox.y + textBox.height).toBeLessThanOrEqual(
@@ -1653,9 +1659,8 @@ async function typeIntoCell(
 // grid being interactive).
 async function openNewSpreadsheet(page: import('@playwright/test').Page): Promise<void> {
     // Wait for the No-File panel's headline to render before clicking the
-    // create button. handleCreateNew throws "Organization context not
-    // ready" if useOrgInfo / useCurrentUserOrg haven't resolved yet; when
-    // that happens the click silently does nothing.
+    // create button, so the click lands on a mounted, hydrated button
+    // instead of racing the panel's first render.
     await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
     const newBtn = page.getByRole('button', { name: 'New sheet' })
     await newBtn.click()

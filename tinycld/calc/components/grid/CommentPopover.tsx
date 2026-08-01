@@ -1,5 +1,5 @@
+import { useAuth } from '@tinycld/core/lib/auth'
 import { errorToString } from '@tinycld/core/lib/errors'
-import { useCurrentRole } from '@tinycld/core/lib/use-current-role'
 import { FormErrorSummary, TextAreaInput, useForm, z, zodResolver } from '@tinycld/core/ui/form'
 import { Menu } from '@tinycld/core/ui/menu'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -111,7 +111,8 @@ interface PopoverBodyProps {
 
 function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: PopoverBodyProps) {
     const { add, reply, editBody, resolve, reopen, remove } = useCommentMutations()
-    const { userOrgId } = useCurrentRole()
+    const { user } = useAuth()
+    const currentUserId = user.id
 
     // Prefer the most-recent unresolved thread so the "Re-open" path
     // doesn't accidentally reopen the oldest one when multiple resolved
@@ -212,7 +213,7 @@ function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: Popov
                         <ThreadView
                             key={thread.root.id}
                             thread={thread}
-                            currentUserOrgId={userOrgId}
+                            currentUserId={currentUserId}
                             onEdit={(id, body) => editBody.mutate({ id, body })}
                             onDelete={id => remove.mutate({ id })}
                         />
@@ -258,18 +259,18 @@ function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: Popov
 
 interface ThreadViewProps {
     thread: Thread
-    currentUserOrgId: string
+    currentUserId: string
     onEdit: (id: string, body: string) => void
     onDelete: (id: string) => void
 }
 
-function ThreadView({ thread, currentUserOrgId, onEdit, onDelete }: ThreadViewProps) {
+function ThreadView({ thread, currentUserId, onEdit, onDelete }: ThreadViewProps) {
     const dim = thread.resolvedAt != null
     return (
         <View className={`px-3 py-2 ${dim ? 'opacity-60' : ''}`}>
             <CommentLine
                 comment={thread.root}
-                isOwn={thread.root.author === currentUserOrgId}
+                isOwn={thread.root.author === currentUserId}
                 onEdit={onEdit}
                 onDelete={onDelete}
             />
@@ -277,7 +278,7 @@ function ThreadView({ thread, currentUserOrgId, onEdit, onDelete }: ThreadViewPr
                 <View key={reply.id} className="mt-2 ml-2">
                     <CommentLine
                         comment={reply}
-                        isOwn={reply.author === currentUserOrgId}
+                        isOwn={reply.author === currentUserId}
                         onEdit={onEdit}
                         onDelete={onDelete}
                     />

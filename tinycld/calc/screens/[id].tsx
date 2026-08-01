@@ -6,7 +6,6 @@ import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useCommentsDrawerStore } from '@tinycld/core/lib/stores/comments-drawer-store'
 import { useWorkspaceStore } from '@tinycld/core/lib/stores/workspace-store'
-import { useCurrentRole } from '@tinycld/core/lib/use-current-role'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { CopyToFolderDialog } from '@tinycld/drive/components/CopyToFolderDialog'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -68,16 +67,11 @@ export default function CalcDetail() {
     const { id, sheet: sheetParam } = useLocalSearchParams<{ id: string; sheet?: string }>()
     const [driveItems] = useStore('drive_items')
     const { user } = useAuth()
-    const { userOrgId } = useCurrentRole()
     const clearLastPackageHref = useWorkspaceStore(s => s.clearLastPackageHref)
     const orgHref = useOrgHref()
 
     const { data: items = [], isLoading: isItemLoading } = useOrgLiveQuery(
-        (query, { orgId }) =>
-            query
-                .from({ item: driveItems })
-                .where(({ item }) => eq(item.org, orgId))
-                .where(({ item }) => eq(item.id, id ?? '')),
+        query => query.from({ item: driveItems }).where(({ item }) => eq(item.id, id ?? '')),
         [id]
     )
 
@@ -112,7 +106,6 @@ export default function CalcDetail() {
         identity: {
             kind: 'member',
             userId: user.id,
-            userOrgId,
             displayName: user.name,
             color: colorForUser(user.id),
         },

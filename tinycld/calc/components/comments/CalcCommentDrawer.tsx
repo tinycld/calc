@@ -1,8 +1,8 @@
 import { eq } from '@tanstack/db'
+import { useAuth } from '@tinycld/core/lib/auth'
 import { buildThreads, groupCommentsByKey } from '@tinycld/core/lib/comments'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useCommentsDrawerStore } from '@tinycld/core/lib/stores/comments-drawer-store'
-import { useCurrentRole } from '@tinycld/core/lib/use-current-role'
 import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { CommentDrawer, type CommentDrawerGroup } from '@tinycld/core/ui/comments'
 import { useMemo } from 'react'
@@ -47,9 +47,10 @@ export function CalcCommentDrawer({
         [driveItemId]
     )
 
-    const { userOrgId } = useCurrentRole()
+    const { user } = useAuth()
+    const currentUserId = user.id
     const { reply, editBody, resolve, reopen, remove } = useCommentMutations()
-    const mentionSuggestions = useMentionSuggestions(userOrgId)
+    const mentionSuggestions = useMentionSuggestions(currentUserId)
     const gridStore = useGridStoreApi()
 
     const sheetNameById = useMemo(() => {
@@ -70,7 +71,7 @@ export function CalcCommentDrawer({
             isOpen={isOpen}
             onClose={close}
             groups={groups}
-            currentUserOrgId={userOrgId}
+            currentUserId={currentUserId}
             focusedThreadId={focusedThreadId}
             onJump={group => {
                 const anchor = anchorByKey.get(group.key)

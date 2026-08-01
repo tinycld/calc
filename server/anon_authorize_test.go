@@ -9,6 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
+	"tinycld.org/core/driveshare"
 	"tinycld.org/core/realtime"
 	"tinycld.org/core/sharelink"
 )
@@ -51,7 +52,7 @@ func setupShareTestApp(t *testing.T) *tests.TestApp {
 // the 64-char token and the item id. Mirrors sharelink's own test helper.
 func seedShareLink(t *testing.T, app *tests.TestApp, role string, active bool) (token, itemID string) {
 	t.Helper()
-	item := seedDriveItemInOrg(t, app, "org-acme", "workbook.xlsx")
+	item := seedSharedItem(t, app, nil, "workbook.xlsx")
 
 	// 64-char token, unique per item to avoid token collisions.
 	tok := strings.Repeat("a", 64-len(item.Id)) + item.Id
@@ -121,32 +122,22 @@ func TestAuthorizeAnonShare_AdmitsEditor(t *testing.T) {
 	}
 }
 
-// TestAuthorizeAnonShare_RejectsEmptyRole checks that a link with an
-// empty/unknown role string is rejected by the switch default branch.
-// This exercises the errNoShare path without needing a real DB link for
-// the unknown role (we use a valid token/itemID pair but an unrecognized
-// role stored in the link record is not possible via normal seeding —
-// instead we verify that claims.ItemID mismatch is rejected, and rely
-// on the ResolveLink gate). For a direct unknown-role test we use a
-// revoked (inactive) link to trigger ErrLinkGone, which means an
-// empty-role DB row is unnecessary.
-//
-// The authoritative "empty role → rejected" path is exercised by
-// TestAuthorizeAnonShare_RejectsRevokedLink below, which shows the
-// function rejects anything that can't pass ResolveLink.
+// TestAuthorizeAnonShare_RejectsItemIDMismatch verifies that a valid
+// token presented for a room the link does not cover is refused with
+// ErrNoAccess — a stolen-but-real token must not open other documents.
 func TestAuthorizeAnonShare_RejectsItemIDMismatch(t *testing.T) {
 	app := setupShareTestApp(t)
 	tok, itemID := seedShareLink(t, app, sharelink.RoleViewer, true)
-	_ = itemID
 
+	otherRoom := itemID + "-other"
 	claims := realtime.ShareClaims{
 		ShareToken: tok,
-		ItemID:     "different-room-id",
+		ItemID:     otherRoom,
 		Role:       sharelink.RoleViewer,
 	}
-	err := authorizeAnonShare(app, claims, "different-room-id")
-	if !errors.Is(err, errNoShare) {
-		t.Errorf("itemID mismatch: expected errNoShare, got %v", err)
+	err := authorizeAnonShare(app, claims, otherRoom)
+	if !errors.Is(err, driveshare.ErrNoAccess) {
+		t.Errorf("itemID mismatch: expected ErrNoAccess, got %v", err)
 	}
 }
 
@@ -170,7 +161,7 @@ func TestAuthorizeAnonShare_RejectsRevokedLink(t *testing.T) {
 
 // TestAuthorizeAnonShare_AnonIsReadOnly exercises the full connect path:
 // an anon connection with a viewer share role should be read-only
-// according to isReadOnlyForConn.
+// according to sharelink.ReadOnlyForConn.
 func TestAuthorizeAnonShare_AnonIsReadOnly(t *testing.T) {
 	// Viewer anon → read-only; editor anon → writable.
 	cases := []struct {
@@ -182,14 +173,14 @@ func TestAuthorizeAnonShare_AnonIsReadOnly(t *testing.T) {
 		{sharelink.RoleEditor, false},
 	}
 	app := setupShareTestApp(t)
-	item := seedDriveItemInOrg(t, app, "org-acme", "wb.xlsx")
+	item := seedSharedItem(t, app, nil, "wb.xlsx")
 
 	for _, c := range cases {
 		t.Run(c.shareRole, func(t *testing.T) {
 			conn := realtime.NewAnonClientForTest(c.shareRole, "Anon Tiger")
-			got := isReadOnlyForConn(app, item.Id, conn)
+			got := sharelink.ReadOnlyForConn(app, item.Id, conn)
 			if got != c.wantRO {
-				t.Errorf("isReadOnlyForConn(anon %s): got %v, want %v", c.shareRole, got, c.wantRO)
+				t.Errorf("sharelink.ReadOnlyForConn(anon %s): got %v, want %v", c.shareRole, got, c.wantRO)
 			}
 		})
 	}
@@ -200,7 +191,7 @@ func TestAuthorizeAnonShare_AnonIsReadOnly(t *testing.T) {
 func TestAuthorizeAnonShare_Expired(t *testing.T) {
 	app := setupShareTestApp(t)
 
-	item := seedDriveItemInOrg(t, app, "org-acme", "wb.xlsx")
+	item := seedSharedItem(t, app, nil, "wb.xlsx")
 	tok := strings.Repeat("b", 64-len(item.Id)) + item.Id
 
 	linksCol, err := app.FindCollectionByNameOrId("drive_share_links")

@@ -6,7 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 
 	"tinycld.org/core/blankfile"
-	"tinycld.org/core/userorg"
+	"tinycld.org/core/offboard"
 )
 
 // xlsxMimeType is the drive_items.mime_type for spreadsheets — matches the
@@ -32,7 +32,17 @@ var blankXLSX []byte
 // See contacts/server/register.go or calendar/server/register.go for richer
 // examples.
 func Register(app *pocketbase.PocketBase) {
-	userorg.RegisterReassignable(userorg.ReassignableRef{Collection: "calc_comments", Field: "author"})
+	registerShared(app)
+	// calc binds no listener and mounts no protocol server, so this single
+	// entry point serves the single-org app and a multi-org tenant
+	// identically. If hosted behavior must ever differ (e.g. a listener),
+	// detect it with coreserver.GetTenantContext — never fork registerShared
+	// (see multi-org/docs/FINDING-tenant-composition-gap.md).
+}
+
+// registerShared is the single source of truth for what BOTH compositions run.
+func registerShared(app *pocketbase.PocketBase) {
+	offboard.RegisterReassignable(offboard.ReassignableRef{Collection: "calc_comments", Field: "author"})
 
 	// Attach a blank workbook server-side when a new sheet is created with no
 	// file — the client just inserts the drive_items row (no Blob upload).

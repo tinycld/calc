@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { login, navigateToPackage, ORG_SLUG } from '../../tinycld/tests/e2e/helpers'
+import { login, navigateToPackage } from '../../tinycld/tests/e2e/helpers'
 
 // The calc index renders the shared NoFilePanel whenever the user lands
 // on /calc without a deep-link (the rail otherwise reopens the last
@@ -64,13 +64,15 @@ test.describe('Calc No-File panel', () => {
     test('Browse Recent navigates to drive recent view', async ({ page }) => {
         await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
         await page.getByRole('link', { name: 'Recent' }).click()
-        await page.waitForURL(new RegExp(`/a/${ORG_SLUG}/drive/recent/?$`))
+        // Assert the drive screen mounted, not just that the router accepted
+        // the push — the URL is set before the target chunk commits.
+        await expect(page.getByTestId('pkg-active-drive')).toBeVisible()
     })
 
     test('Browse All navigates to drive root', async ({ page }) => {
         await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
         await page.getByRole('link', { name: 'All' }).click()
-        await page.waitForURL(new RegExp(`/a/${ORG_SLUG}/drive/?$`))
+        await expect(page.getByTestId('pkg-active-drive')).toBeVisible()
     })
 
     test('the rail reopens the last edited workbook', async ({ page }) => {
@@ -93,9 +95,12 @@ test.describe('Calc No-File panel', () => {
         // (FrozenSlideStack), so the rail click wouldn't re-trigger the
         // deep-link reopen — it would never leave the file, defeating the
         // test. The goto is the teardown the scenario depends on.
-        await page.goto(`/a/${ORG_SLUG}`)
+        await page.goto(`/`)
         await page.getByTestId('nav-calc').click()
-        await page.waitForURL(editorUrl)
+        // The rail's job here is reopening the LAST workbook, so the specific
+        // URL still matters — but assert the grid mounted first so a failure
+        // reports "no grid" rather than a URL diff against a blank screen.
         await expect(page.getByLabel('Cell A1', { exact: true })).toBeVisible({ timeout: 10_000 })
+        await expect(page).toHaveURL(editorUrl)
     })
 })
