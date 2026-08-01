@@ -33,20 +33,11 @@ var blankXLSX []byte
 // examples.
 func Register(app *pocketbase.PocketBase) {
 	registerShared(app)
-	// No host-only tail: calc binds no listener and mounts no protocol
-	// server, so the single-org app and a multi-org tenant run the same set.
-	// If a host-only registration ever appears, move it here with a reason —
-	// never fork registerShared (see
-	// multi-org/docs/FINDING-tenant-composition-gap.md).
-}
-
-// RegisterTenant composes the calc server for a multi-org TENANT process. The
-// router's pinned package menu calls it, gated by the org's resolved package
-// set (multi-org/docs/SCOPE-tenant-feature-go.md). Identical to Register
-// today; the two entries exist so the host/tenant seam is uniform across
-// feature packages.
-func RegisterTenant(app *pocketbase.PocketBase) {
-	registerShared(app)
+	// calc binds no listener and mounts no protocol server, so this single
+	// entry point serves the single-org app and a multi-org tenant
+	// identically. If hosted behavior must ever differ (e.g. a listener),
+	// detect it with coreserver.GetTenantContext — never fork registerShared
+	// (see multi-org/docs/FINDING-tenant-composition-gap.md).
 }
 
 // registerShared is the single source of truth for what BOTH compositions run.
