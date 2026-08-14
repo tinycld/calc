@@ -14,6 +14,10 @@ const manifest = {
     help: { directory: 'help' },
     migrations: { directory: 'pb-migrations' },
     collections: { register: 'collections', types: 'types' },
+    // Trigger catalog for workflow rules. The Go side
+    // (server/automation.go) resolves owners through the workbook's
+    // participants rather than the comment's author.
+    automation: { definitions: 'automation' },
     seed: { script: 'seed' },
     server: { package: 'server', module: 'tinycld.org/packages/calc' },
     repository: { url: 'https://github.com/tinycld/calc' },

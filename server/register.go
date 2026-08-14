@@ -44,6 +44,11 @@ func Register(app *pocketbase.PocketBase) {
 func registerShared(app *pocketbase.PocketBase) {
 	offboard.RegisterReassignable(offboard.ReassignableRef{Collection: "calc_comments", Field: "author"})
 
+	// Personal automation rules on sheet comments resolve their owner through
+	// the workbook's participants; auto-detection would scope them to the
+	// comment's author, which fires the wrong way round.
+	registerAutomation()
+
 	// Attach a blank workbook server-side when a new sheet is created with no
 	// file — the client just inserts the drive_items row (no Blob upload).
 	blankfile.Register(app, xlsxMimeType, "spreadsheet.xlsx", blankXLSX)
