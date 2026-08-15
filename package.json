@@ -9,6 +9,7 @@
         "./manifest": "./manifest.ts",
         "./types": "./tinycld/calc/types.ts",
         "./collections": "./tinycld/calc/collections.ts",
+        "./automation": "./tinycld/calc/automation.ts",
         "./screens/*": "./tinycld/calc/screens/*.tsx",
         "./seed": "./tinycld/calc/seed.ts",
         "./provider": "./tinycld/calc/provider.tsx",
