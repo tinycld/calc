@@ -13,3 +13,6 @@ test-results/
 # build uses app/server/go.work instead.
 /server/go.work
 /server/go.work.sum
+# Same for the cli module's workspace (resolves tinycld.org/cli).
+/cli/go.work
+/cli/go.work.sum
