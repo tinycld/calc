@@ -18,7 +18,7 @@ func books(t *testing.T) *fakeCalc {
 	f.addItem("itmQ4", "Q4.xlsx", "itmFin", false)
 
 	open := f.addComment("cmtOpen", "itmBudget", "This looks off", "Ada")
-	open.SheetID, open.Row, open.Col = "Sheet1", 6, 1 // B7
+	open.SheetID, open.Row, open.Col = "Sheet1", 7, 2 // B7, one-based as stored
 	reply := f.addComment("cmtReply", "itmBudget", "Checking now", "Grace")
 	reply.ParentComment = "cmtOpen"
 
@@ -155,7 +155,7 @@ func TestUnknownPathFails(t *testing.T) {
 	}
 }
 
-// A1 notation is what the user types; the schema stores zero-based integers.
+// A1 notation is what the user types; the schema stores one-based integers.
 func TestAddParsesCellIntoStoredCoordinates(t *testing.T) {
 	f := books(t)
 	_, c := f.serve()
@@ -178,23 +178,29 @@ func TestAddParsesCellIntoStoredCoordinates(t *testing.T) {
 			t.Errorf("create[%q] = %v, want %v", key, got, want)
 		}
 	}
-	// C10 is zero-based row 9, column 2.
-	if got := f.lastCreate["row"]; got != float64(9) {
-		t.Errorf("create[row] = %v, want 9 (C10 is zero-based row 9)", got)
+	// C10 is one-based row 10, column 3 — the coordinates the app writes and
+	// the schema's `min: 1` demands.
+	if got := f.lastCreate["row"]; got != float64(10) {
+		t.Errorf("create[row] = %v, want 10 (C10 is row 10)", got)
 	}
-	if got := f.lastCreate["col"]; got != float64(2) {
-		t.Errorf("create[col] = %v, want 2 (column C)", got)
+	if got := f.lastCreate["col"]; got != float64(3) {
+		t.Errorf("create[col] = %v, want 3 (column C)", got)
 	}
 }
 
+// One-based on BOTH axes — the app's contract (calc/lib/pivot/range-parse.ts
+// keeps the row as written and columnLabel maps 1 → "A"), and what the schema's
+// `min: 1` enforces. A1 is the case that matters most: it is the first cell of
+// every spreadsheet, and under the previous zero-based mapping it was the one
+// reference the server always rejected.
 func TestCellParsingRoundTrips(t *testing.T) {
 	cases := map[string]struct{ row, col int }{
-		"A1":   {0, 0},
-		"B7":   {6, 1},
-		"Z1":   {0, 25},
-		"AA1":  {0, 26},
-		"AB10": {9, 27},
-		"BA1":  {0, 52},
+		"A1":   {1, 1},
+		"B7":   {7, 2},
+		"Z1":   {1, 26},
+		"AA1":  {1, 27},
+		"AB10": {10, 28},
+		"BA1":  {1, 53},
 	}
 	for ref, want := range cases {
 		row, col, err := parseCell(ref)
@@ -207,6 +213,46 @@ func TestCellParsingRoundTrips(t *testing.T) {
 		if got := formatCell(row, col); got != ref {
 			t.Errorf("formatCell(%d,%d) = %q, want %q", row, col, got, ref)
 		}
+	}
+}
+
+// A1 and column A are the regression that motivated the one-based fix: the
+// schema declares `min: 1` on row and col, so the old zero-based mapping made
+// the server reject every reference in row 1 or column A — A1, the first cell
+// of every spreadsheet, included. The fake server validates nothing, so only an
+// explicit check on the posted values catches a return to zero-based.
+func TestAddAcceptsFirstRowAndFirstColumn(t *testing.T) {
+	for _, tc := range []struct {
+		ref              string
+		wantRow, wantCol float64
+	}{
+		{"A1", 1, 1},
+		{"B1", 1, 2},
+		{"A5", 5, 1},
+		{"AA1", 1, 27},
+	} {
+		t.Run(tc.ref, func(t *testing.T) {
+			f := books(t)
+			_, c := f.serve()
+
+			if _, _, err := runCmd(t, c, "calc", "comments", "/Budget.xlsx",
+				"--cell", tc.ref, "--sheet", "Sheet1", "--add", "x"); err != nil {
+				t.Fatal(err)
+			}
+			if got := f.lastCreate["row"]; got != tc.wantRow {
+				t.Errorf("%s: create[row] = %v, want %v", tc.ref, got, tc.wantRow)
+			}
+			if got := f.lastCreate["col"]; got != tc.wantCol {
+				t.Errorf("%s: create[col] = %v, want %v", tc.ref, got, tc.wantCol)
+			}
+			// Every stored coordinate must satisfy the schema's `min: 1`.
+			if r, _ := f.lastCreate["row"].(float64); r < 1 {
+				t.Errorf("%s: row %v violates the schema's min:1", tc.ref, r)
+			}
+			if cl, _ := f.lastCreate["col"].(float64); cl < 1 {
+				t.Errorf("%s: col %v violates the schema's min:1", tc.ref, cl)
+			}
+		})
 	}
 }
 
@@ -225,8 +271,8 @@ func TestCellParsingIsCaseInsensitive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row != 6 || col != 1 {
-		t.Errorf("parseCell(\"b7\") = (%d,%d), want (6,1)", row, col)
+	if row != 7 || col != 2 {
+		t.Errorf("parseCell(\"b7\") = (%d,%d), want (7,2)", row, col)
 	}
 }
 
@@ -240,6 +286,54 @@ func TestAddRejectsBadCell(t *testing.T) {
 	}
 	if f.lastCreate != nil {
 		t.Errorf("a refused add still posted: %v", f.lastCreate)
+	}
+}
+
+// sheet_id, row, and col are all required by the schema, so a root comment
+// missing either anchor flag is refused HERE with a message naming the flag —
+// rather than by the server with a bare "Failed to create record", which is
+// what the live smoke test hit. The fake server validates nothing, so only an
+// explicit test covers this.
+func TestAddRequiresBothAnchorFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"no cell, no sheet", []string{"--add", "x"}, "--cell"},
+		{"cell without sheet", []string{"--cell", "B7", "--add", "x"}, "--sheet"},
+		{"sheet without cell", []string{"--sheet", "Sheet1", "--add", "x"}, "--cell"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := books(t)
+			_, c := f.serve()
+
+			_, _, err := runCmd(t, c, append([]string{"calc", "comments", "/Budget.xlsx"}, tc.args...)...)
+			if err == nil {
+				t.Fatal("a root comment without a full cell anchor must fail")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not name the missing flag %q", err, tc.want)
+			}
+			if f.lastCreate != nil {
+				t.Errorf("a refused add still posted: %v", f.lastCreate)
+			}
+		})
+	}
+}
+
+// A reply inherits its thread's anchor, so it must NOT demand the flags a root
+// comment needs — requiring them would make replying impossible.
+func TestReplyNeedsNoAnchorFlags(t *testing.T) {
+	f := books(t)
+	_, c := f.serve()
+
+	if _, _, err := runCmd(t, c, "calc", "comments", "/Budget.xlsx",
+		"--reply-to", "cmtOpen", "--add", "No anchor needed"); err != nil {
+		t.Fatalf("a reply must not require --cell/--sheet: %v", err)
+	}
+	if f.lastCreate == nil {
+		t.Fatal("the reply was not posted")
 	}
 }
 
@@ -381,7 +475,7 @@ func TestJSONOutputIsStable(t *testing.T) {
 	}
 	// The stored coordinates survive into --json even though the table renders
 	// them as A1, so a script can filter on row/col.
-	if comments[0].Row != 6 || comments[0].Col != 1 {
+	if comments[0].Row != 7 || comments[0].Col != 2 {
 		t.Errorf("--json must carry the stored coordinates, got row=%d col=%d",
 			comments[0].Row, comments[0].Col)
 	}
