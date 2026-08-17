@@ -172,6 +172,22 @@ func addComment(
 ) error {
 	ctx := cmd.Context()
 
+	// sheet_id, row, and col are all REQUIRED on a root comment: a calc
+	// comment anchors to one cell on one sheet. A reply inherits its thread's
+	// anchor, so it needs neither. Without this check the server answers a bare
+	// "Failed to create record" — a 400 that names nothing the user can act on
+	// (the missing --sheet, or the --cell they did remember to pass).
+	if replyTo == "" {
+		switch {
+		case cellRef == "" && sheet == "":
+			return fmt.Errorf("a new comment needs a cell and a sheet: pass --cell (e.g. --cell B7) and --sheet")
+		case cellRef == "":
+			return fmt.Errorf("a new comment needs a cell: pass --cell (e.g. --cell B7)")
+		case sheet == "":
+			return fmt.Errorf("a new comment needs the sheet the cell is on: pass --sheet")
+		}
+	}
+
 	userID, err := c.UserID(ctx)
 	if err != nil {
 		return err
