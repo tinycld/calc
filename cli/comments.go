@@ -186,6 +186,10 @@ func addComment(
 		case sheet == "":
 			return fmt.Errorf("a new comment needs the sheet the cell is on: pass --sheet")
 		}
+	} else if cellRef != "" || sheet != "" {
+		// Say so rather than silently overriding: a reply always takes the
+		// thread's anchor, so these flags would not do what they look like.
+		return fmt.Errorf("--cell/--sheet do not apply to a reply: a reply inherits the anchor of the thread it joins")
 	}
 
 	userID, err := c.UserID(ctx)
@@ -227,6 +231,12 @@ func addComment(
 			return fmt.Errorf("%s is a comment on a different document", replyTo)
 		}
 		payload["parent_comment"] = threadOf(parent)
+		// A reply carries its thread's anchor rather than one of its own:
+		// sheet_id/row/col are all required by the collection, so a reply that
+		// omitted them would be rejected outright, and one that invented its
+		// own would detach the reply from the cell its thread hangs on.
+		payload["sheet_id"] = parent.SheetID
+		payload["row"], payload["col"] = parent.Row, parent.Col
 	}
 
 	created, err := client.CreateRecord[comment](ctx, c, commentsCollection, payload)

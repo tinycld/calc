@@ -324,9 +324,18 @@ func TestAddRequiresBothAnchorFlags(t *testing.T) {
 
 // A reply inherits its thread's anchor, so it must NOT demand the flags a root
 // comment needs — requiring them would make replying impossible.
-func TestReplyNeedsNoAnchorFlags(t *testing.T) {
+//
+// The anchor fields are asserted on the wire, not just the exit status:
+// sheet_id/row/col are all required by calc_comments, so a reply that sent none
+// of them is rejected by a real server even though the fake here accepts it.
+func TestReplyCarriesThreadAnchor(t *testing.T) {
 	f := books(t)
 	_, c := f.serve()
+
+	parent := f.comments["cmtOpen"]
+	if parent.SheetID == "" || parent.Row == 0 || parent.Col == 0 {
+		t.Fatalf("fixture must have an anchored parent: %+v", parent)
+	}
 
 	if _, _, err := runCmd(t, c, "calc", "comments", "/Budget.xlsx",
 		"--reply-to", "cmtOpen", "--add", "No anchor needed"); err != nil {
@@ -334,6 +343,33 @@ func TestReplyNeedsNoAnchorFlags(t *testing.T) {
 	}
 	if f.lastCreate == nil {
 		t.Fatal("the reply was not posted")
+	}
+	if got := str(f.lastCreate["sheet_id"]); got != parent.SheetID {
+		t.Errorf("sheet_id = %q, want the thread's %q", got, parent.SheetID)
+	}
+	if got := intOf(f.lastCreate["row"]); got != parent.Row {
+		t.Errorf("row = %d, want the thread's %d", got, parent.Row)
+	}
+	if got := intOf(f.lastCreate["col"]); got != parent.Col {
+		t.Errorf("col = %d, want the thread's %d", got, parent.Col)
+	}
+}
+
+// The anchor flags are meaningless on a reply, so passing one is a mistake
+// worth naming rather than silently overriding with the thread's anchor.
+func TestReplyRejectsAnchorFlags(t *testing.T) {
+	f := books(t)
+	_, c := f.serve()
+
+	for _, args := range [][]string{
+		{"--cell", "B7"},
+		{"--sheet", "Sheet1"},
+	} {
+		cmd := append([]string{"calc", "comments", "/Budget.xlsx",
+			"--reply-to", "cmtOpen", "--add", "x"}, args...)
+		if _, _, err := runCmd(t, c, cmd...); err == nil {
+			t.Errorf("%v on a reply must be refused", args)
+		}
 	}
 }
 

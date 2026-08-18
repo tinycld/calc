@@ -40,8 +40,8 @@ type item struct {
 // snapshotted at write time so a removed user still renders with a name.
 //
 // Unlike text's comments, which anchor to quoted prose, a calc comment anchors
-// to a CELL: sheet_id plus a zero-based row/col. That is what `--cell A1`
-// parses into, and what the CELL column renders back.
+// to a CELL: sheet_id plus a one-based row/col (the collection enforces min 1).
+// That is what `--cell A1` parses into, and what the CELL column renders back.
 type comment struct {
 	ID            string `json:"id"`
 	DriveItem     string `json:"drive_item"`
