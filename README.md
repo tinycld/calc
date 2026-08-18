@@ -98,6 +98,40 @@ spreadsheet's identity, the drive share rules govern who can open the
 room, and the xlsx blob attached to the drive_item is the source of
 truth that survives across sessions.
 
+## Automation rules
+
+Calc contributes one trigger to the ecosystem-wide automation-rule
+engine, and no actions:
+
+- **`calc:comment-added`** — "A comment is added to a spreadsheet",
+  fired on `calc_comments` create. Exposed fields: `body`,
+  `author_name`, `drive_item`, `sheet_id`, `row`, `col`.
+
+Because sheet comments anchor to a cell, rules can filter by sheet, row
+and column as well as by text and author — enough to watch one region
+of a model (an assumptions block, say) and ignore the rest. Note there
+is **no `quoted_text` field**, unlike text's trigger: a sheet comment
+anchors to a cell rather than to a passage.
+
+The ownership design matches text's. The trigger declares no
+`ownerField`; `calc/server/automation.go` registers a participant owner
+resolver that delegates to core's `driveshare.ParticipantIDs`, so the
+rule fires for every participant on the spreadsheet rather than only
+for the commenter.
+
+**No actions**, for the same reason as text: cell values are
+collaborative Yjs operations, not record fields a rule could set.
+
+The catalog is declared with `automation: { definitions: 'automation' }`
+in `manifest.ts` plus a `"./automation"` entry in the `package.json`
+exports map; the definitions live in `tinycld/calc/automation.ts` and
+the Go-side registration in `server/automation.go`. The in-app help
+topic is `help/rules.md`.
+
+Docs: [Automation rules](https://tinycld.org/docs/automation-rules)
+(users) · [Automation anatomy](https://tinycld.org/docs/anatomy/automation)
+(package authors).
+
 ## Platform support
 
 | Feature                              | Web | iPad |
@@ -508,6 +542,39 @@ tinycld/calc/
         open-in-calc-action.tsx, open-in-calc-drive-action.tsx
 ```
 
+## Command line
+
+Calc contributes exactly one command group to the `tinycld` binary:
+
+```sh
+tinycld calc comments <path>            # list a workbook's threads
+tinycld calc comments <path> --add "Where does this rate come from?" --cell B7
+tinycld calc comments <path> --add "Q3 tab" --cell B7 --sheet <id>
+tinycld calc comments <path> --add "Agreed" --reply-to <id>
+tinycld calc comments <path> --resolve <id>
+tinycld calc comments <path> --reopen <id>
+tinycld calc comments <path> --all      # include resolved threads
+```
+
+`comment` is accepted as an alias. The group requests the `calc:read`
+and `calc:write` OAuth scopes. `--cell` takes one-based A1 notation,
+converted at the CLI edge.
+
+There is deliberately **no `calc new` command.** Workbooks *are*
+`drive_items`, so `tinycld drive put` / `cat` / `get` / `rm` already
+create, read, download and delete them; and a Yjs CRDT body has no safe
+shell write representation. That is why the command line exposes
+comments only.
+
+The `tinycld` binary is a Go CLI the server cross-compiles containing
+exactly its installed package set; users download it from **Settings →
+Personal → About**. This package's group is sourced from `cli/` and
+declared by a `cli` manifest block naming the Go module and the OAuth
+scopes above. The in-app help topic is `help/command-line.md`.
+
+Docs: [Command line tool](https://tinycld.org/docs/command-line-tool) ·
+[CLI reference](https://tinycld.org/docs/reference/cli-reference).
+
 ## Development
 
 ```sh
@@ -565,6 +632,10 @@ this package — exactly what a developer does locally.
   hyperformula, numfmt, pbtsdb, @tanstack/db, expo-clipboard, …)
 - `pb-migrations/` — PocketBase migrations (symlinked into the app shell's
   server on `packages:generate`)
-- `server/` — Go server module, registered by the generator
+- `server/` — Go server module, registered by the generator; includes
+  `server/automation.go` (trigger registration + the participant owner
+  resolver)
+- `cli/` — Go source for this package's `tinycld calc` command group
 - `tests/` — vitest unit tests (sibling tests run from the app shell)
-- `tinycld/calc/` — TypeScript source (screens, components, hooks, lib)
+- `tinycld/calc/` — TypeScript source (screens, components, hooks, lib),
+  including `tinycld/calc/automation.ts` — the automation trigger catalog
