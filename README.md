@@ -15,7 +15,7 @@ imported as `@tinycld/core`.
 Stores spreadsheets as `.xlsx` files in `@tinycld/drive` and edits them
 collaboratively. Workbooks open from the drive UI (calc registers an xlsx
 preview + an "Open in Calc" file action) or from the dedicated
-`/a/<org>/calc` index.
+`/a/calc` index.
 
 Editing features:
 
