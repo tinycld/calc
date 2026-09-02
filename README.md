@@ -288,7 +288,7 @@ per-filter `filterSelections`, grand-total and subtotal toggles, and
 optional `styleName`. The materialized output range lives in the
 target sheet's regular `cells` entries — the pivot Y.Map is the
 definition, the cells are the cached evaluation. Server-side
-`server/pivot.go` round-trips definitions through doctaculous
+`server/pivot.go` round-trips definitions through omnidoc
 `pkg/xlsx`'s pivot-table parts; client-side keys live in `lib/pivot/keys.ts`
 (`PIVOTS_MAP`, `PIVOT_SHEET_KEY`).
 
@@ -316,7 +316,7 @@ via `useRealtimeRoom({ roomKind: 'calc', roomID: driveItemID, … })`:
    linking them to the item.
 2. **Bootstrap** — on first open, `Runtime.NewDoc` invokes the bootstrap
    hook, which loads `drive_items.file`, parses the xlsx with
-   doctaculous `pkg/xlsx`,
+   omnidoc `pkg/xlsx`,
    and seeds the `Y.Doc` via `BootstrapYDocFromWorkbook` — all
    synchronously, before the broker sends `SyncReply`. Empty / missing
    files yield an empty doc that the next save will materialize from
@@ -344,7 +344,7 @@ via `useRealtimeRoom({ roomKind: 'calc', roomID: driveItemID, … })`:
 `SaveRoom` reads the current xlsx bytes off `drive_items`, snapshots the
 server-side `Y.Doc` (`Snapshot()` walks the `sheets` and `cells` maps
 into Go structs), and applies the snapshot on top of the original
-workbook via doctaculous `pkg/xlsx` — a preservation-first overlay
+workbook via omnidoc `pkg/xlsx` — a preservation-first overlay
 editor that patches only what the doc tracks (renaming or appending
 sheets, growing dimensions, applying row/column sizes and styles,
 writing each cell's formula or value, then writing classic xlsx cell
@@ -414,7 +414,7 @@ Bootstrap happens server-side (not client-side) so the wire shape clients
 see is canonical regardless of join order — there is no "first joiner
 parses xlsx, everyone else syncs from peer" race, and a peer dropping
 mid-edit doesn't strand the next joiner with stale state. The client
-package has no xlsx parser at all; doctaculous `pkg/xlsx` is a Go-only
+package has no xlsx parser at all; omnidoc `pkg/xlsx` is a Go-only
 dependency. (`excelize` remains in `server/go.mod` as a test-only
 dependency — the parity suite in `parity_oracle_test.go` uses it as an
 independent oracle for the read and write paths.)
@@ -454,7 +454,7 @@ server/
     bootstrap_hook.go         production bootstrap closure (load drive_items file)
     save_coordinator.go       calc-side flush wrapper around core's SaveCoordinator
     persist.go                SaveRoom — Y.Doc snapshot overlaid onto the
-                              source xlsx via doctaculous pkg/xlsx (a
+                              source xlsx via omnidoc pkg/xlsx (a
                               preservation-first editor: untracked parts
                               of the file pass through byte-intact)
     comments.go               CommentRow loader; classic xlsx cell-note writer

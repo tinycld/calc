@@ -1,13 +1,14 @@
 package calc
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	ycrdt "github.com/skyterra/y-crdt"
 )
 
@@ -91,11 +92,11 @@ type CellValueDTO struct {
 // rowCap and colCap (when > 0) bound the per-sheet read for the
 // preview endpoint; pass 0 for the bootstrap path which needs the
 // full grid.
-func ReadWorkbookFromXLSX(xlsxBytes []byte, rowCap, colCap int) (WorkbookModel, error) {
+func ReadWorkbookFromXLSX(ctx context.Context, xlsxBytes []byte, rowCap, colCap int) (WorkbookModel, error) {
 	if len(xlsxBytes) == 0 {
 		return WorkbookModel{}, fmt.Errorf("calc: ReadWorkbookFromXLSX: empty input")
 	}
-	wb, err := xlsx.OpenBytes(xlsxBytes)
+	wb, err := xlsx.OpenBytes(ctx, xlsxBytes)
 	if err != nil {
 		return WorkbookModel{}, fmt.Errorf("calc: open xlsx: %w", err)
 	}
@@ -107,7 +108,7 @@ func ReadWorkbookFromXLSX(xlsxBytes []byte, rowCap, colCap int) (WorkbookModel, 
 	for i := range wb.Sheets {
 		out.Sheets = append(out.Sheets, readWorksheet(&wb.Sheets[i], rowCap, colCap))
 	}
-	pivots, err := readPivots(xlsxBytes)
+	pivots, err := readPivots(ctx, xlsxBytes)
 	if err != nil {
 		return WorkbookModel{}, fmt.Errorf("calc: read pivots: %w", err)
 	}
@@ -153,8 +154,8 @@ func ensureDistinctTargets(pivots []PivotDefinitionDTO, sheets []WorksheetModel)
 	return pivots
 }
 
-// readWorksheet converts one parsed doctaculous sheet into the
-// WorksheetModel wire shape. The doctaculous grid is dense over the
+// readWorksheet converts one parsed omnidoc sheet into the
+// WorksheetModel wire shape. The omnidoc grid is dense over the
 // used range and 0-BASED; every index converts to calc's 1-based
 // convention immediately inside this function so no 0-based index
 // escapes the seam.
@@ -215,7 +216,7 @@ func readWorksheet(sheet *xlsx.Sheet, rowCap, colCap int) WorksheetModel {
 		ColCount:           colCount,
 		Cells:              cells,
 		Color:              tabColor,
-		Hidden:             sheet.Hidden,
+		Hidden:             sheet.Visibility != xlsx.SheetVisible,
 		Merges:             readMerges(sheet.Merges),
 		FrozenRows:         frozenRows,
 		FrozenCols:         frozenCols,
@@ -392,7 +393,7 @@ func readWorkbookCell(cell *xlsx.Cell) (CellValueDTO, bool) {
 		return CellValueDTO{}, false
 	}
 	// Cells on the DEFAULT xf (StyleID 0) are untracked, matching the
-	// excelize-era reader. doctaculous resolves xf 0 like any other, so
+	// excelize-era reader. omnidoc resolves xf 0 like any other, so
 	// without this guard every unstyled cell would seed the workbook's
 	// default font (e.g. Calibri 11) into the Y.Doc as a per-cell style
 	// — bloating the doc and stamping explicit styles back on every

@@ -1,6 +1,6 @@
 package calc
 
-// excelize-as-oracle parity suite for the doctaculous migration.
+// excelize-as-oracle parity suite for the omnidoc migration.
 //
 // READ parity: the pre-migration excelize read path (commit 956ab94) is
 // frozen below as oracleReadWorkbook — a faithful port of the old
@@ -73,7 +73,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -797,7 +797,7 @@ func TestReadParityAgainstExcelizeOracle(t *testing.T) {
 	for _, fx := range parityFixtures {
 		t.Run(fx.name, func(t *testing.T) {
 			data := readParityFixture(t, fx.path)
-			got, err := ReadWorkbookFromXLSX(data, 0, 0)
+			got, err := ReadWorkbookFromXLSX(t.Context(), data, 0, 0)
 			if err != nil {
 				t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 			}
@@ -805,12 +805,12 @@ func TestReadParityAgainstExcelizeOracle(t *testing.T) {
 			if err != nil {
 				t.Fatalf("oracleReadWorkbook: %v", err)
 			}
-			// The raw doctaculous model supplies the sheetFormatPr
+			// The raw omnidoc model supplies the sheetFormatPr
 			// defaults (allowlist #8) and the builtin numfmt patterns in
 			// actual use (allowlist #4).
-			dc, err := xlsx.OpenBytes(data)
+			dc, err := xlsx.OpenBytes(t.Context(), data)
 			if err != nil {
-				t.Fatalf("open doctaculous model: %v", err)
+				t.Fatalf("open omnidoc model: %v", err)
 			}
 			builtins := parityBuiltinNumFmtPatterns(dc)
 
@@ -901,7 +901,7 @@ func compareParitySheet(t *testing.T, old, new *WorksheetModel, dcSheet *xlsx.Sh
 // compareParityRowHeights allows exactly one asymmetry: an oracle-only
 // entry whose stored height equals the sheet's own sheetFormatPr
 // default (the new reader filters those; the oracle only filtered the
-// global 15pt constant). Verified against the raw doctaculous points so
+// global 15pt constant). Verified against the raw omnidoc points so
 // a genuinely lost row can't hide behind pixel rounding.
 func compareParityRowHeights(t *testing.T, name string, old, new map[int]int, dcSheet *xlsx.Sheet) {
 	t.Helper()
@@ -1397,7 +1397,7 @@ func TestWriteParityExcelizeReread(t *testing.T) {
 	for _, fx := range parityFixtures {
 		t.Run(fx.name, func(t *testing.T) {
 			data := readParityFixture(t, fx.path)
-			model, err := ReadWorkbookFromXLSX(data, 0, 0)
+			model, err := ReadWorkbookFromXLSX(t.Context(), data, 0, 0)
 			if err != nil {
 				t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 			}
@@ -1405,7 +1405,7 @@ func TestWriteParityExcelizeReread(t *testing.T) {
 				t.Fatal("pivot fixture read produced no pivots — the pivot write-parity leg would be vacuous")
 			}
 			snap := parityBootstrapSnapshot(t, model)
-			out, err := serializeSnapshotToXLSX(data, snap, nil)
+			out, err := serializeSnapshotToXLSX(t.Context(), data, snap, nil)
 			if err != nil {
 				t.Fatalf("serializeSnapshotToXLSX: %v", err)
 			}
@@ -1675,7 +1675,7 @@ func pivotFieldNames(in []excelize.PivotTableField) []string {
 // reader.
 func TestWriteParityCommentsPresence(t *testing.T) {
 	data := readParityFixture(t, "../tests/assets/tiny.xlsx")
-	model, err := ReadWorkbookFromXLSX(data, 0, 0)
+	model, err := ReadWorkbookFromXLSX(t.Context(), data, 0, 0)
 	if err != nil {
 		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 	}
@@ -1689,7 +1689,7 @@ func TestWriteParityCommentsPresence(t *testing.T) {
 		AuthorName: "Oracle",
 		Created:    time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC),
 	}}
-	out, err := serializeSnapshotToXLSX(data, snap, comments)
+	out, err := serializeSnapshotToXLSX(t.Context(), data, snap, comments)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -1738,12 +1738,12 @@ func TestNoOpRoundTripStability(t *testing.T) {
 
 func parityNoOpCycle(t *testing.T, in []byte) []byte {
 	t.Helper()
-	model, err := ReadWorkbookFromXLSX(in, 0, 0)
+	model, err := ReadWorkbookFromXLSX(t.Context(), in, 0, 0)
 	if err != nil {
 		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 	}
 	snap := parityBootstrapSnapshot(t, model)
-	out, err := serializeSnapshotToXLSX(in, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), in, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}

@@ -1,13 +1,13 @@
 package calc
 
 import (
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 )
 
 // This file is the single source of truth for every leaf attribute on
 // CellStyle. Each entry describes a deterministic canary value the
 // round-trip audit injects and a probe that reads the leaf back off a
-// fully resolved xlsx.Style (the doctaculous read model).
+// fully resolved xlsx.Style (the omnidoc read model).
 //
 // The audit (style_roundtrip_audit_test.go) drives each leaf through
 // the real pipeline — cellStyleToPatch → PatchCellStyle → Save →
@@ -174,7 +174,7 @@ var styleAttributeRegistry = map[string]attributeSpec{
 	},
 	// Fill.BgColor is meaningful for hatched patterns; the toolbar
 	// never produces a bgColor edit, but imported workbooks carry it
-	// and the doc must round-trip it. doctaculous writes and reads it
+	// and the doc must round-trip it. omnidoc writes and reads it
 	// symmetrically (the excelize-era write validation that forced
 	// this leaf to be read-only is gone).
 	"Fill.BgColor": {

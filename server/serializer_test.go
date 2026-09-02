@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -163,7 +163,7 @@ func TestSerializerSingleCellChange(t *testing.T) {
 	snap := snapshotFromXLSX(t, original)
 	overrideCell(&snap, "sheet1", 2, 2, "from-save")
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestSerializerClearsCellsDroppedFromSnapshot(t *testing.T) {
 	snap := snapshotFromXLSX(t, original)
 	dropCell(&snap, "sheet1", 3, 2) // People!B3 ("Mara")
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestSerializerAppendNewSheet(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestSerializerRenameExistingSheet(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestSerializerFormulaCell(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestSerializerEmptySnapshot(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestSerializerEmptySnapshot(t *testing.T) {
 // TestSerializerEmptyOriginal: zero-length input must error rather
 // than silently produce an empty workbook.
 func TestSerializerEmptyOriginal(t *testing.T) {
-	if _, err := serializeSnapshotToXLSX(nil, YDocSnapshot{}, nil); err == nil {
+	if _, err := serializeSnapshotToXLSX(t.Context(), nil, YDocSnapshot{}, nil); err == nil {
 		t.Fatal("expected error for nil original bytes, got nil")
 	}
 }
@@ -514,7 +514,7 @@ func TestSerializerStyleSetsBold(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -560,7 +560,7 @@ func TestSerializerStylePartialOverlay(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(withSize, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), withSize, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -591,7 +591,7 @@ func TestSerializerStyleAbsentLeavesCellAlone(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(withSize, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), withSize, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -627,7 +627,7 @@ func TestSerializerStyleSetsItalic(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -721,7 +721,7 @@ func TestSerializerStyleSetsUnderline(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -779,11 +779,11 @@ func TestSerializerStyleClearsUnderline(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	// The doctaculous writer clears an underline by REMOVING the <u>
+	// The omnidoc writer clears an underline by REMOVING the <u>
 	// element (reads back as ""); excelize used to write the explicit
 	// val="none" cancel. Both render un-underlined — what must not
 	// survive is "single".
@@ -849,7 +849,7 @@ func TestSerializerStyleSetsFontName(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -908,7 +908,7 @@ func TestSerializerStyleClearsFontName(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -918,7 +918,7 @@ func TestSerializerStyleClearsFontName(t *testing.T) {
 }
 
 // builtinNumFmtCodes maps the builtin numFmt ids the tests exercise
-// back to their format patterns. The doctaculous writer resolves a
+// back to their format patterns. The omnidoc writer resolves a
 // pattern matching a BUILTIN format to its builtin id instead of
 // minting a custom id >= 164 the way excelize did — semantically the
 // same format, different storage.
@@ -987,7 +987,7 @@ func TestSerializerStyleSetsNumFmt(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -1044,7 +1044,7 @@ func TestSerializerStyleClearsNumFmt(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1142,7 +1142,7 @@ func TestSerializerStyleSetsFill(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -1184,7 +1184,7 @@ func TestSerializerStyleSetsStrike(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -1272,7 +1272,7 @@ func TestSerializerStyleSetsBorders(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -1343,7 +1343,7 @@ func TestSerializerStyleClearsBorder(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1414,7 +1414,7 @@ func TestSerializerStyleBordersPreservesDiagonals(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1470,7 +1470,7 @@ func TestSerializerStyleSetsBorderColorAndLineStyle(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -1553,7 +1553,7 @@ func TestSerializerStyleClearViaFalseWire(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1598,7 +1598,7 @@ func TestSerializerExpandsSheetDimension(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1634,7 +1634,7 @@ func TestSerializerDimensionDoesNotShrink(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1663,7 +1663,7 @@ func TestSerializerDimensionUntouchedWhenSheetMetaIsZero(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1725,7 +1725,7 @@ func TestSerializerPersistsRowHeights(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1753,7 +1753,7 @@ func TestSerializerPersistsColWidths(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1803,7 +1803,7 @@ func TestSerializerRowHeightsNilLeavesExistingAlone(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1847,7 +1847,7 @@ func TestSerializerColWidthsNilLeavesExistingAlone(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1865,7 +1865,7 @@ func TestSerializerColWidthsNilLeavesExistingAlone(t *testing.T) {
 // through the row's customFormat xf, which is exactly the OOXML
 // row-style semantic. The excelize-era writer additionally stamped the
 // row style onto every EXISTING cell (overwriting their own styles);
-// the doctaculous writer keeps the row-level style row-level, so a
+// the omnidoc writer keeps the row-level style row-level, so a
 // probe at a populated cell like A7 would read that cell's own style
 // instead.
 func readRowStyleFill(t *testing.T, xlsx []byte, sheetName string, row int) (string, int, []string) {
@@ -1918,7 +1918,7 @@ func TestSerializerPersistsRowStyle(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -1978,7 +1978,7 @@ func TestSerializerRowStylesNilLeavesExistingAlone(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -2048,7 +2048,7 @@ func TestSerializerIntegratedRoundTrip(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -2133,7 +2133,7 @@ func TestSerializerStyleClearsFill(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -2186,7 +2186,7 @@ func TestSerializerClearsRowHeightsForEmptyMap(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -2211,7 +2211,7 @@ func TestSerializerClearsRowHeightsForEmptyMap(t *testing.T) {
 // A cleared column is now TRULY ABSENT from <cols> (ClearColWidth
 // removes the entry) — the excelize-era writer instead wrote the
 // 9.140625 default back as an explicit width. The assertion therefore
-// checks absence via the doctaculous read model rather than a numeric
+// checks absence via the omnidoc read model rather than a numeric
 // excelize default (which now reads as the sheet's own declared
 // default, whatever it is).
 func TestSerializerClearsColWidthsForEmptyMap(t *testing.T) {
@@ -2246,7 +2246,7 @@ func TestSerializerClearsColWidthsForEmptyMap(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -2257,9 +2257,9 @@ func TestSerializerClearsColWidthsForEmptyMap(t *testing.T) {
 // the 1-based column (a true unset, not a written-back default).
 func assertColWidthAbsent(t *testing.T, data []byte, sheetName string, col int) {
 	t.Helper()
-	wb, err := xlsx.OpenBytes(data)
+	wb, err := xlsx.OpenBytes(t.Context(), data)
 	if err != nil {
-		t.Fatalf("open output with doctaculous: %v", err)
+		t.Fatalf("open output with omnidoc: %v", err)
 	}
 	for i := range wb.Sheets {
 		if wb.Sheets[i].Name != sheetName {
@@ -2315,7 +2315,7 @@ func TestSerializerClearsRowStylesForEmptyMap(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -2368,7 +2368,7 @@ func TestSerializerClearsTabColorWhenSnapshotEmpty(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -2466,9 +2466,9 @@ func TestSerializerSparseMapRoundTripContract(t *testing.T) {
 				// A cleared column width is truly absent from <cols>
 				// (no written-back default) — see
 				// TestSerializerClearsColWidthsForEmptyMap.
-				wb, err := xlsx.OpenBytes(out)
+				wb, err := xlsx.OpenBytes(t.Context(), out)
 				if err != nil {
-					t.Fatalf("open output with doctaculous: %v", err)
+					t.Fatalf("open output with omnidoc: %v", err)
 				}
 				for i := range wb.Sheets {
 					if wb.Sheets[i].Name != "People" {
@@ -2557,7 +2557,7 @@ func TestSerializerSparseMapRoundTripContract(t *testing.T) {
 			snap := snapshotFromXLSX(t, seeded)
 			tc.mutate(&snap)
 
-			out, err := serializeSnapshotToXLSX(seeded, snap, nil)
+			out, err := serializeSnapshotToXLSX(t.Context(), seeded, snap, nil)
 			if err != nil {
 				t.Fatalf("serialize: %v", err)
 			}
@@ -2646,7 +2646,7 @@ func TestSerializerNoOpSaveDoesNotInflateSheetData(t *testing.T) {
 		snap.Sheets[i].RowStyles = map[int]*CellStyle{}
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -2656,15 +2656,15 @@ func TestSerializerNoOpSaveDoesNotInflateSheetData(t *testing.T) {
 			originalRowCount, outRowCount)
 	}
 
-	// Stronger preservation lock: a doctaculous Edit + Save with NO
+	// Stronger preservation lock: a omnidoc Edit + Save with NO
 	// mutations reproduces the package byte-identically, part for part.
 	// This is the property the whole save path is built on — anything
 	// the serializer doesn't explicitly touch rides through verbatim.
-	ed, err := xlsx.Edit(original)
+	ed, err := xlsx.Edit(t.Context(), original)
 	if err != nil {
 		t.Fatalf("xlsx.Edit: %v", err)
 	}
-	resaved, err := ed.Save()
+	resaved, err := ed.Save(t.Context())
 	if err != nil {
 		t.Fatalf("no-op save: %v", err)
 	}

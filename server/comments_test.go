@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -132,7 +132,7 @@ func TestApplyCommentsToFileRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	f, err := xlsx.Edit(original)
+	f, err := xlsx.Edit(t.Context(), original)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestApplyCommentsToFileRoundTrip(t *testing.T) {
 		t.Fatalf("applyCommentsToFile: %v", err)
 	}
 
-	saved, err := f.Save()
+	saved, err := f.Save(t.Context())
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestApplyCommentsToFileJoinsThreadsPerCell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	f, err := xlsx.Edit(original)
+	f, err := xlsx.Edit(t.Context(), original)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestApplyCommentsToFileJoinsThreadsPerCell(t *testing.T) {
 	if err := applyCommentsToFile(f, rows, map[string]string{"sheet1": "People"}); err != nil {
 		t.Fatalf("applyCommentsToFile: %v", err)
 	}
-	saved, err := f.Save()
+	saved, err := f.Save(t.Context())
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestApplyCommentsToFileSkipsUnknownSheet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	f, err := xlsx.Edit(original)
+	f, err := xlsx.Edit(t.Context(), original)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestSerializerWritesComments(t *testing.T) {
 			Created:    time.Date(2026, 5, 10, 10, 0, 0, 0, time.UTC),
 		},
 	}
-	out, err := serializeSnapshotToXLSX(original, snap, comments)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, comments)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -84,7 +84,7 @@ func commentRowFromRecord(r *core.Record) CommentRow {
 
 // applyCommentsToFile groups rows by (sheetID, row, col), renders each
 // thread via formatThreadForXlsx, and stamps ONE classic note per cell
-// on the workbook — doctaculous SetComment replaces per cell, so a
+// on the workbook — omnidoc SetComment replaces per cell, so a
 // cell's threads join into a single note separated by blank lines, and
 // the attribution is the last (most recent) thread's author. sheetNameByID
 // resolves a snapshot sheet id to the sheet's post-rename name — the

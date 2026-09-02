@@ -198,7 +198,7 @@ func extractLegacyPathCF(t *testing.T, original []byte, rangeRef string, opts ex
 			{ID: "sheet2", Name: "Incomes", Position: 1},
 		},
 	}
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestLegacyCFBlobStyledRuleMintsDxf(t *testing.T) {
 			{ID: "sheet2", Name: "Incomes", Position: 1},
 		},
 	}
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}

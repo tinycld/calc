@@ -1,12 +1,12 @@
 package calc
 
 import (
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 )
 
 // This file is the style seam between calc's CellStyle (the partial,
 // all-pointer-leaf shape mirroring the TS CellStyle — see snapshot.go)
-// and doctaculous pkg/xlsx. Three hand-written mappers replaced the
+// and omnidoc pkg/xlsx. Three hand-written mappers replaced the
 // excelize-era reflection overlay (style_reflect.go, deleted with the
 // excelize write path):
 //
@@ -78,7 +78,7 @@ func fillToPatch(f *CellFill) *xlsx.FillPatch {
 	p := &xlsx.FillPatch{}
 	if f.Pattern != nil {
 		// The doc models only "solid"; anything else clears the fill
-		// (pattern "" is doctaculous's fill-to-none), matching the old
+		// (pattern "" is omnidoc's fill-to-none), matching the old
 		// overlay's unknown-pattern → code-0 behavior.
 		pat := ""
 		if *f.Pattern == "solid" {
@@ -100,7 +100,7 @@ func fillToPatch(f *CellFill) *xlsx.FillPatch {
 		p.Pattern = ptr("solid")
 	}
 	// CellFill.Type ("pattern") is an excelize-ism the wire shape keeps
-	// for the TS side; it has no doctaculous counterpart and is dropped
+	// for the TS side; it has no omnidoc counterpart and is dropped
 	// on write. A patch that only carried Type is therefore a no-op.
 	if *p == (xlsx.FillPatch{}) {
 		return nil
@@ -163,7 +163,7 @@ func edgeToPatch(e *CellBorderEdge) *xlsx.EdgePatch {
 // Colors surface when stored as an explicit RGB, which by the time this
 // runs includes legacy indexed colors — ReadWorkbookFromXLSX resolves
 // those to RGB up front (see indexed_palette.go). Theme colors are
-// still skipped (follow-up in doctaculous).
+// still skipped (follow-up in omnidoc).
 func styleToCellStyle(st *xlsx.Style) *CellStyle {
 	if st == nil {
 		return nil
@@ -177,7 +177,7 @@ func styleToCellStyle(st *xlsx.Style) *CellStyle {
 	// Any declared number format — builtin or custom — surfaces as its
 	// resolved pattern; only id 0 (General) stays untracked. This is
 	// deliberately WIDER than the excelize-era rule (custom ids >= 164
-	// only): doctaculous's writer resolves common patterns ("#,##0.00",
+	// only): omnidoc's writer resolves common patterns ("#,##0.00",
 	// "0.00%", "@", ...) to their BUILTIN ids, so keeping the old rule
 	// would silently drop the doc-side format for calc's own UI presets
 	// after one save/bootstrap cycle.
@@ -382,7 +382,7 @@ func cellStyleToStyle(cs *CellStyle) xlsx.Style {
 // style a conditional-format rule points at. Identical to
 // cellStyleToStyle except the fill: in a dxf, bgColor carries the
 // visible solid color (Excel's differential-fill convention — see
-// doctaculous buildDxfNode), and the patternType is omitted, matching
+// omnidoc buildDxfNode), and the patternType is omitted, matching
 // what Excel itself writes for CF highlight fills. The doc-side
 // FgColor (the swatch the user picked) therefore lands in Fill.Bg.
 func cellStyleToDxfStyle(cs *CellStyle) xlsx.Style {

@@ -6,7 +6,7 @@ import { PromptDialog } from '@tinycld/core/ui/PromptDialog'
 import { TemplatePickerDialog } from '@tinycld/drive/components/TemplatePickerDialog'
 import { useHasTemplates } from '@tinycld/drive/hooks/use-template-items'
 import { useCopyDriveItem } from '@tinycld/drive/lib/copy-drive-item'
-import { exportItemToPdf } from '@tinycld/drive/lib/export-pdf'
+import { exportItem } from '@tinycld/drive/lib/export-pdf'
 import {
     fromTemplateName,
     isTemplateName,
@@ -87,10 +87,10 @@ export function FileMenu(props: MenuBarProps) {
         setTrashOpen(false)
     }
 
-    // Exports the stored .xlsx blob to PDF on the server (doctaculous),
+    // Exports the stored .xlsx blob to PDF on the server (omnidoc),
     // reflecting the last persisted state like the XLSX/CSV downloads.
     const downloadPdf = () => {
-        exportItemToPdf(props.workbookId, props.workbookName)
+        exportItem(props.workbookId, props.workbookName, 'pdf')
     }
 
     return (

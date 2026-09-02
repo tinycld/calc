@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 )
 
 // Legacy conditional-format blob conversion.
 //
-// Y.Docs persisted before the doctaculous migration hold opaque CF
+// Y.Docs persisted before the omnidoc migration hold opaque CF
 // rules as json.Marshal(excelize.ConditionalFormatOptions) — a
 // PascalCase-keyed map ("Type", "Criteria", "MinValue", …), detected
 // by the absence of the post-migration "rawXml" key. This file

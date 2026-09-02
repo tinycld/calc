@@ -1,6 +1,7 @@
 package calc
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -21,8 +22,8 @@ import (
 // as zero bytes; the closure returns nil and the room continues with
 // an empty Y.Doc. Subsequent edits flow normally; SaveRoom will write
 // the xlsx out from scratch on the first save.
-func makeXLSXBootstrap(app core.App) func(roomID string, doc *ycrdt.Doc) error {
-	return func(roomID string, doc *ycrdt.Doc) error {
+func makeXLSXBootstrap(app core.App) func(ctx context.Context, roomID string, doc *ycrdt.Doc) error {
+	return func(ctx context.Context, roomID string, doc *ycrdt.Doc) error {
 		item, err := app.FindRecordById(driveItemsCollection, roomID)
 		if err != nil {
 			return fmt.Errorf("load drive_items %s: %w", roomID, err)
@@ -39,7 +40,7 @@ func makeXLSXBootstrap(app core.App) func(roomID string, doc *ycrdt.Doc) error {
 			doc.GetMap("pivots")
 			return nil
 		}
-		model, err := ReadWorkbookFromXLSX(xlsxBytes, 0, 0)
+		model, err := ReadWorkbookFromXLSX(ctx, xlsxBytes, 0, 0)
 		if err != nil {
 			return fmt.Errorf("parse xlsx for %s: %w", roomID, err)
 		}
