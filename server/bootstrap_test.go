@@ -19,7 +19,7 @@ func TestReadWorkbookFromXLSXTinyFixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	model, err := ReadWorkbookFromXLSX(bytes, 0, 0)
+	model, err := ReadWorkbookFromXLSX(t.Context(), bytes, 0, 0)
 	if err != nil {
 		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestReadWorkbookFromXLSXTinyFixture(t *testing.T) {
 // "no file yet, leave doc empty", but ReadWorkbookFromXLSX itself must
 // reject so the hook can't accidentally feed a parser with no bytes.
 func TestReadWorkbookFromXLSXEmptyInputErrors(t *testing.T) {
-	_, err := ReadWorkbookFromXLSX(nil, 0, 0)
+	_, err := ReadWorkbookFromXLSX(t.Context(), nil, 0, 0)
 	if err == nil {
 		t.Fatal("expected error on empty input, got nil")
 	}
@@ -65,7 +65,7 @@ func TestReadWorkbookFromXLSXCaps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	model, err := ReadWorkbookFromXLSX(bytes, 2, 2)
+	model, err := ReadWorkbookFromXLSX(t.Context(), bytes, 2, 2)
 	if err != nil {
 		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestBootstrapYDocFromWorkbookRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	model, err := ReadWorkbookFromXLSX(xlsxBytes, 0, 0)
+	model, err := ReadWorkbookFromXLSX(t.Context(), xlsxBytes, 0, 0)
 	if err != nil {
 		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestBootstrapToSerializerRoundTripPreservesCustomizations(t *testing.T) {
 	original := buf.Bytes()
 
 	// 2. Read.
-	model, err := ReadWorkbookFromXLSX(original, 0, 0)
+	model, err := ReadWorkbookFromXLSX(t.Context(), original, 0, 0)
 	if err != nil {
 		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestBootstrapToSerializerRoundTripPreservesCustomizations(t *testing.T) {
 	}
 
 	// 5. Serialize.
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestBootstrapToSerializerRoundTripPreservesCustomizations(t *testing.T) {
 		}
 	}
 	if props, err := got.GetSheetProps(sheetName); err == nil {
-		// The doctaculous writer stores the spec-shaped ARGB ("FFFF0000",
+		// The omnidoc writer stores the spec-shaped ARGB ("FFFF0000",
 		// alpha-prefixed, as Excel itself writes); excelize used to store
 		// the bare RGB. Accept either — the leading alpha strips off.
 		tab := ""

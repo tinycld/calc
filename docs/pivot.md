@@ -17,7 +17,7 @@ its `cells` Y.Map. Every peer recomputes locally from the source range
 
 On `.xlsx` open:
 
-- Each `<pivotTable>` from any sheet is read via doctaculous
+- Each `<pivotTable>` from any sheet is read via omnidoc
   `pkg/xlsx`'s `PivotTables()` and converted into a `PivotDefinitionDTO`.
 - If the xlsx pivot was anchored on a sheet that **also contains source
   data**, calc promotes the pivot to a new dedicated sheet named

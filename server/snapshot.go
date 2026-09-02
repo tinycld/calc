@@ -93,7 +93,7 @@ type SheetMeta struct {
 	// authored against this sheet, in priority order (first match
 	// wins). Mirrors the per-sheet conditionalFormats Y.Array on the
 	// doc side (see tinycld/calc/lib/conditional-format/y-binding.ts).
-	// Empty/nil when the sheet has no rules. Read via doctaculous
+	// Empty/nil when the sheet has no rules. Read via omnidoc
 	// (readConditionalFormats); written back on save.
 	ConditionalFormats []ConditionalFormatRule
 }
@@ -120,7 +120,7 @@ type ConditionalCondition struct {
 	Formula *string `json:"formula,omitempty"`
 	// OpaqueXlsx carries the passthrough payload for rules whose Type
 	// isn't modelled in the calc UI (top-N, duplicates, color scales,
-	// etc.). Rules read since the doctaculous migration hold the
+	// etc.). Rules read since the omnidoc migration hold the
 	// verbatim <cfRule> XML under the "rawXml" key; Y.Docs persisted
 	// before it hold a JSON blob of excelize options (PascalCase
 	// keys) — legacy_cf.go (migration step 2d) converts those on

@@ -1,10 +1,11 @@
 package calc
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 )
 
 // PivotDefinitionDTO mirrors the TS PivotDefinition (see
@@ -54,7 +55,7 @@ type PivotValueFieldDTO struct {
 }
 
 // readPivots pulls every pivot definition out of the workbook bytes
-// and maps them onto PivotDefinitionDTOs. The doctaculous read
+// and maps them onto PivotDefinitionDTOs. The omnidoc read
 // Workbook doesn't expose pivots, so we open an editor handle purely
 // for PivotTables() — reads don't dirty any part, and the handle is
 // discarded without Save.
@@ -67,8 +68,8 @@ type PivotValueFieldDTO struct {
 // The function does not promote in-sheet pivots to dedicated sheets;
 // that is the caller's job (ensureDistinctTargets) so the collision
 // rule can see the full sheet list, not just one target at a time.
-func readPivots(xlsxBytes []byte) ([]PivotDefinitionDTO, error) {
-	ed, err := xlsx.Edit(xlsxBytes)
+func readPivots(ctx context.Context, xlsxBytes []byte) ([]PivotDefinitionDTO, error) {
+	ed, err := xlsx.Edit(ctx, xlsxBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func readPivots(xlsxBytes []byte) ([]PivotDefinitionDTO, error) {
 }
 
 // mapAxisFields converts axis field names (rows/cols/filters) to the
-// DTO shape. doctaculous surfaces only the source-column name for axis
+// DTO shape. omnidoc surfaces only the source-column name for axis
 // fields; the per-field DisplayName the excelize reader carried
 // best-effort is not available (accepted loss — Excel-authored files
 // leave it empty in practice).
@@ -126,7 +127,7 @@ func mapPivotValues(in []xlsx.PivotValueField) []PivotValueFieldDTO {
 }
 
 // combineSourceRange rebuilds the combined "<sheet>!<range>" form the
-// DTO carries (and the TS side + write path consume). doctaculous
+// DTO carries (and the TS side + write path consume). omnidoc
 // surfaces the pivot cache's source sheet and ref separately;
 // excelize's DataRange arrived pre-combined.
 func combineSourceRange(sheet, ref string) string {
@@ -187,7 +188,7 @@ func sanitizeID(s string) string {
 }
 
 // normalizeAgg maps an OOXML dataField subtotal string (as surfaced
-// raw by doctaculous, e.g. "average" / "countNums"; excelize's
+// raw by omnidoc, e.g. "average" / "countNums"; excelize's
 // capitalized variants normalize identically) to the PivotAggregation
 // union the TS side uses.
 func normalizeAgg(s string) string {

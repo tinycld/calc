@@ -77,7 +77,7 @@ Not ship-blockers, but the difference between "MVP" and "competitive":
 - ~~Conditional formatting~~ — **done.** Per-sheet rules with 18 condition
   types (Sheets parity) plus custom formulas, authored in a right-side
   drawer. Font + fill styles overlay on top of any explicit cell style;
-  first matching rule wins. Round-trips through doctaculous `pkg/xlsx`
+  first matching rule wins. Round-trips through omnidoc `pkg/xlsx`
   on save/import; rule kinds the authoring UI doesn't yet model (top-N,
   duplicates, color scales, data bars, icon sets, time-period relative
   dates) round-trip as opaque verbatim `<cfRule>` XML so an imported

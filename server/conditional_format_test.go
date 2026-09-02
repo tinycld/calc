@@ -6,16 +6,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	"github.com/xuri/excelize/v2"
 )
 
 // readSheetConditionalFormats runs the production CF read path over
-// raw xlsx bytes: doctaculous OpenBytes, find the sheet, map its
+// raw xlsx bytes: omnidoc OpenBytes, find the sheet, map its
 // blocks through readConditionalFormats.
 func readSheetConditionalFormats(t *testing.T, data []byte, sheetName string) []ConditionalFormatRule {
 	t.Helper()
-	wb, err := xlsx.OpenBytes(data)
+	wb, err := xlsx.OpenBytes(t.Context(), data)
 	if err != nil {
 		t.Fatalf("open xlsx: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestConditionalFormatRoundtripNumberGreater(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestConditionalFormatRoundtripCustomFormula(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestConditionalFormatOpaquePassthrough(t *testing.T) {
 			{ID: "sheet2", Name: "Incomes", Position: 1},
 		},
 	}
-	out, err := serializeSnapshotToXLSX(buf.Bytes(), snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), buf.Bytes(), snap, nil)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}

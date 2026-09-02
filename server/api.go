@@ -1,6 +1,7 @@
 package calc
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -91,7 +92,7 @@ func writeRenderedItem(app core.App, re *core.RequestEvent, item *core.Record) e
 		Images: render.ImageMode(q.Get("images")),
 	}
 
-	html, err := RenderItemHTML(app, item, opts)
+	html, err := RenderItemHTML(re.Request.Context(), app, item, opts)
 	if err != nil {
 		// Caller-input errors (bad range, unknown sheet, unsupported
 		// scope) surface as render.ErrBadRequest; the renderer
@@ -116,7 +117,7 @@ func writeRenderedItem(app core.App, re *core.RequestEvent, item *core.Record) e
 // (e.g. a share-link render, not built yet) — members are separate
 // modules, so reuse goes through this exported func, not an import of
 // drive.
-func RenderItemHTML(app core.App, item *core.Record, opts render.RenderOpts) (string, error) {
+func RenderItemHTML(ctx context.Context, app core.App, item *core.Record, opts render.RenderOpts) (string, error) {
 	xlsxBytes, err := readDriveItemBytes(app, item)
 	if err != nil {
 		return "", fmt.Errorf("could not read file: %w", err)
@@ -124,7 +125,7 @@ func RenderItemHTML(app core.App, item *core.Record, opts render.RenderOpts) (st
 	if len(xlsxBytes) == 0 {
 		return `<section class="tinycld-calc"></section>`, nil
 	}
-	model, err := ReadWorkbookFromXLSX(xlsxBytes, 0, 0)
+	model, err := ReadWorkbookFromXLSX(ctx, xlsxBytes, 0, 0)
 	if err != nil {
 		return "", fmt.Errorf("could not parse spreadsheet: %w", err)
 	}

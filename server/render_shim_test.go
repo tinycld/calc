@@ -21,7 +21,7 @@ func TestWorkbookForRender_TinyFixtureRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	wb, err := ReadWorkbookFromXLSX(bytes, 0, 0)
+	wb, err := ReadWorkbookFromXLSX(t.Context(), bytes, 0, 0)
 	if err != nil {
 		t.Fatalf("read workbook: %v", err)
 	}

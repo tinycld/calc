@@ -1,6 +1,7 @@
 package calc
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -28,7 +29,7 @@ type Runtime struct {
 	// drive_items xlsx and stamp it into the doc, so the broker's
 	// first SyncReply already carries populated sheets/cells. Tests
 	// leave it nil — they construct doc state via ApplyUpdate.
-	bootstrap func(roomID string, doc *ycrdt.Doc) error
+	bootstrap func(ctx context.Context, roomID string, doc *ycrdt.Doc) error
 
 	mu   sync.Mutex
 	docs map[string]*ycrdt.Doc
@@ -46,7 +47,7 @@ func NewRuntime() *Runtime {
 //
 // A nil hook disables bootstrap (for tests). Passing nil after a hook
 // has been registered clears it.
-func (r *Runtime) SetBootstrap(hook func(roomID string, doc *ycrdt.Doc) error) {
+func (r *Runtime) SetBootstrap(hook func(ctx context.Context, roomID string, doc *ycrdt.Doc) error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.bootstrap = hook
@@ -74,7 +75,7 @@ func (r *Runtime) NewDoc(roomID string) (realtime.DocHandle, error) {
 	r.mu.Unlock()
 
 	if hook != nil {
-		if err := hook(roomID, doc); err != nil {
+		if err := hook(context.Background(), roomID, doc); err != nil {
 			slog.Warn("calc: bootstrap hook failed; room continues with empty doc",
 				"roomID", roomID, "err", err)
 		}

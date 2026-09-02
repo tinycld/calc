@@ -7,13 +7,13 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 )
 
 // Legacy indexed-color resolution for the read path.
 //
 // Older producers (and .xls converters) store style colors as indices
-// into the legacy 64-color palette instead of explicit RGB. doctaculous
+// into the legacy 64-color palette instead of explicit RGB. omnidoc
 // surfaces those as Color{Indexed: &n} with RGB="" — it deliberately
 // doesn't resolve palettes — but the doc-side CellStyle carries only
 // hex strings, so without resolution every indexed fill/border/font
@@ -35,7 +35,7 @@ import (
 //     bg when a fg was present, so skipping bg entirely is the safe
 //     superset of the old behavior.
 //   - Theme colors (Color.Theme + tint): needs theme1.xml parsing and
-//     the HSL tint transform; tracked as a follow-up in doctaculous.
+//     the HSL tint transform; tracked as a follow-up in omnidoc.
 
 // standardIndexedPalette is the legacy indexed palette (ECMA-376 part 1,
 // §18.8.27): indices 0–7 duplicate 8–15, 64/65 are the system
@@ -104,7 +104,7 @@ func indexedPaletteFromStyles(xlsxBytes []byte) []string {
 }
 
 // normalizePaletteRGB canonicalizes a palette entry to the same bare
-// uppercase "RRGGBB" form doctaculous uses for explicit rgb attributes
+// uppercase "RRGGBB" form omnidoc uses for explicit rgb attributes
 // (ARGB entries lose their alpha byte). Malformed entries become "".
 func normalizePaletteRGB(v string) string {
 	v = strings.ToUpper(strings.TrimSpace(v))

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 )
 
 // Conditional formatting between the xlsx file and the doc-side rule
@@ -25,11 +25,11 @@ import (
 // rules ARE the sheet's rules, in doc order, priorities renumbered
 // 1..N by the editor. Typed rules synthesize the OOXML attributes PLUS
 // the <formula> operands Excel requires (excelize used to build these;
-// doctaculous does not). Opaque rules in the rawXml form re-emit
+// omnidoc does not). Opaque rules in the rawXml form re-emit
 // verbatim via CFRule{Raw}; legacy excelize-JSON blobs persisted in
 // old Y.Docs convert through legacy_cf.go.
 
-// readConditionalFormats maps a doctaculous sheet's conditional-
+// readConditionalFormats maps a omnidoc sheet's conditional-
 // formatting blocks onto ConditionalFormatRule. Rules surface in FILE
 // order (block order, then rule order within each block). That order
 // is deterministic per file, so the bootstrap output is stable across
@@ -207,7 +207,7 @@ func writeConditionalFormats(sh *xlsx.SheetEdit, rules []ConditionalFormatRule) 
 	return sh.SetConditionalFormats(blocks)
 }
 
-// ruleToCFRule maps one doc-side rule onto a doctaculous CFRule.
+// ruleToCFRule maps one doc-side rule onto a omnidoc CFRule.
 // Returns ok=false for rules outside the writable vocabulary (skipped
 // rather than corrupting the file).
 //
@@ -324,10 +324,10 @@ func ruleToCFRule(rule *ConditionalFormatRule, ranges []string) (xlsx.CFRule, bo
 
 // opaqueToCFRule re-emits an opaque-passthrough rule.
 //
-// The rawXml form (rules read since the doctaculous migration) hands
+// The rawXml form (rules read since the omnidoc migration) hands
 // the verbatim <cfRule> element back via CFRule{Raw}. Any dxfId inside
 // stays valid INDUCTIVELY: the save always applies onto the same file
-// the rule was read from, and the doctaculous editor only ever appends
+// the rule was read from, and the omnidoc editor only ever appends
 // to <dxfs> (dedupe-or-append; never compacts), so an index that
 // resolved at read time still resolves at save time. The doc-side
 // Style attached at read time is for client previews only and is

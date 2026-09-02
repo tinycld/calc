@@ -224,7 +224,7 @@ func TestReadWorkbookFromXLSX_Pivots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	model, err := ReadWorkbookFromXLSX(data, 0, 0)
+	model, err := ReadWorkbookFromXLSX(t.Context(), data, 0, 0)
 	if err != nil {
 		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestSerializeWorkbook_PivotRoundTrip(t *testing.T) {
 			},
 		},
 	}
-	data, err := serializeWorkbook(model)
+	data, err := serializeWorkbook(t.Context(), model)
 	if err != nil {
 		t.Fatalf("serializeWorkbook: %v", err)
 	}
@@ -336,15 +336,15 @@ func TestRoundTrip_ImportExportImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	model, err := ReadWorkbookFromXLSX(data, 0, 0)
+	model, err := ReadWorkbookFromXLSX(t.Context(), data, 0, 0)
 	if err != nil {
 		t.Fatalf("first import: %v", err)
 	}
-	out, err := serializeWorkbook(model)
+	out, err := serializeWorkbook(t.Context(), model)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	second, err := ReadWorkbookFromXLSX(out, 0, 0)
+	second, err := ReadWorkbookFromXLSX(t.Context(), out, 0, 0)
 	if err != nil {
 		t.Fatalf("second import: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestSerializeSnapshotToXLSX_EmitsPivots(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestSerializeSnapshotToXLSX_OmitsPivotsWhenEmpty(t *testing.T) {
 	snap := snapshotFromXLSX(t, original)
 	// snap.Pivots is the zero value: nil.
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestSerializeSnapshotToXLSX_SkipsPivotWithNoValues(t *testing.T) {
 		},
 	}
 
-	out, err := serializeSnapshotToXLSX(original, snap, nil)
+	out, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
 	if err != nil {
 		t.Fatalf("serializeSnapshotToXLSX: %v", err)
 	}

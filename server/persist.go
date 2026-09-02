@@ -1,6 +1,7 @@
 package calc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
@@ -50,7 +51,7 @@ const driveItemsCollection = "drive_items"
 // loadComments is optional; when nil the saved xlsx omits cell-comment
 // rendering. Tests pass nil; production wiring (MakeProductionFlush)
 // supplies MakeProductionLoadComments(app).
-func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string, loadComments LoadCommentsFn) error {
+func SaveRoom(ctx context.Context, app core.App, handle realtime.DocHandle, driveItemID string, loadComments LoadCommentsFn) error {
 	if handle == nil {
 		return errors.New("calc: SaveRoom called with nil handle")
 	}
@@ -82,7 +83,7 @@ func SaveRoom(app core.App, handle realtime.DocHandle, driveItemID string, loadC
 		}
 	}
 
-	updatedBytes, err := serializeSnapshotToXLSX(originalBytes, snap, comments)
+	updatedBytes, err := serializeSnapshotToXLSX(ctx, originalBytes, snap, comments)
 	if err != nil {
 		return fmt.Errorf("calc: serialize Y.Doc for %s: %w", driveItemID, err)
 	}
@@ -261,7 +262,7 @@ func buildPlaintext(snap YDocSnapshot) string {
 // serializeWorkbook is the model-only serialization path: build a fresh
 // xlsx from a WorkbookModel (including pivot defs), without needing a
 // Y.Doc. Used by tests; production goes through serializeSnapshotToXLSX.
-func serializeWorkbook(model WorkbookModel) ([]byte, error) {
+func serializeWorkbook(ctx context.Context, model WorkbookModel) ([]byte, error) {
 	f := xlsx.New()
 
 	// Replace the default Sheet1 with the first model sheet's name, so
@@ -305,7 +306,7 @@ func serializeWorkbook(model WorkbookModel) ([]byte, error) {
 
 	writePivots(f, model.Pivots)
 
-	out, err := f.Save()
+	out, err := f.Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("write xlsx: %w", err)
 	}
@@ -374,7 +375,7 @@ func writePivots(f *xlsx.File, pivots []PivotDefinitionDTO) {
 // pivot never poisons the save — matching writePivots' "skip, don't
 // fatal" posture.
 //
-// Unlike the excelize-era PivotTableRange, doctaculous' Location is a
+// Unlike the excelize-era PivotTableRange, omnidoc' Location is a
 // bare range on TargetSheet — no sheet prefix.
 func pivotTableRange(f *xlsx.File, p PivotDefinitionDTO) string {
 	const legacyRange = "A1:Z200"
@@ -595,7 +596,7 @@ func distinctFirstFieldGroups(tuples [][]string) int {
 }
 
 // sourceColumnNames projects axis field DTOs (rows/cols/filters) onto
-// the source-column names doctaculous keys pivot fields by.
+// the source-column names omnidoc keys pivot fields by.
 func sourceColumnNames(in []PivotFieldDTO) []string {
 	out := make([]string, 0, len(in))
 	for _, f := range in {
@@ -624,7 +625,7 @@ func toPivotValueFields(in []PivotValueFieldDTO) []xlsx.PivotValueField {
 
 // splitSourceRange is the inverse of combineSourceRange (pivot.go): it
 // splits the combined "<sheet>!<range>" form the DTO carries into the
-// separate sheet + ref doctaculous expects, unquoting a single-quoted
+// separate sheet + ref omnidoc expects, unquoting a single-quoted
 // sheet name (doubled ” collapse to a literal quote). A bare range
 // with no sheet prefix returns ("", ref); AddPivotTable then fails its
 // sheet lookup and the pivot is logged-and-skipped, matching the old
@@ -703,7 +704,7 @@ func writeModelCell(sh *xlsx.SheetEdit, row, col int, v CellValueDTO) error {
 // Y.Doc snapshot's sheet metadata + cell entries on top, and returns
 // the rewritten .xlsx bytes.
 //
-// The write path is doctaculous pkg/xlsx's preservation-first editor:
+// The write path is omnidoc pkg/xlsx's preservation-first editor:
 // xlsx.Edit opens the original bytes, every mutation touches only what
 // it names, and untouched parts (themes, drawings, extension lists,
 // unmodeled style facets) copy through byte-verbatim at Save. A second
@@ -748,7 +749,7 @@ func writeModelCell(sh *xlsx.SheetEdit, row, col int, v CellValueDTO) error {
 //
 // Returns an error rather than empty bytes on any sheet/cell write
 // failure; the caller treats both alike.
-func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments []CommentRow) ([]byte, error) {
+func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDocSnapshot, comments []CommentRow) ([]byte, error) {
 	if len(originalBytes) == 0 {
 		return nil, errors.New("calc: serializeSnapshotToXLSX called with empty original bytes")
 	}
@@ -768,11 +769,11 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 		return a.Col < b.Col
 	})
 
-	orig, err := xlsx.OpenBytes(originalBytes)
+	orig, err := xlsx.OpenBytes(ctx, originalBytes)
 	if err != nil {
 		return nil, fmt.Errorf("open xlsx read model: %w", err)
 	}
-	f, err := xlsx.Edit(originalBytes)
+	f, err := xlsx.Edit(ctx, originalBytes)
 	if err != nil {
 		return nil, fmt.Errorf("open xlsx editor: %w", err)
 	}
@@ -1022,7 +1023,7 @@ func serializeSnapshotToXLSX(originalBytes []byte, snap YDocSnapshot, comments [
 	// by the time AddPivotTable reads header names off the source cells.
 	writePivots(f, snap.Pivots)
 
-	out, err := f.Save()
+	out, err := f.Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("write workbook: %w", err)
 	}

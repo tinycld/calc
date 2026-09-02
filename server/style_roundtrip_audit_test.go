@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	ycrdt "github.com/skyterra/y-crdt"
 	"github.com/xuri/excelize/v2"
 )
@@ -53,7 +53,7 @@ func TestCellStyleAttributeRoundTripExhaustive(t *testing.T) {
 
 			// Stage 1+2: real xlsx round-trip — patch a blank workbook
 			// through the production write mapper, save, re-open with
-			// the doctaculous reader, and probe the resolved style.
+			// the omnidoc reader, and probe the resolved style.
 			xlsxBytes := writeSingleStyledCellXLSX(t, patch)
 			reopened := readXlsxCellStyle(t, xlsxBytes)
 			report.xlsx, report.xlsxOK = spec.ReadFromXlsx(reopened)
@@ -286,7 +286,7 @@ func equalAny(got, want any) bool {
 // fresh single-sheet workbook with a value in A1 (so the cell exists
 // in the saved sheetData for the style to attach to). excelize is the
 // transition oracle and stays test-only — using it to MINT the fixture
-// also guarantees the doctaculous editor handles files it didn't
+// also guarantees the omnidoc editor handles files it didn't
 // write itself.
 func blankWorkbookBytes(t *testing.T) []byte {
 	t.Helper()
@@ -308,7 +308,7 @@ func blankWorkbookBytes(t *testing.T) []byte {
 // cell on save.
 func writeSingleStyledCellXLSX(t *testing.T, patch *CellStyle) []byte {
 	t.Helper()
-	f, err := xlsx.Edit(blankWorkbookBytes(t))
+	f, err := xlsx.Edit(t.Context(), blankWorkbookBytes(t))
 	if err != nil {
 		t.Fatalf("xlsx.Edit: %v", err)
 	}
@@ -319,18 +319,18 @@ func writeSingleStyledCellXLSX(t *testing.T, patch *CellStyle) []byte {
 	if err := sh.PatchCellStyle(1, 1, cellStyleToPatch(patch)); err != nil {
 		t.Fatalf("PatchCellStyle: %v", err)
 	}
-	out, err := f.Save()
+	out, err := f.Save(t.Context())
 	if err != nil {
 		t.Fatalf("save workbook: %v", err)
 	}
 	return out
 }
 
-// readXlsxCellStyle reopens saved bytes with the doctaculous reader and
+// readXlsxCellStyle reopens saved bytes with the omnidoc reader and
 // returns A1's fully resolved style (nil when the cell carries none).
 func readXlsxCellStyle(t *testing.T, data []byte) *xlsx.Style {
 	t.Helper()
-	wb, err := xlsx.OpenBytes(data)
+	wb, err := xlsx.OpenBytes(t.Context(), data)
 	if err != nil {
 		t.Fatalf("open xlsx: %v", err)
 	}
@@ -382,7 +382,7 @@ func bootstrapRoundTrip(t *testing.T, patch *CellStyle) *CellStyle {
 
 // TestCellStyleReadFromXLSXEndToEnd is the user-facing reproduction of
 // the original style-loss bug: write a workbook with every CellStyle
-// attribute set on one cell (through the doctaculous write path), run
+// attribute set on one cell (through the omnidoc write path), run
 // it through ReadWorkbookFromXLSX (the production preview / bootstrap
 // entry point), and assert every attribute survives onto the resulting
 // WorkbookModel. Catches a regression at the level of "open a customer
@@ -397,7 +397,7 @@ func TestCellStyleReadFromXLSXEndToEnd(t *testing.T) {
 
 	xlsxBytes := writeSingleStyledCellXLSX(t, combined)
 
-	model, err := ReadWorkbookFromXLSX(xlsxBytes, 0, 0)
+	model, err := ReadWorkbookFromXLSX(t.Context(), xlsxBytes, 0, 0)
 	if err != nil {
 		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
 	}

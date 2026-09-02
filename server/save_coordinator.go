@@ -1,6 +1,7 @@
 package calc
 
 import (
+	"context"
 	"github.com/pocketbase/pocketbase/core"
 
 	"tinycld.org/core/realtime"
@@ -12,7 +13,7 @@ import (
 // as classic cell notes (one-way: app → xlsx).
 func MakeProductionFlush(app core.App) realtime.FlushFn {
 	loadComments := MakeProductionLoadComments(app)
-	return func(driveItemID string, handle realtime.DocHandle) error {
-		return SaveRoom(app, handle, driveItemID, loadComments)
+	return func(ctx context.Context, driveItemID string, handle realtime.DocHandle) error {
+		return SaveRoom(ctx, app, handle, driveItemID, loadComments)
 	}
 }

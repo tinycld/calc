@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/nathanstitt/doctaculous/pkg/xlsx"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -12,7 +12,7 @@ import (
 // the given header row plus data rows, so the pivot-range computation can
 // read real source data the same way it does on the save path. The
 // workbook is authored with excelize (test-only oracle) and re-opened
-// through doctaculous, so the read path is exercised on genuinely
+// through omnidoc, so the read path is exercised on genuinely
 // foreign bytes.
 func buildSourceSheet(t *testing.T, sheet string, headers []string, rows [][]any) *xlsx.File {
 	t.Helper()
@@ -47,9 +47,9 @@ func buildSourceSheet(t *testing.T, sheet string, headers []string, rows [][]any
 	if err != nil {
 		t.Fatalf("write workbook: %v", err)
 	}
-	f, err := xlsx.Edit(buf.Bytes())
+	f, err := xlsx.Edit(t.Context(), buf.Bytes())
 	if err != nil {
-		t.Fatalf("reopen workbook via doctaculous: %v", err)
+		t.Fatalf("reopen workbook via omnidoc: %v", err)
 	}
 	return f
 }
