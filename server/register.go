@@ -6,6 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 
 	"tinycld.org/core/blankfile"
+	"tinycld.org/core/oauth"
 	"tinycld.org/core/offboard"
 )
 
@@ -42,6 +43,10 @@ func Register(app *pocketbase.PocketBase) {
 
 // registerShared is the single source of truth for what BOTH compositions run.
 func registerShared(app *pocketbase.PocketBase) {
+	// What an OAuth token may reach in this package. Core knows nothing about
+	// it until this runs; see oauth.Package for the shape.
+	oauth.RegisterPackage(oauthPackage())
+
 	offboard.RegisterReassignable(offboard.ReassignableRef{Collection: "calc_comments", Field: "author"})
 
 	// Personal automation rules on sheet comments resolve their owner through
