@@ -1,6 +1,6 @@
 import { Button, ButtonText } from '@tinycld/core/ui/button'
 import { useCallback, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { Pressable, Text, View } from 'react-native'
 import type * as Y from 'yjs'
 import {
     type NamedRangeEntry,
@@ -58,7 +58,7 @@ export function NamedRangesList({ doc, onEdit, onCreate }: NamedRangesListProps)
                     </Text>
                 </View>
             ) : (
-                <ScrollView className="max-h-[440px]">
+                <View>
                     {ranges.map(entry => (
                         <NamedRangeRow
                             key={entry.key}
@@ -76,7 +76,7 @@ export function NamedRangesList({ doc, onEdit, onCreate }: NamedRangesListProps)
                             onCancelDelete={() => setPendingDelete(null)}
                         />
                     ))}
-                </ScrollView>
+                </View>
             )}
         </View>
     )

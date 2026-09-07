@@ -1,7 +1,7 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Menu, Separator } from '@tinycld/core/ui/menu'
+import { Menu } from '@tinycld/core/ui/menu'
 import { Plus } from 'lucide-react-native'
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import {
     type GestureResponderEvent,
     Platform,
@@ -273,8 +273,6 @@ interface AddSheetButtonProps {
 }
 
 function AddSheetButton({ onAdd, hiddenSheets, onShow }: AddSheetButtonProps) {
-    const [menuOpen, setMenuOpen] = useState(false)
-    const hasHidden = hiddenSheets.length > 0
     const fg = useThemeColor('muted-foreground')
     return (
         <View className="flex-row items-end" style={{ height: TAB_HEIGHT }}>
@@ -287,31 +285,34 @@ function AddSheetButton({ onAdd, hiddenSheets, onShow }: AddSheetButtonProps) {
             >
                 <Plus size={14} color={fg} />
             </Pressable>
-            {hasHidden ? (
-                <Menu isOpen={menuOpen} onOpenChange={setMenuOpen}>
-                    <Menu.Trigger>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="Show hidden sheets"
-                            className="px-3 items-center justify-center border-r border-border bg-surface-secondary"
-                            style={{ height: TAB_HEIGHT }}
-                        >
-                            <Text className="text-xs text-muted-foreground">⋯</Text>
-                        </Pressable>
-                    </Menu.Trigger>
-                    <Menu.Portal>
-                        <Menu.Content placement="top" align="start">
-                            <Menu.Label>Hidden sheets</Menu.Label>
-                            <Separator className="my-1 mx-2" />
-                            {hiddenSheets.map(sheet => (
-                                <Menu.Item key={sheet.id} onPress={() => onShow(sheet.id)}>
-                                    <Menu.ItemTitle>{sheet.name}</Menu.ItemTitle>
-                                </Menu.Item>
-                            ))}
-                        </Menu.Content>
-                    </Menu.Portal>
-                </Menu>
-            ) : null}
+            <HiddenSheetsMenu hiddenSheets={hiddenSheets} onShow={onShow} />
         </View>
+    )
+}
+
+function HiddenSheetsMenu({ hiddenSheets, onShow }: Omit<AddSheetButtonProps, 'onAdd'>) {
+    if (hiddenSheets.length === 0) return null
+    const trigger = (
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Show hidden sheets"
+            className="px-3 items-center justify-center border-r border-border bg-surface-secondary"
+            style={{ height: TAB_HEIGHT }}
+        >
+            <Text className="text-xs text-muted-foreground">⋯</Text>
+        </Pressable>
+    )
+    return (
+        <Menu trigger={trigger} placement="top-start" title="Hidden sheets">
+            <Menu.Section label="Hidden sheets">
+                {hiddenSheets.map(sheet => (
+                    <Menu.Item
+                        key={sheet.id}
+                        label={sheet.name}
+                        onSelect={() => onShow(sheet.id)}
+                    />
+                ))}
+            </Menu.Section>
+        </Menu>
     )
 }

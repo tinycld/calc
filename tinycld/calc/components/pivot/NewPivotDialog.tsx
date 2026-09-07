@@ -1,14 +1,6 @@
+import { Dialog } from '@tinycld/core/ui/dialog'
 import { FormErrorSummary, TextInput, useForm, zodResolver } from '@tinycld/core/ui/form'
-import {
-    Modal,
-    ModalBackdrop,
-    ModalBody,
-    ModalContent,
-    ModalFooter,
-    ModalHeader,
-} from '@tinycld/core/ui/modal'
 import { useEffect } from 'react'
-import { Pressable, Text } from 'react-native'
 import { type NewPivotFormValues, newPivotSchema } from './new-pivot-dialog-helpers'
 
 export interface NewPivotDialogProps {
@@ -27,12 +19,9 @@ export interface NewPivotDialogProps {
 // write, and panel-open all live in PivotInsertButton so this component
 // stays a pure form/UI shell.
 //
-// Uses the shared gluestack-based Modal (core/ui/modal). Raw RN <Modal>
-// leaves its overlay mounted in the DOM after close under react-native-web
-// (the exit handshake never fires), blocking subsequent clicks — the shared
-// Modal's AnimatePresence shim flips it to unmount immediately on close. The
-// caller controls visibility; the form re-syncs its defaults whenever the
-// dialog becomes visible so re-opening lands on the most recent selection.
+// The caller controls visibility; the form re-syncs its defaults whenever
+// the dialog becomes visible so re-opening lands on the most recent
+// selection.
 export function NewPivotDialog({
     visible,
     defaultSourceRange,
@@ -74,66 +63,40 @@ export function NewPivotDialog({
     })
 
     return (
-        <Modal isOpen={visible} onClose={onCancel} aria-label="Insert pivot table">
-            <ModalBackdrop />
-            <ModalContent
-                {...(typeof document !== 'undefined' ? { 'data-test-id': 'new-pivot-dialog' } : {})}
-            >
-                <ModalHeader>
-                    <Text className="text-lg font-semibold text-foreground">
-                        Insert pivot table
-                    </Text>
-                </ModalHeader>
-                <ModalBody>
-                    <FormErrorSummary errors={errors} isEnabled={isSubmitted} />
-                    <TextInput
-                        control={control}
-                        name="sourceRange"
-                        label="Source range"
-                        placeholder="Sheet1!A1:E100"
-                        hint="The data range to summarize."
-                        autoFocus
-                        autoCapitalize="none"
-                    />
-                    <TextInput
-                        control={control}
-                        name="targetSheetName"
-                        label="New sheet name"
-                        hint="The pivot output will live on this sheet."
-                    />
-                </ModalBody>
-                <ModalFooter>
-                    <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Cancel"
-                        onPress={onCancel}
-                        className="rounded-md border border-border px-3 py-2"
-                    >
-                        <Text className="text-sm text-foreground">Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Create pivot table"
-                        disabled={!isValid}
-                        onPress={onSubmit}
-                        className={
-                            isValid
-                                ? 'rounded-md bg-accent px-3 py-2'
-                                : 'rounded-md bg-muted px-3 py-2 opacity-60'
-                        }
-                    >
-                        <Text
-                            className={
-                                isValid
-                                    ? 'text-sm font-medium text-accent-foreground'
-                                    : 'text-sm font-medium text-muted-foreground'
-                            }
-                        >
-                            Create
-                        </Text>
-                    </Pressable>
-                </ModalFooter>
-            </ModalContent>
-        </Modal>
+        <Dialog
+            isOpen={visible}
+            onClose={onCancel}
+            title="Insert pivot table"
+            size="md"
+            testID="new-pivot-dialog"
+        >
+            <Dialog.Body>
+                <FormErrorSummary errors={errors} isEnabled={isSubmitted} />
+                <TextInput
+                    control={control}
+                    name="sourceRange"
+                    label="Source range"
+                    placeholder="Sheet1!A1:E100"
+                    hint="The data range to summarize."
+                    autoFocus
+                    autoCapitalize="none"
+                />
+                <TextInput
+                    control={control}
+                    name="targetSheetName"
+                    label="New sheet name"
+                    hint="The pivot output will live on this sheet."
+                />
+            </Dialog.Body>
+            <Dialog.Footer>
+                <Dialog.CancelButton onPress={onCancel} />
+                <Dialog.ActionButton
+                    label="Create pivot table"
+                    onPress={onSubmit}
+                    isDisabled={!isValid}
+                    testID="create-pivot-table"
+                />
+            </Dialog.Footer>
+        </Dialog>
     )
 }

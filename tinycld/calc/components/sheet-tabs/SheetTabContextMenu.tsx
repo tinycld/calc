@@ -1,14 +1,8 @@
-import {
-    AlertDialog,
-    AlertDialogBackdrop,
-    AlertDialogBody,
-    AlertDialogContent,
-    AlertDialogFooter,
-} from '@tinycld/core/ui/alert-dialog'
-import { Button, ButtonText } from '@tinycld/core/ui/button'
-import { Menu, Separator } from '@tinycld/core/ui/menu'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native'
+import { ConfirmDialog } from '@tinycld/core/ui/ConfirmDialog'
+import { Menu } from '@tinycld/core/ui/menu'
+import { usePopoverContext } from '@tinycld/core/ui/popover'
+import { useCallback, useMemo, useState } from 'react'
+import { Pressable, View } from 'react-native'
 import type * as Y from 'yjs'
 import { useSheetActions } from '../../hooks/use-sheet-actions'
 import { useSheetTabsStore } from '../../hooks/use-sheet-tabs-store'
@@ -53,24 +47,7 @@ export function SheetTabContextMenu({
     const closeContextMenu = useSheetTabsStore(s => s.closeContextMenu)
     const startRename = useSheetTabsStore(s => s.startRename)
     const actions = useSheetActions(doc)
-    const contentRef = useRef<View | null>(null)
     const [pendingDelete, setPendingDelete] = useState<SheetWithId | null>(null)
-
-    // Web: dismiss on outside pointer. Mirrors CellContextMenu.
-    useEffect(() => {
-        if (Platform.OS !== 'web') return
-        if (target == null) return
-        const handler = (event: PointerEvent) => {
-            const targetNode = event.target as Node | null
-            const node = contentRef.current as unknown as Node | null
-            if (targetNode && node?.contains(targetNode)) return
-            closeContextMenu()
-        }
-        document.addEventListener('pointerdown', handler, true)
-        return () => {
-            document.removeEventListener('pointerdown', handler, true)
-        }
-    }, [target, closeContextMenu])
 
     const handleOpenChange = useCallback(
         (open: boolean) => {
@@ -148,58 +125,36 @@ export function SheetTabContextMenu({
     )
 
     const isOpen = target != null && pendingDelete == null
-    const triggerPos = target
-        ? { x: target.cursor.x, y: target.cursor.y, width: 0, height: 0 }
-        : null
+    const anchor = useMemo(
+        () => (target ? { x: target.cursor.x, y: target.cursor.y } : undefined),
+        [target]
+    )
+    const canDelete = !(visibleCount <= 1 && sheet?.hidden !== true)
+    const canMoveRight = sheetIndex >= 0 && sheetIndex < allSheets.length - 1
 
     return (
         <>
-            <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
-                <Menu.Portal>
-                    {Platform.OS !== 'web' && (
-                        <Pressable style={StyleSheet.absoluteFill} onPress={closeContextMenu} />
-                    )}
-                    <Menu.Content ref={contentRef} placement="top" align="start">
-                        <Menu.Item onPress={onRename}>
-                            <Menu.ItemTitle>Rename</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={onDuplicate}>
-                            <Menu.ItemTitle>Duplicate</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item
-                            onPress={onDeleteRequest}
-                            isDisabled={visibleCount <= 1 && sheet?.hidden !== true}
-                        >
-                            <Menu.ItemTitle>Delete</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Separator className="my-1 mx-2" />
-                        <Menu.Item onPress={onMoveLeft} isDisabled={sheetIndex <= 0}>
-                            <Menu.ItemTitle>Move left</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item
-                            onPress={onMoveRight}
-                            isDisabled={sheetIndex < 0 || sheetIndex >= allSheets.length - 1}
-                        >
-                            <Menu.ItemTitle>Move right</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Separator className="my-1 mx-2" />
-                        <Menu.Item
-                            onPress={onHide}
-                            isDisabled={visibleCount <= 1 && sheet?.hidden !== true}
-                        >
-                            <Menu.ItemTitle>Hide</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Separator className="my-1 mx-2" />
-                        <Menu.Sub>
-                            <Menu.SubTrigger>
-                                <Menu.ItemTitle>Change color</Menu.ItemTitle>
-                            </Menu.SubTrigger>
-                            <Menu.SubContent>
-                                <SwatchGrid activeColor={sheet?.color} onPick={onPickColor} />
-                            </Menu.SubContent>
-                        </Menu.Sub>
-                    </Menu.Content>
-                </Menu.Portal>
+            <Menu
+                isOpen={isOpen}
+                onOpenChange={handleOpenChange}
+                anchor={anchor}
+                placement="top-start"
+                presentation="popover"
+            >
+                <Menu.Item label="Rename" onSelect={onRename} />
+                <Menu.Item label="Duplicate" onSelect={onDuplicate} />
+                <Menu.Item label="Delete" onSelect={onDeleteRequest} isDisabled={!canDelete} />
+                <Menu.Separator />
+                <Menu.Item label="Move left" onSelect={onMoveLeft} isDisabled={sheetIndex <= 0} />
+                <Menu.Item label="Move right" onSelect={onMoveRight} isDisabled={!canMoveRight} />
+                <Menu.Separator />
+                <Menu.Item label="Hide" onSelect={onHide} isDisabled={!canDelete} />
+                <Menu.Separator />
+                <Menu.Sub label="Change color">
+                    <Menu.Custom>
+                        <SwatchGrid activeColor={sheet?.color} onPick={onPickColor} />
+                    </Menu.Custom>
+                </Menu.Sub>
             </Menu>
             <DeleteConfirm
                 pending={pendingDelete}
@@ -218,7 +173,13 @@ interface SwatchGridProps {
     onPick: (color: string) => void
 }
 
+// A swatch is not a row, so it closes the menu itself once picked.
 function SwatchGrid({ activeColor, onPick }: SwatchGridProps) {
+    const { close } = usePopoverContext()
+    const pick = (hex: string) => {
+        onPick(hex)
+        close()
+    }
     return (
         <View className="flex-row flex-wrap" style={{ width: 5 * 28, padding: 6, gap: 4 }}>
             {SHEET_TAB_SWATCHES.map(swatch => {
@@ -227,7 +188,7 @@ function SwatchGrid({ activeColor, onPick }: SwatchGridProps) {
                 return (
                     <Pressable
                         key={swatch.label}
-                        onPress={() => onPick(swatch.hex)}
+                        onPress={() => pick(swatch.hex)}
                         accessibilityLabel={`Tab color ${swatch.label}`}
                         accessibilityRole="button"
                         style={{
@@ -258,27 +219,16 @@ interface DeleteConfirmProps {
 }
 
 function DeleteConfirm({ pending, onCancel, onConfirm }: DeleteConfirmProps) {
-    const isOpen = pending != null
     return (
-        <AlertDialog isOpen={isOpen} onClose={onCancel}>
-            <AlertDialogBackdrop />
-            <AlertDialogContent>
-                <AlertDialogBody>
-                    <Text className="text-sm text-foreground">
-                        Delete sheet "{pending?.name ?? ''}"? This cannot be undone except by Cmd-Z
-                        within the editing session.
-                    </Text>
-                </AlertDialogBody>
-                <AlertDialogFooter>
-                    <Pressable onPress={onCancel} className="p-2">
-                        <Text className="text-sm text-foreground">Cancel</Text>
-                    </Pressable>
-                    <Button onPress={onConfirm} size="sm" variant="destructive">
-                        <ButtonText>Delete</ButtonText>
-                    </Button>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+            isOpen={pending != null}
+            onClose={onCancel}
+            onConfirm={onConfirm}
+            title="Delete sheet"
+            message={`Delete sheet "${pending?.name ?? ''}"? This cannot be undone except by Cmd-Z within the editing session.`}
+            confirmLabel="Delete"
+            isDestructive
+        />
     )
 }
 

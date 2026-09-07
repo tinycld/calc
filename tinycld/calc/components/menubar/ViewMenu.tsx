@@ -1,80 +1,60 @@
-import { Menu, MenuBarMenu, Separator } from '@tinycld/core/ui/menubar'
+import { Menu, MenuBarMenu } from '@tinycld/core/ui/menubar'
 import type { MenuBarProps } from './MenuBar'
 
 export function ViewMenu(props: MenuBarProps) {
     const hiddenSheets = props.allSheets.filter(s => s.hidden)
-    const hasHidden = hiddenSheets.length > 0
 
     return (
         <MenuBarMenu menuId="view" label="View">
-            <Menu.Sub>
-                <Menu.SubTrigger>
-                    <Menu.ItemTitle>Freeze</Menu.ItemTitle>
-                </Menu.SubTrigger>
-                <Menu.SubContent>
-                    <Menu.Item onPress={() => props.onSetFrozenRows(0)}>
-                        <Menu.ItemTitle>No rows</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={() => props.onSetFrozenRows(1)}>
-                        <Menu.ItemTitle>1 row</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={() => props.onSetFrozenRows(2)}>
-                        <Menu.ItemTitle>2 rows</Menu.ItemTitle>
-                    </Menu.Item>
-                    {props.selectionBottomRow != null && (
-                        <Menu.Item
-                            onPress={() => props.onSetFrozenRows(props.selectionBottomRow ?? 0)}
-                        >
-                            <Menu.ItemTitle>
-                                {`Up to row ${props.selectionBottomRow}`}
-                            </Menu.ItemTitle>
-                        </Menu.Item>
-                    )}
-                    <Separator />
-                    <Menu.Item onPress={() => props.onSetFrozenCols(0)}>
-                        <Menu.ItemTitle>No columns</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={() => props.onSetFrozenCols(1)}>
-                        <Menu.ItemTitle>1 column</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={() => props.onSetFrozenCols(2)}>
-                        <Menu.ItemTitle>2 columns</Menu.ItemTitle>
-                    </Menu.Item>
-                    {props.selectionRightCol != null && (
-                        <Menu.Item
-                            onPress={() => props.onSetFrozenCols(props.selectionRightCol ?? 0)}
-                        >
-                            <Menu.ItemTitle>
-                                {`Up to column ${props.selectionRightCol}`}
-                            </Menu.ItemTitle>
-                        </Menu.Item>
-                    )}
-                    <Separator />
-                    <Menu.Item onPress={props.onUnfreeze}>
-                        <Menu.ItemTitle>Unfreeze</Menu.ItemTitle>
-                    </Menu.Item>
-                </Menu.SubContent>
+            <Menu.Sub label="Freeze">
+                <Menu.Item label="No rows" onSelect={() => props.onSetFrozenRows(0)} />
+                <Menu.Item label="1 row" onSelect={() => props.onSetFrozenRows(1)} />
+                <Menu.Item label="2 rows" onSelect={() => props.onSetFrozenRows(2)} />
+                <FreezeUpToItem
+                    axis="row"
+                    index={props.selectionBottomRow}
+                    onSelect={props.onSetFrozenRows}
+                />
+                <Menu.Separator />
+                <Menu.Item label="No columns" onSelect={() => props.onSetFrozenCols(0)} />
+                <Menu.Item label="1 column" onSelect={() => props.onSetFrozenCols(1)} />
+                <Menu.Item label="2 columns" onSelect={() => props.onSetFrozenCols(2)} />
+                <FreezeUpToItem
+                    axis="column"
+                    index={props.selectionRightCol}
+                    onSelect={props.onSetFrozenCols}
+                />
+                <Menu.Separator />
+                <Menu.Item label="Unfreeze" onSelect={props.onUnfreeze} />
             </Menu.Sub>
-            <Menu.Item onPress={props.onShowComments}>
-                <Menu.ItemTitle>Show comments</Menu.ItemTitle>
-            </Menu.Item>
-            <Menu.Sub>
-                <Menu.SubTrigger>
-                    <Menu.ItemTitle>Hidden sheets</Menu.ItemTitle>
-                </Menu.SubTrigger>
-                <Menu.SubContent>
-                    {!hasHidden && (
-                        <Menu.Item isDisabled>
-                            <Menu.ItemTitle>(no hidden sheets)</Menu.ItemTitle>
-                        </Menu.Item>
-                    )}
-                    {hiddenSheets.map(s => (
-                        <Menu.Item key={s.id} onPress={() => props.onShowSheet(s.id)}>
-                            <Menu.ItemTitle>{s.name}</Menu.ItemTitle>
-                        </Menu.Item>
-                    ))}
-                </Menu.SubContent>
+            <Menu.Item label="Show comments" onSelect={props.onShowComments} />
+            <Menu.Sub label="Hidden sheets">
+                <HiddenSheetItems sheets={hiddenSheets} onShow={props.onShowSheet} />
             </Menu.Sub>
         </MenuBarMenu>
     )
+}
+
+function FreezeUpToItem({
+    axis,
+    index,
+    onSelect,
+}: {
+    axis: 'row' | 'column'
+    index: number | null | undefined
+    onSelect: (index: number) => void
+}) {
+    if (index == null) return null
+    return <Menu.Item label={`Up to ${axis} ${index}`} onSelect={() => onSelect(index)} />
+}
+
+function HiddenSheetItems({
+    sheets,
+    onShow,
+}: {
+    sheets: MenuBarProps['allSheets']
+    onShow: (sheetId: string) => void
+}) {
+    if (sheets.length === 0) return <Menu.Item label="(no hidden sheets)" isDisabled />
+    return sheets.map(s => <Menu.Item key={s.id} label={s.name} onSelect={() => onShow(s.id)} />)
 }

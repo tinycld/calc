@@ -1,7 +1,7 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Menu, useOpenMenu } from '@tinycld/core/ui/menubar'
+import { useOpenMenu } from '@tinycld/core/ui/menubar'
+import { Popover } from '@tinycld/core/ui/popover'
 import { Grid3x3 } from 'lucide-react-native'
-
 import { useCallback } from 'react'
 import { Platform, Pressable, Text, View } from 'react-native'
 import { useBordersPickerStore } from '../../hooks/use-borders-picker-store'
@@ -62,6 +62,8 @@ interface BordersMenuProps {
     onSetBorders: (presetId: BorderPresetId) => void
 }
 
+// Pattern buttons, a swatch row and line-style previews: a widget, not a
+// list of commands, so the surface is a Popover.
 export function BordersMenu({ borders, disabled, onSetBorders }: BordersMenuProps) {
     const fg = useThemeColor('foreground')
     const accent = useThemeColor('accent')
@@ -83,76 +85,63 @@ export function BordersMenu({ borders, disabled, onSetBorders }: BordersMenuProp
 
     const activeId = matchActiveOption(borders)
 
+    const trigger = <ToolbarButton label="Borders" icon={Grid3x3} disabled={disabled} />
+
     return (
-        <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <View {...(typeof document !== 'undefined' ? { 'data-tinycld-menu': 'trigger' } : {})}>
-                <Menu.Trigger>
-                    <ToolbarButton label="Borders" icon={Grid3x3} disabled={disabled} />
-                </Menu.Trigger>
-            </View>
-            <Menu.Portal>
-                <Menu.Content placement="bottom" align="start">
-                    <View
-                        className="flex-row"
-                        style={{ padding: 8, gap: 8 }}
-                        {...(typeof document !== 'undefined'
-                            ? { 'data-tinycld-menu': 'content' }
-                            : {})}
-                    >
-                        <View style={{ width: 5 * 28, gap: 2 }}>
-                            <View className="flex-row" style={{ gap: 2 }}>
-                                {PATTERN_OPTIONS.slice(0, 5).map(option => (
-                                    <PatternButton
-                                        key={option.id}
-                                        option={option}
-                                        isActive={option.id === activeId}
-                                        accent={accent}
-                                        fg={fg}
-                                        onSelect={onSelect}
-                                    />
-                                ))}
-                            </View>
-                            <View className="flex-row" style={{ gap: 2 }}>
-                                {PATTERN_OPTIONS.slice(5).map(option => (
-                                    <PatternButton
-                                        key={option.id}
-                                        option={option}
-                                        isActive={option.id === activeId}
-                                        accent={accent}
-                                        fg={fg}
-                                        onSelect={onSelect}
-                                    />
-                                ))}
-                            </View>
-                        </View>
-                        <View style={{ width: 1, backgroundColor: border }} />
-                        <View style={{ gap: 8, width: 5 * 24 + 4 * 4 }}>
-                            <ColorSwatchRow
-                                color={pickerColor}
+        <Popover isOpen={isOpen} onOpenChange={setIsOpen} trigger={trigger} title="Borders">
+            <View className="flex-row" style={{ padding: 8, gap: 8 }}>
+                <View style={{ width: 5 * 28, gap: 2 }}>
+                    <View className="flex-row" style={{ gap: 2 }}>
+                        {PATTERN_OPTIONS.slice(0, 5).map(option => (
+                            <PatternButton
+                                key={option.id}
+                                option={option}
+                                isActive={option.id === activeId}
+                                accent={accent}
+                                fg={fg}
+                                onSelect={onSelect}
+                            />
+                        ))}
+                    </View>
+                    <View className="flex-row" style={{ gap: 2 }}>
+                        {PATTERN_OPTIONS.slice(5).map(option => (
+                            <PatternButton
+                                key={option.id}
+                                option={option}
+                                isActive={option.id === activeId}
+                                accent={accent}
+                                fg={fg}
+                                onSelect={onSelect}
+                            />
+                        ))}
+                    </View>
+                </View>
+                <View style={{ width: 1, backgroundColor: border }} />
+                <View style={{ gap: 8, width: 5 * 24 + 4 * 4 }}>
+                    <ColorSwatchRow
+                        color={pickerColor}
+                        accent={accent}
+                        border={border}
+                        fg={fg}
+                        muted={muted}
+                        onSelect={setPickerColor}
+                    />
+                    <View style={{ gap: 2 }}>
+                        {LINE_STYLES.map(line => (
+                            <LineStyleRow
+                                key={line.id}
+                                line={line}
+                                isActive={line.id === pickerStyle}
                                 accent={accent}
                                 border={border}
                                 fg={fg}
-                                muted={muted}
-                                onSelect={setPickerColor}
+                                onSelect={setPickerStyle}
                             />
-                            <View style={{ gap: 2 }}>
-                                {LINE_STYLES.map(line => (
-                                    <LineStyleRow
-                                        key={line.id}
-                                        line={line}
-                                        isActive={line.id === pickerStyle}
-                                        accent={accent}
-                                        border={border}
-                                        fg={fg}
-                                        onSelect={setPickerStyle}
-                                    />
-                                ))}
-                            </View>
-                        </View>
+                        ))}
                     </View>
-                </Menu.Content>
-            </Menu.Portal>
-        </Menu>
+                </View>
+            </View>
+        </Popover>
     )
 }
 

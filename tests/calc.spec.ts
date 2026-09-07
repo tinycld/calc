@@ -1754,7 +1754,10 @@ test.describe('Calc CSV import/export', () => {
             buffer: Buffer.from(csv, 'utf-8'),
         })
 
-        await page.getByRole('button', { name: 'Confirm CSV import' }).click()
+        await page
+            .getByTestId('csv-import-dialog')
+            .getByRole('button', { name: 'Import', exact: true })
+            .click()
         // The import lands on a fresh sheet named "Imported" so the
         // pre-existing blank Sheet1 stays untouched; activate that
         // tab to view the imported rows.

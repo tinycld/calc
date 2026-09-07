@@ -1,6 +1,5 @@
-import { Menu, Separator } from '@tinycld/core/ui/menu'
-import { useCallback, useEffect, useRef } from 'react'
-import { Platform, Pressable, StyleSheet, type View } from 'react-native'
+import { Menu } from '@tinycld/core/ui/menu'
+import { useCallback, useMemo } from 'react'
 import type * as Y from 'yjs'
 import { useClipboard } from '../../hooks/use-clipboard'
 import { useFilterView } from '../../hooks/use-filter-view'
@@ -31,11 +30,9 @@ interface CellContextMenuProps {
 }
 
 // Single Menu instance shared by every cell. Mounted in Grid so cells
-// stay free of any per-cell Menu overhead. Positioned at the
-// cursor/touch coordinates via Menu's triggerPosition prop (a 0×0
-// "trigger rect" anchored at the click point produces a popover that
-// drops down to the bottom-right of the cursor, with edge-flip handled
-// by Menu.Content).
+// stay free of any per-cell Menu overhead. Anchored at the cursor/touch
+// point; the overlay engine places it beside the point, flips it at the
+// viewport edge and dismisses it on an outside press.
 export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     const target = useGridStore(s => s.contextTarget)
     // Read the live selection so range-aware menu actions (clear,
@@ -47,34 +44,12 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
     const disjoint = useGridStore(s => isDisjoint(s.selection))
     const store = useGridStoreApi()
     const onClose = useCallback(() => store.getState().closeCellContextMenu(), [store])
-    const contentRef = useRef<View | null>(null)
-
-    // Web: dismiss on any pointerdown outside the menu content.
-    // Mirrors the pattern in @tinycld/core/components/ContextMenu —
-    // Gluestack's overlay scrim is unreliable for outside-click
-    // dismissal (clicks can land on cells underneath).
-    //
-    // Native: a Pressable absolute-fill scrim inside Menu.Portal handles
-    // taps outside; rendered conditionally below.
-    useEffect(() => {
-        if (Platform.OS !== 'web') return
-        if (target == null) return
-        const handler = (event: PointerEvent) => {
-            const targetNode = event.target as Node | null
-            const node = contentRef.current as unknown as Node | null
-            if (targetNode && node?.contains(targetNode)) return
-            onClose()
-        }
-        document.addEventListener('pointerdown', handler, true)
-        return () => {
-            document.removeEventListener('pointerdown', handler, true)
-        }
-    }, [target, onClose])
 
     const isOpen = target != null
-    const triggerPos = target
-        ? { x: target.cursor.x, y: target.cursor.y, width: 0, height: 0 }
-        : null
+    const anchor = useMemo(
+        () => (target ? { x: target.cursor.x, y: target.cursor.y } : undefined),
+        [target]
+    )
 
     const handleOpenChange = useCallback(
         (open: boolean) => {
@@ -249,172 +224,158 @@ export function CellContextMenu({ doc, sheetId }: CellContextMenuProps) {
         onClose()
     }, [onClose])
 
+    const insertRows = pluralize(rowSpan, 'row')
+    const insertCols = pluralize(colSpan, 'column')
+    const deleteRowsLabel = rowSpan === 1 ? 'This row' : `These ${rowSpan} rows`
+    const deleteColsLabel = colSpan === 1 ? 'This column' : `These ${colSpan} columns`
+    const conditionalFormattingLabel = hasRuleOnSelection
+        ? 'Edit conditional formatting…'
+        : 'Conditional formatting…'
+
     return (
-        <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
-            <Menu.Portal>
-                {Platform.OS !== 'web' && (
-                    <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-                )}
-                <Menu.Content ref={contentRef} placement="bottom" align="start">
-                    <Menu.Item onPress={onCut}>
-                        <Menu.ItemTitle>Cut</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={onCopy}>
-                        <Menu.ItemTitle>Copy</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={onPaste}>
-                        <Menu.ItemTitle>Paste</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Sub>
-                        <Menu.SubTrigger>
-                            <Menu.ItemTitle>Paste special</Menu.ItemTitle>
-                        </Menu.SubTrigger>
-                        <Menu.SubContent>
-                            <Menu.Item onPress={onPasteValues}>
-                                <Menu.ItemTitle>Values only</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onPasteFormulas}>
-                                <Menu.ItemTitle>Formulas only</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onPasteFormat}>
-                                <Menu.ItemTitle>Format only</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onPasteTranspose}>
-                                <Menu.ItemTitle>Transposed</Menu.ItemTitle>
-                            </Menu.Item>
-                        </Menu.SubContent>
-                    </Menu.Sub>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Sub>
-                        <Menu.SubTrigger>
-                            <Menu.ItemTitle>Insert</Menu.ItemTitle>
-                        </Menu.SubTrigger>
-                        <Menu.SubContent>
-                            <Menu.Item onPress={onInsertRowAbove}>
-                                <Menu.ItemTitle>{pluralize(rowSpan, 'row')} above</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onInsertRowBelow}>
-                                <Menu.ItemTitle>{pluralize(rowSpan, 'row')} below</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onInsertColLeft}>
-                                <Menu.ItemTitle>{pluralize(colSpan, 'column')} left</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onInsertColRight}>
-                                <Menu.ItemTitle>
-                                    {pluralize(colSpan, 'column')} right
-                                </Menu.ItemTitle>
-                            </Menu.Item>
-                        </Menu.SubContent>
-                    </Menu.Sub>
-                    <Menu.Sub>
-                        <Menu.SubTrigger>
-                            <Menu.ItemTitle>Delete</Menu.ItemTitle>
-                        </Menu.SubTrigger>
-                        <Menu.SubContent>
-                            <Menu.Item onPress={onDeleteRows} isDisabled={rowCount <= 1}>
-                                <Menu.ItemTitle>
-                                    {rowSpan === 1 ? 'This row' : `These ${rowSpan} rows`}
-                                </Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onDeleteCols} isDisabled={colCount <= 1}>
-                                <Menu.ItemTitle>
-                                    {colSpan === 1 ? 'This column' : `These ${colSpan} columns`}
-                                </Menu.ItemTitle>
-                            </Menu.Item>
-                        </Menu.SubContent>
-                    </Menu.Sub>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onClear}>
-                        <Menu.ItemTitle>Clear contents</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onComment}>
-                        <Menu.ItemTitle>Comment</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Sub>
-                        <Menu.SubTrigger>
-                            <Menu.ItemTitle>Freeze</Menu.ItemTitle>
-                        </Menu.SubTrigger>
-                        <Menu.SubContent>
-                            <Menu.Item onPress={() => store.getState().setFrozenRows(1)}>
-                                <Menu.ItemTitle>Freeze 1 row</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={() => store.getState().setFrozenRows(2)}>
-                                <Menu.ItemTitle>Freeze 2 rows</Menu.ItemTitle>
-                            </Menu.Item>
-                            {bottomRow != null && bottomRow > 0 && (
-                                <Menu.Item
-                                    onPress={() => store.getState().setFrozenRows(bottomRow)}
-                                >
-                                    <Menu.ItemTitle>Freeze up to row {bottomRow}</Menu.ItemTitle>
-                                </Menu.Item>
-                            )}
-                            <Menu.Item onPress={() => store.getState().setFrozenCols(1)}>
-                                <Menu.ItemTitle>Freeze 1 column</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={() => store.getState().setFrozenCols(2)}>
-                                <Menu.ItemTitle>Freeze 2 columns</Menu.ItemTitle>
-                            </Menu.Item>
-                            {rightCol != null && rightCol > 0 && (
-                                <Menu.Item onPress={() => store.getState().setFrozenCols(rightCol)}>
-                                    <Menu.ItemTitle>
-                                        Freeze up to column {columnLabel(rightCol)}
-                                    </Menu.ItemTitle>
-                                </Menu.Item>
-                            )}
-                            <Menu.Item
-                                onPress={() => store.getState().unfreeze()}
-                                isDisabled={!hasFreeze}
-                            >
-                                <Menu.ItemTitle>Unfreeze</Menu.ItemTitle>
-                            </Menu.Item>
-                        </Menu.SubContent>
-                    </Menu.Sub>
-                    <Separator className="my-1 mx-2" />
-                    {hasMultiCellRange ? (
-                        <>
-                            <Menu.Item onPress={onSortAsc}>
-                                <Menu.ItemTitle>Sort range A→Z</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onSortDesc}>
-                                <Menu.ItemTitle>Sort range Z→A</Menu.ItemTitle>
-                            </Menu.Item>
-                        </>
-                    ) : null}
-                    {filterView == null ? (
-                        <Menu.Item onPress={onCreateFilter} isDisabled={range == null || disjoint}>
-                            <Menu.ItemTitle>Filter</Menu.ItemTitle>
-                        </Menu.Item>
-                    ) : filterView.mode === 'range' ? (
-                        <Menu.Item onPress={onRemoveFilter}>
-                            <Menu.ItemTitle>Remove filter</Menu.ItemTitle>
-                        </Menu.Item>
-                    ) : null}
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onMergeAll} isDisabled={disjoint}>
-                        <Menu.ItemTitle>Merge cells</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={onUnmergeMenuAction} isDisabled={disjoint}>
-                        <Menu.ItemTitle>Unmerge</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onOpenConditionalFormatting}>
-                        <Menu.ItemTitle>
-                            {hasRuleOnSelection
-                                ? 'Edit conditional formatting…'
-                                : 'Conditional formatting…'}
-                        </Menu.ItemTitle>
-                    </Menu.Item>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onDefineNameFromSelection}>
-                        <Menu.ItemTitle>Define name from selection…</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={onManageNamedRanges}>
-                        <Menu.ItemTitle>Manage named ranges…</Menu.ItemTitle>
-                    </Menu.Item>
-                </Menu.Content>
-            </Menu.Portal>
+        <Menu
+            isOpen={isOpen}
+            onOpenChange={handleOpenChange}
+            anchor={anchor}
+            presentation="popover"
+        >
+            <Menu.Item label="Cut" onSelect={onCut} />
+            <Menu.Item label="Copy" onSelect={onCopy} />
+            <Menu.Item label="Paste" onSelect={onPaste} />
+            <Menu.Sub label="Paste special">
+                <Menu.Item label="Values only" onSelect={onPasteValues} />
+                <Menu.Item label="Formulas only" onSelect={onPasteFormulas} />
+                <Menu.Item label="Format only" onSelect={onPasteFormat} />
+                <Menu.Item label="Transposed" onSelect={onPasteTranspose} />
+            </Menu.Sub>
+            <Menu.Separator />
+            <Menu.Sub label="Insert">
+                <Menu.Item label={`${insertRows} above`} onSelect={onInsertRowAbove} />
+                <Menu.Item label={`${insertRows} below`} onSelect={onInsertRowBelow} />
+                <Menu.Item label={`${insertCols} left`} onSelect={onInsertColLeft} />
+                <Menu.Item label={`${insertCols} right`} onSelect={onInsertColRight} />
+            </Menu.Sub>
+            <Menu.Sub label="Delete">
+                <Menu.Item
+                    label={deleteRowsLabel}
+                    onSelect={onDeleteRows}
+                    isDisabled={rowCount <= 1}
+                />
+                <Menu.Item
+                    label={deleteColsLabel}
+                    onSelect={onDeleteCols}
+                    isDisabled={colCount <= 1}
+                />
+            </Menu.Sub>
+            <Menu.Separator />
+            <Menu.Item label="Clear contents" onSelect={onClear} />
+            <Menu.Separator />
+            <Menu.Item label="Comment" onSelect={onComment} />
+            <Menu.Separator />
+            <Menu.Sub label="Freeze">
+                <Menu.Item
+                    label="Freeze 1 row"
+                    onSelect={() => store.getState().setFrozenRows(1)}
+                />
+                <Menu.Item
+                    label="Freeze 2 rows"
+                    onSelect={() => store.getState().setFrozenRows(2)}
+                />
+                <FreezeUpToItem
+                    label={`Freeze up to row ${bottomRow}`}
+                    index={bottomRow}
+                    onSelect={index => store.getState().setFrozenRows(index)}
+                />
+                <Menu.Item
+                    label="Freeze 1 column"
+                    onSelect={() => store.getState().setFrozenCols(1)}
+                />
+                <Menu.Item
+                    label="Freeze 2 columns"
+                    onSelect={() => store.getState().setFrozenCols(2)}
+                />
+                <FreezeUpToItem
+                    label={`Freeze up to column ${columnLabel(rightCol ?? 0)}`}
+                    index={rightCol}
+                    onSelect={index => store.getState().setFrozenCols(index)}
+                />
+                <Menu.Item
+                    label="Unfreeze"
+                    onSelect={() => store.getState().unfreeze()}
+                    isDisabled={!hasFreeze}
+                />
+            </Menu.Sub>
+            <Menu.Separator />
+            <SortItems
+                isVisible={hasMultiCellRange}
+                onSortAsc={onSortAsc}
+                onSortDesc={onSortDesc}
+            />
+            <FilterItem
+                filterMode={filterView?.mode ?? null}
+                canCreate={range != null && !disjoint}
+                onCreate={onCreateFilter}
+                onRemove={onRemoveFilter}
+            />
+            <Menu.Separator />
+            <Menu.Item label="Merge cells" onSelect={onMergeAll} isDisabled={disjoint} />
+            <Menu.Item label="Unmerge" onSelect={onUnmergeMenuAction} isDisabled={disjoint} />
+            <Menu.Separator />
+            <Menu.Item label={conditionalFormattingLabel} onSelect={onOpenConditionalFormatting} />
+            <Menu.Separator />
+            <Menu.Item label="Define name from selection…" onSelect={onDefineNameFromSelection} />
+            <Menu.Item label="Manage named ranges…" onSelect={onManageNamedRanges} />
         </Menu>
     )
+}
+
+function FreezeUpToItem({
+    label,
+    index,
+    onSelect,
+}: {
+    label: string
+    index: number | null
+    onSelect: (index: number) => void
+}) {
+    if (index == null || index <= 0) return null
+    return <Menu.Item label={label} onSelect={() => onSelect(index)} />
+}
+
+function SortItems({
+    isVisible,
+    onSortAsc,
+    onSortDesc,
+}: {
+    isVisible: boolean
+    onSortAsc: () => void
+    onSortDesc: () => void
+}) {
+    if (!isVisible) return null
+    return (
+        <>
+            <Menu.Item label="Sort range A→Z" onSelect={onSortAsc} />
+            <Menu.Item label="Sort range Z→A" onSelect={onSortDesc} />
+        </>
+    )
+}
+
+// No filter: offer to create one from the selection. A range filter:
+// offer to remove it. A header-mode filter is managed from the column
+// header menu, so the cell menu shows nothing.
+function FilterItem({
+    filterMode,
+    canCreate,
+    onCreate,
+    onRemove,
+}: {
+    filterMode: 'range' | 'header' | null
+    canCreate: boolean
+    onCreate: () => void
+    onRemove: () => void
+}) {
+    if (filterMode == null)
+        return <Menu.Item label="Filter" onSelect={onCreate} isDisabled={!canCreate} />
+    if (filterMode === 'range') return <Menu.Item label="Remove filter" onSelect={onRemove} />
+    return null
 }

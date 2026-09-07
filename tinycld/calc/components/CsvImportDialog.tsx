@@ -1,4 +1,4 @@
-import { Modal, ModalBackdrop, ModalContent } from '@tinycld/core/ui/modal'
+import { Dialog } from '@tinycld/core/ui/dialog'
 import { useCallback, useMemo, useState } from 'react'
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import { type CsvDelimiter, parseCsv } from '../lib/csv/decode'
@@ -63,48 +63,34 @@ export function CsvImportDialog({
         onConfirm({ rows: parsed, delimiter, target })
     }, [parsed, delimiter, target, onConfirm])
 
+    const summary = `${totalRows} ${totalRows === 1 ? 'row' : 'rows'} × ${totalCols} ${
+        totalCols === 1 ? 'column' : 'columns'
+    }`
+
     return (
-        <Modal isOpen={isOpen} onClose={onCancel}>
-            <ModalBackdrop />
-            <ModalContent className="w-[560px] max-h-[640px] p-0 rounded-xl bg-background">
-                <View className="px-5 py-4 border-b border-border">
-                    <Text className="text-base font-semibold text-foreground">Import CSV</Text>
-                    <Text className="text-xs text-muted-foreground mt-1">
-                        {totalRows} {totalRows === 1 ? 'row' : 'rows'} × {totalCols}{' '}
-                        {totalCols === 1 ? 'column' : 'columns'}
-                    </Text>
-                </View>
-
-                <View className="px-5 py-4 gap-4">
-                    <DelimiterChooser value={delimiter} onChange={setDelimiter} />
-                    <TargetChooser
-                        isVisible={showTargetChooser}
-                        value={target}
-                        onChange={setTarget}
-                    />
-                    <PreviewTable rows={previewRows} totalCols={totalCols} />
-                </View>
-
-                <View className="flex-row items-center justify-end gap-2 px-5 py-3 border-t border-border">
-                    <Pressable
-                        accessibilityRole="button"
-                        onPress={onCancel}
-                        className="px-3 py-2 rounded-md hover:bg-surface-secondary"
-                    >
-                        <Text className="text-sm text-foreground">Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Confirm CSV import"
-                        onPress={handleConfirm}
-                        disabled={parsed.length === 0}
-                        className="px-3 py-2 rounded-md bg-accent disabled:opacity-50"
-                    >
-                        <Text className="text-sm font-medium text-accent-foreground">Import</Text>
-                    </Pressable>
-                </View>
-            </ModalContent>
-        </Modal>
+        <Dialog
+            isOpen={isOpen}
+            onClose={onCancel}
+            title="Import CSV"
+            description={summary}
+            size="xl"
+            testID="csv-import-dialog"
+        >
+            <Dialog.Body contentClassName="px-5 pb-5 gap-4">
+                <DelimiterChooser value={delimiter} onChange={setDelimiter} />
+                <TargetChooser isVisible={showTargetChooser} value={target} onChange={setTarget} />
+                <PreviewTable rows={previewRows} totalCols={totalCols} />
+            </Dialog.Body>
+            <Dialog.Footer>
+                <Dialog.CancelButton onPress={onCancel} />
+                <Dialog.ActionButton
+                    label="Import"
+                    onPress={handleConfirm}
+                    isDisabled={parsed.length === 0}
+                    testID="confirm-csv-import"
+                />
+            </Dialog.Footer>
+        </Dialog>
     )
 }
 
