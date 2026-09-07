@@ -40,12 +40,13 @@ export function NumberFormatMenu({
 
     return (
         <Menu isOpen={isOpen} onOpenChange={setIsOpen} trigger={trigger} title="Number format">
-            <PresetRows activeId={activeId} onSelect={onApplyPreset} />
+            <NumberFormatRows activeId={activeId} onSelect={onApplyPreset} />
         </Menu>
     )
 }
 
-function PresetRows({
+/** The preset rows alone, for a menu that hosts them itself — the toolbar's More submenu. */
+export function NumberFormatRows({
     activeId,
     onSelect,
 }: {

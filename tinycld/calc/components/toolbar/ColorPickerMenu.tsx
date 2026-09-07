@@ -5,8 +5,8 @@ import {
     ColorPickerGrid,
     type Swatch,
 } from '@tinycld/core/ui/color-picker'
-import { useOpenMenu } from '@tinycld/core/ui/menubar'
-import { Popover } from '@tinycld/core/ui/popover'
+import { Menu, useOpenMenu } from '@tinycld/core/ui/menubar'
+import { Popover, usePopoverContext } from '@tinycld/core/ui/popover'
 import type { ComponentType, ReactNode } from 'react'
 import { useCallback } from 'react'
 import { View } from 'react-native'
@@ -63,5 +63,28 @@ export function ColorPickerMenu({
         <Popover isOpen={isOpen} onOpenChange={setIsOpen} trigger={trigger} title={label}>
             <ColorPickerGrid selected={color} onSelect={onSelect} showClear />
         </Popover>
+    )
+}
+
+/**
+ * The same grid as a submenu body, for the toolbar's More menu once the
+ * button folds. Picking closes the whole menu, as choosing a row would.
+ */
+export function ColorPickerRows({
+    color,
+    onSetColor,
+}: Pick<ColorPickerMenuProps, 'color' | 'onSetColor'>) {
+    const { close } = usePopoverContext()
+    return (
+        <Menu.Custom className="p-2">
+            <ColorPickerGrid
+                selected={color}
+                onSelect={value => {
+                    onSetColor(value)
+                    close()
+                }}
+                showClear
+            />
+        </Menu.Custom>
     )
 }

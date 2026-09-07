@@ -1,6 +1,6 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { useOpenMenu } from '@tinycld/core/ui/menubar'
-import { Popover } from '@tinycld/core/ui/popover'
+import { Menu, useOpenMenu } from '@tinycld/core/ui/menubar'
+import { Popover, usePopoverContext } from '@tinycld/core/ui/popover'
 import { Grid3x3 } from 'lucide-react-native'
 import { useCallback } from 'react'
 import { Platform, Pressable, Text, View } from 'react-native'
@@ -65,15 +65,7 @@ interface BordersMenuProps {
 // Pattern buttons, a swatch row and line-style previews: a widget, not a
 // list of commands, so the surface is a Popover.
 export function BordersMenu({ borders, disabled, onSetBorders }: BordersMenuProps) {
-    const fg = useThemeColor('foreground')
-    const accent = useThemeColor('accent')
-    const border = useThemeColor('border')
-    const muted = useThemeColor('muted-foreground')
     const [isOpen, setIsOpen] = useOpenMenu('toolbar:borders')
-    const pickerColor = useBordersPickerStore(s => s.color)
-    const pickerStyle = useBordersPickerStore(s => s.style)
-    const setPickerColor = useBordersPickerStore(s => s.setColor)
-    const setPickerStyle = useBordersPickerStore(s => s.setStyle)
 
     const onSelect = useCallback(
         (id: BorderPresetId) => {
@@ -83,65 +75,101 @@ export function BordersMenu({ borders, disabled, onSetBorders }: BordersMenuProp
         [onSetBorders, setIsOpen]
     )
 
-    const activeId = matchActiveOption(borders)
-
     const trigger = <ToolbarButton label="Borders" icon={Grid3x3} disabled={disabled} />
 
     return (
         <Popover isOpen={isOpen} onOpenChange={setIsOpen} trigger={trigger} title="Borders">
-            <View className="flex-row" style={{ padding: 8, gap: 8 }}>
-                <View style={{ width: 5 * 28, gap: 2 }}>
-                    <View className="flex-row" style={{ gap: 2 }}>
-                        {PATTERN_OPTIONS.slice(0, 5).map(option => (
-                            <PatternButton
-                                key={option.id}
-                                option={option}
-                                isActive={option.id === activeId}
-                                accent={accent}
-                                fg={fg}
-                                onSelect={onSelect}
-                            />
-                        ))}
-                    </View>
-                    <View className="flex-row" style={{ gap: 2 }}>
-                        {PATTERN_OPTIONS.slice(5).map(option => (
-                            <PatternButton
-                                key={option.id}
-                                option={option}
-                                isActive={option.id === activeId}
-                                accent={accent}
-                                fg={fg}
-                                onSelect={onSelect}
-                            />
-                        ))}
-                    </View>
+            <BordersPanel borders={borders} onSelect={onSelect} />
+        </Popover>
+    )
+}
+
+/** The same panel as a submenu body, for the toolbar's More menu once the button folds. */
+export function BordersRows({ borders, onSetBorders }: Omit<BordersMenuProps, 'disabled'>) {
+    const { close } = usePopoverContext()
+    return (
+        <Menu.Custom className="p-0">
+            <BordersPanel
+                borders={borders}
+                onSelect={id => {
+                    onSetBorders(id)
+                    close()
+                }}
+            />
+        </Menu.Custom>
+    )
+}
+
+function BordersPanel({
+    borders,
+    onSelect,
+}: {
+    borders: CellBorders | undefined
+    onSelect: (id: BorderPresetId) => void
+}) {
+    const fg = useThemeColor('foreground')
+    const accent = useThemeColor('accent')
+    const border = useThemeColor('border')
+    const muted = useThemeColor('muted-foreground')
+    const pickerColor = useBordersPickerStore(s => s.color)
+    const pickerStyle = useBordersPickerStore(s => s.style)
+    const setPickerColor = useBordersPickerStore(s => s.setColor)
+    const setPickerStyle = useBordersPickerStore(s => s.setStyle)
+    const activeId = matchActiveOption(borders)
+
+    return (
+        <View className="flex-row" style={{ padding: 8, gap: 8 }}>
+            <View style={{ width: 5 * 28, gap: 2 }}>
+                <View className="flex-row" style={{ gap: 2 }}>
+                    {PATTERN_OPTIONS.slice(0, 5).map(option => (
+                        <PatternButton
+                            key={option.id}
+                            option={option}
+                            isActive={option.id === activeId}
+                            accent={accent}
+                            fg={fg}
+                            onSelect={onSelect}
+                        />
+                    ))}
                 </View>
-                <View style={{ width: 1, backgroundColor: border }} />
-                <View style={{ gap: 8, width: 5 * 24 + 4 * 4 }}>
-                    <ColorSwatchRow
-                        color={pickerColor}
-                        accent={accent}
-                        border={border}
-                        fg={fg}
-                        muted={muted}
-                        onSelect={setPickerColor}
-                    />
-                    <View style={{ gap: 2 }}>
-                        {LINE_STYLES.map(line => (
-                            <LineStyleRow
-                                key={line.id}
-                                line={line}
-                                isActive={line.id === pickerStyle}
-                                accent={accent}
-                                border={border}
-                                fg={fg}
-                                onSelect={setPickerStyle}
-                            />
-                        ))}
-                    </View>
+                <View className="flex-row" style={{ gap: 2 }}>
+                    {PATTERN_OPTIONS.slice(5).map(option => (
+                        <PatternButton
+                            key={option.id}
+                            option={option}
+                            isActive={option.id === activeId}
+                            accent={accent}
+                            fg={fg}
+                            onSelect={onSelect}
+                        />
+                    ))}
                 </View>
             </View>
-        </Popover>
+            <View style={{ width: 1, backgroundColor: border }} />
+            <View style={{ gap: 8, width: 5 * 24 + 4 * 4 }}>
+                <ColorSwatchRow
+                    color={pickerColor}
+                    accent={accent}
+                    border={border}
+                    fg={fg}
+                    muted={muted}
+                    onSelect={setPickerColor}
+                />
+                <View style={{ gap: 2 }}>
+                    {LINE_STYLES.map(line => (
+                        <LineStyleRow
+                            key={line.id}
+                            line={line}
+                            isActive={line.id === pickerStyle}
+                            accent={accent}
+                            border={border}
+                            fg={fg}
+                            onSelect={setPickerStyle}
+                        />
+                    ))}
+                </View>
+            </View>
+        </View>
     )
 }
 

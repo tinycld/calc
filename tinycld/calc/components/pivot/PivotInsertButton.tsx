@@ -34,13 +34,32 @@ export interface PivotInsertButtonProps {
 // pivotId meta key, (4) activates the new sheet, and (5) opens the
 // side panel so the user can drag fields in. Steps 1-3 run inside a
 // single doc.transact so a peer never observes a half-created pivot.
-export function PivotInsertButton({
+export function PivotInsertButton({ disabled, ...pivot }: PivotInsertButtonProps) {
+    const { open, isDisabled, dialog } = usePivotInsert(pivot)
+    return (
+        <>
+            <ToolbarButton
+                icon={PivotTableIcon}
+                label="Insert pivot table"
+                disabled={disabled || isDisabled}
+                onPress={open}
+            />
+            {dialog}
+        </>
+    )
+}
+
+/**
+ * The create flow behind the button, for a toolbar that renders the button
+ * itself — and folds it into a More menu — while keeping the dialog mounted
+ * beside the row. `dialog` renders nothing until `open` is called.
+ */
+export function usePivotInsert({
     doc,
     defaultSourceRange,
     defaultTargetSheetName,
     onActivateSheet,
-    disabled,
-}: PivotInsertButtonProps) {
+}: Omit<PivotInsertButtonProps, 'disabled'>) {
     const [visible, setVisible] = useState(false)
     const open = useCallback(() => setVisible(true), [])
     const close = useCallback(() => setVisible(false), [])
@@ -90,21 +109,14 @@ export function PivotInsertButton({
         [doc, onActivateSheet]
     )
 
-    return (
-        <>
-            <ToolbarButton
-                icon={PivotTableIcon}
-                label="Insert pivot table"
-                disabled={disabled || doc == null}
-                onPress={open}
-            />
-            <NewPivotDialog
-                visible={visible}
-                defaultSourceRange={defaultSourceRange}
-                defaultTargetSheetName={defaultTargetSheetName}
-                onCancel={close}
-                onCreate={onCreate}
-            />
-        </>
+    const dialog = (
+        <NewPivotDialog
+            visible={visible}
+            defaultSourceRange={defaultSourceRange}
+            defaultTargetSheetName={defaultTargetSheetName}
+            onCancel={close}
+            onCreate={onCreate}
+        />
     )
+    return { open, isDisabled: doc == null, dialog }
 }

@@ -1,4 +1,5 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
+import { Menu } from '@tinycld/core/ui/menu'
 import { Minus, Plus } from 'lucide-react-native'
 import { useCallback, useRef, useState } from 'react'
 import { Platform, TextInput, View } from 'react-native'
@@ -106,5 +107,24 @@ export function FontSizeStepper({ size, disabled, onSetSize }: FontSizeStepperPr
                 onPress={onPlus}
             />
         </View>
+    )
+}
+
+/** Step rows for the toolbar's More submenu, once the stepper folds. */
+export function FontSizeRows({ size, onSetSize }: Omit<FontSizeStepperProps, 'disabled'>) {
+    const effective = size ?? DEFAULT_SIZE
+    return (
+        <>
+            <Menu.Item
+                label={`Decrease font size (${effective})`}
+                icon={Minus}
+                onSelect={() => onSetSize(Math.max(MIN_SIZE, effective - 1))}
+            />
+            <Menu.Item
+                label={`Increase font size (${effective})`}
+                icon={Plus}
+                onSelect={() => onSetSize(Math.min(MAX_SIZE, effective + 1))}
+            />
+        </>
     )
 }

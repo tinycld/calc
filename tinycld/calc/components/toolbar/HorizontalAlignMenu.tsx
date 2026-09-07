@@ -55,6 +55,19 @@ export function HorizontalAlignMenu({ align, disabled, onSetAlign }: HorizontalA
             presentation="popover"
             title="Horizontal align"
         >
+            <HorizontalAlignRows align={align} onSetAlign={onSetAlign} />
+        </Menu>
+    )
+}
+
+/** The alignment rows alone, for a menu that hosts them itself — the toolbar's More submenu. */
+export function HorizontalAlignRows({
+    align,
+    onSetAlign,
+}: Pick<HorizontalAlignMenuProps, 'align' | 'onSetAlign'>) {
+    const active = align ?? 'left'
+    return (
+        <>
             {ALIGN_OPTIONS.map(option => (
                 <Menu.Item
                     key={option.value}
@@ -64,6 +77,6 @@ export function HorizontalAlignMenu({ align, disabled, onSetAlign }: HorizontalA
                     onSelect={() => onSetAlign(option.value)}
                 />
             ))}
-        </Menu>
+        </>
     )
 }
