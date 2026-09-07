@@ -1,5 +1,5 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Menu, MenuBarMenu, MenuShortcut, Separator } from '@tinycld/core/ui/menubar'
+import { Menu, MenuBarMenu } from '@tinycld/core/ui/menubar'
 import { Check } from 'lucide-react-native'
 import { View } from 'react-native'
 import { numberFormatPresets } from '../toolbar/NumberFormatMenu'
@@ -7,6 +7,9 @@ import type { MenuBarProps } from './MenuBar'
 
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 18, 24, 36]
 
+// A leading check rather than the row's `isSelected` trailing check: the
+// text-style rows also carry a shortcut, which the trailing check would
+// replace.
 function CheckedIndicator({ isOn }: { isOn: boolean }) {
     const fg = useThemeColor('foreground')
     if (!isOn) return <View style={{ width: 14 }} />
@@ -16,122 +19,136 @@ function CheckedIndicator({ isOn }: { isOn: boolean }) {
 export function FormatMenu(props: MenuBarProps) {
     return (
         <MenuBarMenu menuId="format" label="Format">
-            <Menu.Sub>
-                <Menu.SubTrigger>
-                    <Menu.ItemTitle>Number</Menu.ItemTitle>
-                </Menu.SubTrigger>
-                <Menu.SubContent>
-                    {numberFormatPresets.map(preset => (
-                        <Menu.Item
-                            key={preset.id}
-                            onPress={() => props.onApplyPreset(preset.id)}
-                            isDisabled={props.disabled}
-                        >
-                            <Menu.ItemTitle>{preset.label}</Menu.ItemTitle>
-                        </Menu.Item>
-                    ))}
-                </Menu.SubContent>
+            <Menu.Sub label="Number">
+                <NumberPresetItems
+                    onApplyPreset={props.onApplyPreset}
+                    isDisabled={props.disabled}
+                />
             </Menu.Sub>
-            <Menu.Sub>
-                <Menu.SubTrigger>
-                    <Menu.ItemTitle>Text</Menu.ItemTitle>
-                </Menu.SubTrigger>
-                <Menu.SubContent>
-                    <Menu.Item onPress={props.onToggleBold} isDisabled={props.disabled}>
-                        <CheckedIndicator isOn={props.isBold} />
-                        <Menu.ItemTitle>Bold</Menu.ItemTitle>
-                        <MenuShortcut keys="⌘B" />
-                    </Menu.Item>
-                    <Menu.Item onPress={props.onToggleItalic} isDisabled={props.disabled}>
-                        <CheckedIndicator isOn={props.isItalic} />
-                        <Menu.ItemTitle>Italic</Menu.ItemTitle>
-                        <MenuShortcut keys="⌘I" />
-                    </Menu.Item>
-                    <Menu.Item onPress={props.onToggleUnderline} isDisabled={props.disabled}>
-                        <CheckedIndicator isOn={props.isUnderline} />
-                        <Menu.ItemTitle>Underline</Menu.ItemTitle>
-                        <MenuShortcut keys="⌘U" />
-                    </Menu.Item>
-                    <Menu.Item onPress={props.onToggleStrike} isDisabled={props.disabled}>
-                        <CheckedIndicator isOn={props.isStrike} />
-                        <Menu.ItemTitle>Strikethrough</Menu.ItemTitle>
-                        <MenuShortcut keys="⌘⇧X" />
-                    </Menu.Item>
-                </Menu.SubContent>
+            <Menu.Sub label="Text">
+                <Menu.Item
+                    label="Bold"
+                    shortcut="⌘B"
+                    leading={<CheckedIndicator isOn={props.isBold} />}
+                    onSelect={props.onToggleBold}
+                    isDisabled={props.disabled}
+                />
+                <Menu.Item
+                    label="Italic"
+                    shortcut="⌘I"
+                    leading={<CheckedIndicator isOn={props.isItalic} />}
+                    onSelect={props.onToggleItalic}
+                    isDisabled={props.disabled}
+                />
+                <Menu.Item
+                    label="Underline"
+                    shortcut="⌘U"
+                    leading={<CheckedIndicator isOn={props.isUnderline} />}
+                    onSelect={props.onToggleUnderline}
+                    isDisabled={props.disabled}
+                />
+                <Menu.Item
+                    label="Strikethrough"
+                    shortcut="⌘⇧X"
+                    leading={<CheckedIndicator isOn={props.isStrike} />}
+                    onSelect={props.onToggleStrike}
+                    isDisabled={props.disabled}
+                />
             </Menu.Sub>
-            <Menu.Sub>
-                <Menu.SubTrigger>
-                    <Menu.ItemTitle>Alignment</Menu.ItemTitle>
-                </Menu.SubTrigger>
-                <Menu.SubContent>
-                    <Menu.Item
-                        onPress={() => props.onSetHorizontalAlign('left')}
-                        isDisabled={props.disabled}
-                    >
-                        <CheckedIndicator isOn={props.horizontalAlign === 'left'} />
-                        <Menu.ItemTitle>Left</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item
-                        onPress={() => props.onSetHorizontalAlign('center')}
-                        isDisabled={props.disabled}
-                    >
-                        <CheckedIndicator isOn={props.horizontalAlign === 'center'} />
-                        <Menu.ItemTitle>Center</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item
-                        onPress={() => props.onSetHorizontalAlign('right')}
-                        isDisabled={props.disabled}
-                    >
-                        <CheckedIndicator isOn={props.horizontalAlign === 'right'} />
-                        <Menu.ItemTitle>Right</Menu.ItemTitle>
-                    </Menu.Item>
-                </Menu.SubContent>
+            <Menu.Sub label="Alignment">
+                <Menu.Item
+                    label="Left"
+                    isSelected={props.horizontalAlign === 'left'}
+                    onSelect={() => props.onSetHorizontalAlign('left')}
+                    isDisabled={props.disabled}
+                />
+                <Menu.Item
+                    label="Center"
+                    isSelected={props.horizontalAlign === 'center'}
+                    onSelect={() => props.onSetHorizontalAlign('center')}
+                    isDisabled={props.disabled}
+                />
+                <Menu.Item
+                    label="Right"
+                    isSelected={props.horizontalAlign === 'right'}
+                    onSelect={() => props.onSetHorizontalAlign('right')}
+                    isDisabled={props.disabled}
+                />
             </Menu.Sub>
-            <Menu.Sub>
-                <Menu.SubTrigger>
-                    <Menu.ItemTitle>Font size</Menu.ItemTitle>
-                </Menu.SubTrigger>
-                <Menu.SubContent>
-                    {FONT_SIZES.map(size => (
-                        <Menu.Item
-                            key={size}
-                            onPress={() => props.onSetFontSize(size)}
-                            isDisabled={props.disabled}
-                        >
-                            <CheckedIndicator isOn={props.fontSize === size} />
-                            <Menu.ItemTitle>{String(size)}</Menu.ItemTitle>
-                        </Menu.Item>
-                    ))}
-                </Menu.SubContent>
+            <Menu.Sub label="Font size">
+                <FontSizeItems
+                    fontSize={props.fontSize}
+                    onSetFontSize={props.onSetFontSize}
+                    isDisabled={props.disabled}
+                />
             </Menu.Sub>
-            <Menu.Sub>
-                <Menu.SubTrigger>
-                    <Menu.ItemTitle>Merge cells</Menu.ItemTitle>
-                </Menu.SubTrigger>
-                <Menu.SubContent>
-                    <Menu.Item onPress={props.onMergeAll} isDisabled={props.disabled}>
-                        <Menu.ItemTitle>Merge all</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={props.onMergeHorizontal} isDisabled={props.disabled}>
-                        <Menu.ItemTitle>Merge horizontally</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={props.onMergeVertical} isDisabled={props.disabled}>
-                        <Menu.ItemTitle>Merge vertically</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={props.onUnmerge} isDisabled={props.disabled}>
-                        <Menu.ItemTitle>Unmerge</Menu.ItemTitle>
-                    </Menu.Item>
-                </Menu.SubContent>
+            <Menu.Sub label="Merge cells">
+                <Menu.Item
+                    label="Merge all"
+                    onSelect={props.onMergeAll}
+                    isDisabled={props.disabled}
+                />
+                <Menu.Item
+                    label="Merge horizontally"
+                    onSelect={props.onMergeHorizontal}
+                    isDisabled={props.disabled}
+                />
+                <Menu.Item
+                    label="Merge vertically"
+                    onSelect={props.onMergeVertical}
+                    isDisabled={props.disabled}
+                />
+                <Menu.Item label="Unmerge" onSelect={props.onUnmerge} isDisabled={props.disabled} />
             </Menu.Sub>
-            <Separator />
-            <Menu.Item onPress={props.onOpenConditionalFormatting}>
-                <Menu.ItemTitle>Conditional formatting…</Menu.ItemTitle>
-            </Menu.Item>
-            <Separator />
-            <Menu.Item onPress={props.onClearFormatting} isDisabled={props.disabled}>
-                <Menu.ItemTitle>Clear formatting</Menu.ItemTitle>
-                <MenuShortcut keys="⌘\" />
-            </Menu.Item>
+            <Menu.Separator />
+            <Menu.Item
+                label="Conditional formatting…"
+                onSelect={props.onOpenConditionalFormatting}
+            />
+            <Menu.Separator />
+            <Menu.Item
+                label="Clear formatting"
+                shortcut="⌘\"
+                onSelect={props.onClearFormatting}
+                isDisabled={props.disabled}
+            />
         </MenuBarMenu>
     )
+}
+
+function NumberPresetItems({
+    onApplyPreset,
+    isDisabled,
+}: {
+    onApplyPreset: (id: string) => void
+    isDisabled: boolean
+}) {
+    return numberFormatPresets.map(preset => (
+        <Menu.Item
+            key={preset.id}
+            label={preset.label}
+            onSelect={() => onApplyPreset(preset.id)}
+            isDisabled={isDisabled}
+        />
+    ))
+}
+
+function FontSizeItems({
+    fontSize,
+    onSetFontSize,
+    isDisabled,
+}: {
+    fontSize: number | undefined
+    onSetFontSize: (size: number) => void
+    isDisabled: boolean
+}) {
+    return FONT_SIZES.map(size => (
+        <Menu.Item
+            key={size}
+            label={String(size)}
+            isSelected={fontSize === size}
+            onSelect={() => onSetFontSize(size)}
+            isDisabled={isDisabled}
+        />
+    ))
 }

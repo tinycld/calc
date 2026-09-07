@@ -4,10 +4,10 @@
 // the user can scan-read the rule editor without expanding the menu.
 
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { Menu, Separator } from '@tinycld/core/ui/menu'
+import { Menu } from '@tinycld/core/ui/menu'
 import { ChevronDown } from 'lucide-react-native'
-import { useState } from 'react'
-import { Pressable, ScrollView, Text } from 'react-native'
+import { Fragment } from 'react'
+import { Pressable, Text } from 'react-native'
 import type { CFConditionType } from '../../lib/conditional-format/types'
 
 interface Group {
@@ -67,63 +67,49 @@ interface ConditionTypePickerProps {
 }
 
 export function ConditionTypePicker({ value, onChange, disabled }: ConditionTypePickerProps) {
-    const [isOpen, setIsOpen] = useState(false)
     const muted = useThemeColor('muted-foreground')
 
-    const activeLabel = labelFor(value)
+    const trigger = (
+        <Pressable
+            disabled={disabled}
+            className="flex-row items-center justify-between rounded border border-border bg-background px-2 py-1.5"
+            accessibilityLabel="Choose condition"
+        >
+            <Text className="text-sm text-foreground" numberOfLines={1}>
+                {labelFor(value)}
+            </Text>
+            <ChevronDown size={14} color={muted} />
+        </Pressable>
+    )
 
     return (
-        <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <Menu.Trigger>
-                <Pressable
-                    disabled={disabled}
-                    className="flex-row items-center justify-between rounded border border-border bg-background px-2 py-1.5"
-                    accessibilityLabel="Choose condition"
-                >
-                    <Text className="text-sm text-foreground" numberOfLines={1}>
-                        {activeLabel}
-                    </Text>
-                    <ChevronDown size={14} color={muted} />
-                </Pressable>
-            </Menu.Trigger>
-            <Menu.Portal>
-                <Menu.Content placement="bottom" align="start" style={{ maxHeight: 360 }}>
-                    {/* 18 condition types + 5 group labels + separators
-                     * exceeds the viewport on a 720-tall window. Without
-                     * a scrollable cap, items past the viewport edge
-                     * render off-screen and are unhittable by pointer
-                     * events even though they have a non-zero layout
-                     * rect — the symptom is "click does nothing", which
-                     * is exactly the bug this dropdown used to have. */}
-                    <ScrollView style={{ maxHeight: 360 }}>
-                        {GROUPS.flatMap((group, gi) => {
-                            const items: React.ReactNode[] = []
-                            if (gi > 0) items.push(<Separator key={`sep-${group.title}`} />)
-                            items.push(
-                                <Menu.Label key={`label-${group.title}`}>
-                                    <Menu.ItemTitle>{group.title}</Menu.ItemTitle>
-                                </Menu.Label>
-                            )
-                            for (const opt of group.options) {
-                                items.push(
-                                    <Menu.Item
-                                        key={opt.value}
-                                        onPress={() => {
-                                            onChange(opt.value)
-                                            setIsOpen(false)
-                                        }}
-                                    >
-                                        <Menu.ItemTitle>{opt.label}</Menu.ItemTitle>
-                                    </Menu.Item>
-                                )
-                            }
-                            return items
-                        })}
-                    </ScrollView>
-                </Menu.Content>
-            </Menu.Portal>
+        <Menu trigger={trigger} placement="bottom-start" title="Condition">
+            <ConditionGroups value={value} onChange={onChange} />
         </Menu>
     )
+}
+
+function ConditionGroups({ value, onChange }: Omit<ConditionTypePickerProps, 'disabled'>) {
+    return GROUPS.map((group, index) => (
+        <Fragment key={group.title}>
+            <GroupSeparator isVisible={index > 0} />
+            <Menu.Section label={group.title}>
+                {group.options.map(opt => (
+                    <Menu.Item
+                        key={opt.value}
+                        label={opt.label}
+                        isSelected={opt.value === value}
+                        onSelect={() => onChange(opt.value)}
+                    />
+                ))}
+            </Menu.Section>
+        </Fragment>
+    ))
+}
+
+function GroupSeparator({ isVisible }: { isVisible: boolean }) {
+    if (!isVisible) return null
+    return <Menu.Separator />
 }
 
 function labelFor(value: CFConditionType): string {

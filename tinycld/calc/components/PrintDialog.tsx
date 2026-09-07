@@ -2,10 +2,9 @@ import { fetchRenderedHtml } from '@tinycld/core/file-viewer/fetch-rendered-html
 import { captureException, handleMutationErrorsWithForm } from '@tinycld/core/lib/errors'
 import { useMutation } from '@tinycld/core/lib/mutations'
 import { renderPrintEnvelope } from '@tinycld/core/lib/print/render-print-envelope'
+import { Dialog } from '@tinycld/core/ui/dialog'
 import { FormErrorSummary, useForm, zodResolver } from '@tinycld/core/ui/form'
-import { Modal, ModalBackdrop, ModalContent } from '@tinycld/core/ui/modal'
 import { useMemo } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
 import type * as Y from 'yjs'
 import { useYSheets } from '../hooks/use-y-sheets'
 import { handlePrint } from '../lib/print/handle-print'
@@ -147,14 +146,9 @@ export function PrintDialog({
                 fragments.push(html)
             }
             const envelope = renderPrintEnvelope(fragments.join(''), buildPrintCss(config))
-            // Close the dialog before invoking handlePrint so the
-            // Modal's react-aria FocusScope tears down before we
-            // append #tinycld-print-root to <body>. Otherwise the
-            // active FocusScope picks up the print container and,
-            // when handlePrint's `afterprint` cleanup removes it,
-            // FocusScope's tree walk dereferences an orphaned
-            // sibling sentinel — "Cannot read properties of
-            // undefined (reading 'previousElementSibling')".
+            // Close the dialog before invoking handlePrint so its focus
+            // trap has torn down before #tinycld-print-root is appended
+            // to <body> and later removed by the `afterprint` cleanup.
             onClose()
             await handlePrint(envelope)
         },
@@ -167,46 +161,25 @@ export function PrintDialog({
     const onSubmit = handleSubmit(config => printMutation.mutate(config))
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose}>
-            <ModalBackdrop />
-            <ModalContent className="w-[520px] max-h-[640px] p-0 rounded-xl bg-background">
-                <View className="px-5 pt-4 pb-3 border-b border-border">
-                    <Text className="text-base font-semibold text-foreground">Print</Text>
-                </View>
-                <ScrollView className="px-5 py-4" style={{ maxHeight: 480 }}>
-                    <FormErrorSummary errors={errors} isEnabled={isSubmitted} />
-                    <View style={{ gap: 16 }}>
-                        <PrintScopeFields
-                            control={control}
-                            sheets={sheetList}
-                            selectionAvailable={selectionAvailable}
-                        />
-                        <PrintPageFields control={control} />
-                        <PrintLayoutFields control={control} />
-                    </View>
-                </ScrollView>
-                <View
-                    className="flex-row justify-end px-5 py-3 border-t border-border"
-                    style={{ gap: 8 }}
-                >
-                    <Pressable
-                        onPress={onClose}
-                        accessibilityRole="button"
-                        className="px-3 py-2 rounded-md border border-border bg-background"
-                    >
-                        <Text className="text-sm text-foreground">Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                        onPress={onSubmit}
-                        disabled={submitDisabled || printMutation.isPending}
-                        accessibilityRole="button"
-                        className="px-3 py-2 rounded-md bg-primary disabled:opacity-50"
-                    >
-                        <Text className="text-sm text-primary-foreground">Print</Text>
-                    </Pressable>
-                    <FormErrorSummary errors={errors} isEnabled={isSubmitted} />
-                </View>
-            </ModalContent>
-        </Modal>
+        <Dialog isOpen={isOpen} onClose={onClose} title="Print" size="xl" testID="print-dialog">
+            <Dialog.Body contentClassName="px-5 pb-5 gap-4">
+                <FormErrorSummary errors={errors} isEnabled={isSubmitted} />
+                <PrintScopeFields
+                    control={control}
+                    sheets={sheetList}
+                    selectionAvailable={selectionAvailable}
+                />
+                <PrintPageFields control={control} />
+                <PrintLayoutFields control={control} />
+            </Dialog.Body>
+            <Dialog.Footer>
+                <Dialog.CancelButton onPress={onClose} />
+                <Dialog.ActionButton
+                    label="Print"
+                    onPress={onSubmit}
+                    isDisabled={submitDisabled || printMutation.isPending}
+                />
+            </Dialog.Footer>
+        </Dialog>
     )
 }

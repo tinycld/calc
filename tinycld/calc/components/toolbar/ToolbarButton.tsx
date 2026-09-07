@@ -54,9 +54,9 @@ const tooltipCSS = `
 // component); for buttons whose visual is text or a composition (e.g.
 // the "123 ▾" format menu trigger), pass `children` instead.
 //
-// `forwardRef` is required so this can serve as a Menu.Trigger child:
-// the trigger reads the wrapper's measured rect via the ref to
-// position the popover.
+// `forwardRef` is required so this can serve as a Menu / Popover
+// `trigger`: the surface clones it with the ref it measures and the
+// `onPress` that toggles it.
 export const ToolbarButton = forwardRef<View, ToolbarButtonProps>(function ToolbarButton(
     { icon: Icon, children, active = false, disabled = false, onPress, label, width = 28 },
     ref

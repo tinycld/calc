@@ -1,6 +1,5 @@
-import { Menu, Separator } from '@tinycld/core/ui/menu'
-import { useCallback, useEffect, useRef } from 'react'
-import { Platform, Pressable, StyleSheet, type View } from 'react-native'
+import { Menu } from '@tinycld/core/ui/menu'
+import { useCallback, useMemo } from 'react'
 import type * as Y from 'yjs'
 import { useClipboard } from '../../hooks/use-clipboard'
 import { useFilterView } from '../../hooks/use-filter-view'
@@ -36,28 +35,12 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
     const disjoint = useGridStore(s => isDisjoint(s.selection))
     const store = useGridStoreApi()
     const onClose = useCallback(() => store.getState().closeHeaderMenu(), [store])
-    const contentRef = useRef<View | null>(null)
-
-    // Web outside-click dismissal mirrors CellContextMenu / HandleContextMenu.
-    useEffect(() => {
-        if (Platform.OS !== 'web') return
-        if (target == null) return
-        const handler = (event: PointerEvent) => {
-            const targetNode = event.target as Node | null
-            const node = contentRef.current as unknown as Node | null
-            if (targetNode && node?.contains(targetNode)) return
-            onClose()
-        }
-        document.addEventListener('pointerdown', handler, true)
-        return () => {
-            document.removeEventListener('pointerdown', handler, true)
-        }
-    }, [target, onClose])
 
     const isOpen = target != null
-    const triggerPos = target
-        ? { x: target.cursor.x, y: target.cursor.y, width: 0, height: 0 }
-        : null
+    const anchor = useMemo(
+        () => (target ? { x: target.cursor.x, y: target.cursor.y } : undefined),
+        [target]
+    )
 
     const handleOpenChange = useCallback(
         (open: boolean) => {
@@ -223,153 +206,159 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
         clearFilter(doc, sheetId)
     }, [doc, sheetId])
 
+    const filterMode = filterView?.mode ?? null
+    const clickedHasFilter =
+        filterView?.mode === 'header' && filterView.criteria[clickedIndex ?? -1] != null
+
     if (isCol) {
         return (
-            <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
-                <Menu.Portal>
-                    {Platform.OS !== 'web' && (
-                        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-                    )}
-                    <Menu.Content ref={contentRef} placement="bottom" align="start">
-                        <Menu.Item onPress={onCut}>
-                            <Menu.ItemTitle>Cut</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={onCopy}>
-                            <Menu.ItemTitle>Copy</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={onPaste}>
-                            <Menu.ItemTitle>Paste</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Separator className="my-1 mx-2" />
-                        <Menu.Item onPress={onInsertLeft}>
-                            <Menu.ItemTitle>
-                                Insert {pluralize(colSpan, 'column')} left
-                            </Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={onInsertRight}>
-                            <Menu.ItemTitle>
-                                Insert {pluralize(colSpan, 'column')} right
-                            </Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={onDeleteCols} isDisabled={colCount <= 1}>
-                            <Menu.ItemTitle>
-                                {colSpan === 1 ? 'Delete column' : `Delete ${colSpan} columns`}
-                            </Menu.ItemTitle>
-                        </Menu.Item>
-                        <Separator className="my-1 mx-2" />
-                        <Menu.Item onPress={onClear}>
-                            <Menu.ItemTitle>Clear contents</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Separator className="my-1 mx-2" />
-                        <Menu.Item onPress={onSortAsc} isDisabled={disjoint}>
-                            <Menu.ItemTitle>Sort sheet A→Z</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={onSortDesc} isDisabled={disjoint}>
-                            <Menu.ItemTitle>Sort sheet Z→A</Menu.ItemTitle>
-                        </Menu.Item>
-                        {filterView == null ? (
-                            <Menu.Item
-                                onPress={onOpenFilterDialog}
-                                isDisabled={disjoint || clickedIndex == null}
-                            >
-                                <Menu.ItemTitle>Create filter…</Menu.ItemTitle>
-                            </Menu.Item>
-                        ) : filterView.mode === 'header' ? (
-                            <>
-                                <Menu.Item
-                                    onPress={onOpenFilterDialog}
-                                    isDisabled={clickedIndex == null}
-                                >
-                                    <Menu.ItemTitle>
-                                        {filterView.criteria[clickedIndex ?? -1] != null
-                                            ? 'Edit filter…'
-                                            : 'Add filter…'}
-                                    </Menu.ItemTitle>
-                                </Menu.Item>
-                                <Menu.Item onPress={onRemoveFilter}>
-                                    <Menu.ItemTitle>Remove all filters</Menu.ItemTitle>
-                                </Menu.Item>
-                            </>
-                        ) : null}
-                        <Separator className="my-1 mx-2" />
-                        {clickedIndex != null && clickedIndex > 0 ? (
-                            <Menu.Item onPress={onFreezeColsHere}>
-                                <Menu.ItemTitle>
-                                    Freeze up to column {columnLabel(clickedIndex)}
-                                </Menu.ItemTitle>
-                            </Menu.Item>
-                        ) : null}
-                        <Menu.Item onPress={onUnfreeze} isDisabled={!hasFreeze}>
-                            <Menu.ItemTitle>Unfreeze</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Separator className="my-1 mx-2" />
-                        <Menu.Item onPress={onAutosizeCol}>
-                            <Menu.ItemTitle>Auto-fit column width</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={onResetColWidth}>
-                            <Menu.ItemTitle>Reset to default width</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Separator className="my-1 mx-2" />
-                        <Menu.Item onPress={onOpenConditionalFormatting}>
-                            <Menu.ItemTitle>{conditionalFormattingMenuLabel}</Menu.ItemTitle>
-                        </Menu.Item>
-                    </Menu.Content>
-                </Menu.Portal>
+            <Menu
+                isOpen={isOpen}
+                onOpenChange={handleOpenChange}
+                anchor={anchor}
+                presentation="popover"
+            >
+                <Menu.Item label="Cut" onSelect={onCut} />
+                <Menu.Item label="Copy" onSelect={onCopy} />
+                <Menu.Item label="Paste" onSelect={onPaste} />
+                <Menu.Separator />
+                <Menu.Item
+                    label={`Insert ${pluralize(colSpan, 'column')} left`}
+                    onSelect={onInsertLeft}
+                />
+                <Menu.Item
+                    label={`Insert ${pluralize(colSpan, 'column')} right`}
+                    onSelect={onInsertRight}
+                />
+                <Menu.Item
+                    label={colSpan === 1 ? 'Delete column' : `Delete ${colSpan} columns`}
+                    onSelect={onDeleteCols}
+                    isDisabled={colCount <= 1}
+                />
+                <Menu.Separator />
+                <Menu.Item label="Clear contents" onSelect={onClear} />
+                <Menu.Separator />
+                <Menu.Item label="Sort sheet A→Z" onSelect={onSortAsc} isDisabled={disjoint} />
+                <Menu.Item label="Sort sheet Z→A" onSelect={onSortDesc} isDisabled={disjoint} />
+                <ColumnFilterItems
+                    filterMode={filterMode}
+                    clickedHasFilter={clickedHasFilter}
+                    isDisabled={disjoint || clickedIndex == null}
+                    onOpenFilterDialog={onOpenFilterDialog}
+                    onRemoveFilter={onRemoveFilter}
+                />
+                <Menu.Separator />
+                <FreezeHereItem
+                    label={`Freeze up to column ${columnLabel(clickedIndex ?? 0)}`}
+                    index={clickedIndex}
+                    onSelect={onFreezeColsHere}
+                />
+                <Menu.Item label="Unfreeze" onSelect={onUnfreeze} isDisabled={!hasFreeze} />
+                <Menu.Separator />
+                <Menu.Item label="Auto-fit column width" onSelect={onAutosizeCol} />
+                <Menu.Item label="Reset to default width" onSelect={onResetColWidth} />
+                <Menu.Separator />
+                <Menu.Item
+                    label={conditionalFormattingMenuLabel}
+                    onSelect={onOpenConditionalFormatting}
+                />
             </Menu>
         )
     }
 
     return (
-        <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
-            <Menu.Portal>
-                {Platform.OS !== 'web' && (
-                    <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-                )}
-                <Menu.Content ref={contentRef} placement="bottom" align="start">
-                    <Menu.Item onPress={onCut}>
-                        <Menu.ItemTitle>Cut</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={onCopy}>
-                        <Menu.ItemTitle>Copy</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={onPaste}>
-                        <Menu.ItemTitle>Paste</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onInsertAbove}>
-                        <Menu.ItemTitle>Insert {pluralize(rowSpan, 'row')} above</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={onInsertBelow}>
-                        <Menu.ItemTitle>Insert {pluralize(rowSpan, 'row')} below</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Menu.Item onPress={onDeleteRows} isDisabled={rowCount <= 1}>
-                        <Menu.ItemTitle>
-                            {rowSpan === 1 ? 'Delete row' : `Delete ${rowSpan} rows`}
-                        </Menu.ItemTitle>
-                    </Menu.Item>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onClear}>
-                        <Menu.ItemTitle>Clear contents</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Separator className="my-1 mx-2" />
-                    {clickedIndex != null && clickedIndex > 0 ? (
-                        <Menu.Item onPress={onFreezeRowsHere}>
-                            <Menu.ItemTitle>Freeze up to row {clickedIndex}</Menu.ItemTitle>
-                        </Menu.Item>
-                    ) : null}
-                    <Menu.Item onPress={onUnfreeze} isDisabled={!hasFreeze}>
-                        <Menu.ItemTitle>Unfreeze</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onResetRowHeight}>
-                        <Menu.ItemTitle>Reset to default height</Menu.ItemTitle>
-                    </Menu.Item>
-                    <Separator className="my-1 mx-2" />
-                    <Menu.Item onPress={onOpenConditionalFormatting}>
-                        <Menu.ItemTitle>{conditionalFormattingMenuLabel}</Menu.ItemTitle>
-                    </Menu.Item>
-                </Menu.Content>
-            </Menu.Portal>
+        <Menu
+            isOpen={isOpen}
+            onOpenChange={handleOpenChange}
+            anchor={anchor}
+            presentation="popover"
+        >
+            <Menu.Item label="Cut" onSelect={onCut} />
+            <Menu.Item label="Copy" onSelect={onCopy} />
+            <Menu.Item label="Paste" onSelect={onPaste} />
+            <Menu.Separator />
+            <Menu.Item
+                label={`Insert ${pluralize(rowSpan, 'row')} above`}
+                onSelect={onInsertAbove}
+            />
+            <Menu.Item
+                label={`Insert ${pluralize(rowSpan, 'row')} below`}
+                onSelect={onInsertBelow}
+            />
+            <Menu.Item
+                label={rowSpan === 1 ? 'Delete row' : `Delete ${rowSpan} rows`}
+                onSelect={onDeleteRows}
+                isDisabled={rowCount <= 1}
+            />
+            <Menu.Separator />
+            <Menu.Item label="Clear contents" onSelect={onClear} />
+            <Menu.Separator />
+            <FreezeHereItem
+                label={`Freeze up to row ${clickedIndex}`}
+                index={clickedIndex}
+                onSelect={onFreezeRowsHere}
+            />
+            <Menu.Item label="Unfreeze" onSelect={onUnfreeze} isDisabled={!hasFreeze} />
+            <Menu.Separator />
+            <Menu.Item label="Reset to default height" onSelect={onResetRowHeight} />
+            <Menu.Separator />
+            <Menu.Item
+                label={conditionalFormattingMenuLabel}
+                onSelect={onOpenConditionalFormatting}
+            />
         </Menu>
     )
+}
+
+function FreezeHereItem({
+    label,
+    index,
+    onSelect,
+}: {
+    label: string
+    index: number | null
+    onSelect: () => void
+}) {
+    if (index == null || index <= 0) return null
+    return <Menu.Item label={label} onSelect={onSelect} />
+}
+
+// No filter: offer the create dialog. A header-mode filter: edit or add
+// the clicked column's criterion, plus remove-all. A range filter is
+// managed from the cell menu, so the header menu shows nothing.
+function ColumnFilterItems({
+    filterMode,
+    clickedHasFilter,
+    isDisabled,
+    onOpenFilterDialog,
+    onRemoveFilter,
+}: {
+    filterMode: 'range' | 'header' | null
+    clickedHasFilter: boolean
+    isDisabled: boolean
+    onOpenFilterDialog: () => void
+    onRemoveFilter: () => void
+}) {
+    if (filterMode == null) {
+        return (
+            <Menu.Item
+                label="Create filter…"
+                onSelect={onOpenFilterDialog}
+                isDisabled={isDisabled}
+            />
+        )
+    }
+    if (filterMode === 'header') {
+        return (
+            <>
+                <Menu.Item
+                    label={clickedHasFilter ? 'Edit filter…' : 'Add filter…'}
+                    onSelect={onOpenFilterDialog}
+                    isDisabled={isDisabled}
+                />
+                <Menu.Item label="Remove all filters" onSelect={onRemoveFilter} />
+            </>
+        )
+    }
+    return null
 }

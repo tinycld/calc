@@ -2,11 +2,11 @@ import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {
     BORDERS_PALETTE,
     COLOR_PALETTE,
-    COLOR_PICKER_GRID_WIDTH,
     ColorPickerGrid,
     type Swatch,
 } from '@tinycld/core/ui/color-picker'
-import { Menu, useOpenMenu } from '@tinycld/core/ui/menubar'
+import { useOpenMenu } from '@tinycld/core/ui/menubar'
+import { Popover } from '@tinycld/core/ui/popover'
 import type { ComponentType, ReactNode } from 'react'
 import { useCallback } from 'react'
 import { View } from 'react-native'
@@ -29,6 +29,8 @@ interface ColorPickerMenuProps {
     onSetColor: (color: string) => void
 }
 
+// A swatch grid is not a list of commands, so the surface is a Popover.
+// It still joins the toolbar's single-open registry through useOpenMenu.
 export function ColorPickerMenu({
     color,
     disabled,
@@ -48,30 +50,18 @@ export function ColorPickerMenu({
         [onSetColor, setIsOpen]
     )
 
-    return (
-        <Menu isOpen={isOpen} onOpenChange={setIsOpen}>
-            <View {...(typeof document !== 'undefined' ? { 'data-tinycld-menu': 'trigger' } : {})}>
-                <Menu.Trigger>
-                    <ToolbarButton label={label} disabled={disabled}>
-                        <View className="items-center justify-center">
-                            <Icon size={14} color={fg} />
-                            {triggerOverlay}
-                        </View>
-                    </ToolbarButton>
-                </Menu.Trigger>
+    const trigger = (
+        <ToolbarButton label={label} disabled={disabled}>
+            <View className="items-center justify-center">
+                <Icon size={14} color={fg} />
+                {triggerOverlay}
             </View>
-            <Menu.Portal>
-                <Menu.Content placement="bottom" align="start">
-                    <View
-                        style={{ width: COLOR_PICKER_GRID_WIDTH }}
-                        {...(typeof document !== 'undefined'
-                            ? { 'data-tinycld-menu': 'content' }
-                            : {})}
-                    >
-                        <ColorPickerGrid selected={color} onSelect={onSelect} showClear />
-                    </View>
-                </Menu.Content>
-            </Menu.Portal>
-        </Menu>
+        </ToolbarButton>
+    )
+
+    return (
+        <Popover isOpen={isOpen} onOpenChange={setIsOpen} trigger={trigger} title={label}>
+            <ColorPickerGrid selected={color} onSelect={onSelect} showClear />
+        </Popover>
     )
 }

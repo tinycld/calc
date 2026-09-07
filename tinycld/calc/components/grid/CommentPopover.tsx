@@ -1,9 +1,9 @@
 import { useAuth } from '@tinycld/core/lib/auth'
 import { errorToString } from '@tinycld/core/lib/errors'
 import { FormErrorSummary, TextAreaInput, useForm, z, zodResolver } from '@tinycld/core/ui/form'
-import { Menu } from '@tinycld/core/ui/menu'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Popover } from '@tinycld/core/ui/popover'
+import { useCallback, useMemo, useState } from 'react'
+import { Pressable, ScrollView, Text, View } from 'react-native'
 import { useCommentMutations } from '../../hooks/use-comment-mutations'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { CommentRow, Thread } from '../../lib/comments'
@@ -27,46 +27,20 @@ const editSchema = z.object({
 type EditFormValues = z.infer<typeof editSchema>
 
 // Anchored at the cursor where the user opened the popover (or at the
-// cell rect center for the keyboard shortcut path). Same Menu primitive
-// the cell context menu uses, with a 0×0 trigger rect — see
-// CellContextMenu.tsx for the pattern.
+// cell rect center for the keyboard shortcut path). A comment thread is
+// not a list of commands, so it is a Popover rather than a Menu.
 export function CommentPopover({ driveItemId, sheetId }: CommentPopoverProps) {
     const target = useGridStore(s => s.commentTarget)
     const store = useGridStoreApi()
     const ctx = useCommentsContext()
 
     const onClose = useCallback(() => store.getState().closeCommentPopover(), [store])
-    const contentRef = useRef<View | null>(null)
-
-    // Web: outside-click dismissal. Mirrors CellContextMenu's pattern.
-    // The handler is registered on the next paint after open so the
-    // pointerdown that opened the popover (still mid-flight in the
-    // capture phase) doesn't immediately dismiss it. setTimeout(0) is
-    // enough to defer past the in-flight event loop.
-    useEffect(() => {
-        if (Platform.OS !== 'web') return
-        if (target == null) return
-        let attached = false
-        const handler = (event: PointerEvent) => {
-            const targetNode = event.target as Node | null
-            const node = contentRef.current as unknown as Node | null
-            if (targetNode && node?.contains(targetNode)) return
-            onClose()
-        }
-        const t = setTimeout(() => {
-            document.addEventListener('pointerdown', handler, true)
-            attached = true
-        }, 0)
-        return () => {
-            clearTimeout(t)
-            if (attached) document.removeEventListener('pointerdown', handler, true)
-        }
-    }, [target, onClose])
 
     const isOpen = target != null
-    const triggerPos = target
-        ? { x: target.cursor.x, y: target.cursor.y, width: 0, height: 0 }
-        : null
+    const anchor = useMemo(
+        () => (target ? { x: target.cursor.x, y: target.cursor.y } : undefined),
+        [target]
+    )
 
     const handleOpenChange = useCallback(
         (open: boolean) => {
@@ -78,26 +52,33 @@ export function CommentPopover({ driveItemId, sheetId }: CommentPopoverProps) {
     const threads = target && ctx ? ctx.getThreads(sheetId, target.cell.row, target.cell.col) : []
 
     return (
-        <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
-            <Menu.Portal>
-                {Platform.OS !== 'web' && (
-                    <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-                )}
-                <Menu.Content ref={contentRef} placement="bottom" align="start">
-                    {target ? (
-                        <PopoverBody
-                            driveItemId={driveItemId}
-                            sheetId={sheetId}
-                            row={target.cell.row}
-                            col={target.cell.col}
-                            threads={threads}
-                            onClose={onClose}
-                        />
-                    ) : null}
-                </Menu.Content>
-            </Menu.Portal>
-        </Menu>
+        <Popover
+            isOpen={isOpen}
+            onOpenChange={handleOpenChange}
+            anchor={anchor}
+            presentation="popover"
+            width={320}
+            title="Comments"
+        >
+            <OpenPopoverBody
+                target={target}
+                driveItemId={driveItemId}
+                sheetId={sheetId}
+                threads={threads}
+                onClose={onClose}
+            />
+        </Popover>
     )
+}
+
+function OpenPopoverBody({
+    target,
+    ...rest
+}: Omit<PopoverBodyProps, 'row' | 'col'> & {
+    target: { cell: { row: number; col: number } } | null
+}) {
+    if (target == null) return null
+    return <PopoverBody {...rest} row={target.cell.row} col={target.cell.col} />
 }
 
 interface PopoverBodyProps {
@@ -178,7 +159,7 @@ function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: Popov
     const submitErrorText = submitError ? errorToString(submitError) : null
 
     return (
-        <View style={{ width: 320, maxHeight: 480 }}>
+        <View>
             <View className="flex-row items-center justify-between px-3 py-2 border-b border-border">
                 <Text className="text-sm font-semibold text-foreground">Comments</Text>
                 {activeThread ? (

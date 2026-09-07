@@ -1,6 +1,5 @@
-import { Menu, Separator } from '@tinycld/core/ui/menu'
-import { useCallback, useEffect, useRef } from 'react'
-import { Platform, Pressable, StyleSheet, type View } from 'react-native'
+import { Menu } from '@tinycld/core/ui/menu'
+import { useCallback, useMemo } from 'react'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import { DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT } from '../../lib/dimensions'
 
@@ -38,27 +37,12 @@ export function HandleContextMenu({
     const target = useGridStore(s => s.handleMenu)
     const store = useGridStoreApi()
     const onClose = useCallback(() => store.getState().closeHandleMenu(), [store])
-    const contentRef = useRef<View | null>(null)
-
-    useEffect(() => {
-        if (Platform.OS !== 'web') return
-        if (target == null) return
-        const handler = (event: PointerEvent) => {
-            const targetNode = event.target as Node | null
-            const node = contentRef.current as unknown as Node | null
-            if (targetNode && node?.contains(targetNode)) return
-            onClose()
-        }
-        document.addEventListener('pointerdown', handler, true)
-        return () => {
-            document.removeEventListener('pointerdown', handler, true)
-        }
-    }, [target, onClose])
 
     const isOpen = target != null
-    const triggerPos = target
-        ? { x: target.cursor.x, y: target.cursor.y, width: 0, height: 0 }
-        : null
+    const anchor = useMemo(
+        () => (target ? { x: target.cursor.x, y: target.cursor.y } : undefined),
+        [target]
+    )
 
     const handleOpenChange = useCallback(
         (open: boolean) => {
@@ -112,50 +96,71 @@ export function HandleContextMenu({
     const isCol = target?.axis === 'col'
 
     return (
-        <Menu isOpen={isOpen} onOpenChange={handleOpenChange} triggerPosition={triggerPos}>
-            <Menu.Portal>
-                {Platform.OS !== 'web' && (
-                    <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-                )}
-                <Menu.Content ref={contentRef} placement="bottom" align="start">
-                    {isCol ? (
-                        <>
-                            <Menu.Item onPress={onInsertColLeft}>
-                                <Menu.ItemTitle>Insert 1 column left</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onInsertColRight}>
-                                <Menu.ItemTitle>Insert 1 column right</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onDeleteCol} isDisabled={colCount <= 1}>
-                                <Menu.ItemTitle>Delete column</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Separator className="my-1 mx-2" />
-                            <Menu.Item onPress={onAutosizeItem}>
-                                <Menu.ItemTitle>Auto-fit column width</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onResetItem}>
-                                <Menu.ItemTitle>Reset to default width</Menu.ItemTitle>
-                            </Menu.Item>
-                        </>
-                    ) : (
-                        <>
-                            <Menu.Item onPress={onInsertRowAbove}>
-                                <Menu.ItemTitle>Insert 1 row above</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onInsertRowBelow}>
-                                <Menu.ItemTitle>Insert 1 row below</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Menu.Item onPress={onDeleteRow} isDisabled={rowCount <= 1}>
-                                <Menu.ItemTitle>Delete row</Menu.ItemTitle>
-                            </Menu.Item>
-                            <Separator className="my-1 mx-2" />
-                            <Menu.Item onPress={onResetItem}>
-                                <Menu.ItemTitle>Reset to default height</Menu.ItemTitle>
-                            </Menu.Item>
-                        </>
-                    )}
-                </Menu.Content>
-            </Menu.Portal>
+        <Menu
+            isOpen={isOpen}
+            onOpenChange={handleOpenChange}
+            anchor={anchor}
+            presentation="popover"
+        >
+            <HandleMenuRows
+                isCol={isCol}
+                rowCount={rowCount}
+                colCount={colCount}
+                onInsertColLeft={onInsertColLeft}
+                onInsertColRight={onInsertColRight}
+                onDeleteCol={onDeleteCol}
+                onInsertRowAbove={onInsertRowAbove}
+                onInsertRowBelow={onInsertRowBelow}
+                onDeleteRow={onDeleteRow}
+                onAutosize={onAutosizeItem}
+                onReset={onResetItem}
+            />
         </Menu>
+    )
+}
+
+interface HandleMenuRowsProps {
+    isCol: boolean
+    rowCount: number
+    colCount: number
+    onInsertColLeft: () => void
+    onInsertColRight: () => void
+    onDeleteCol: () => void
+    onInsertRowAbove: () => void
+    onInsertRowBelow: () => void
+    onDeleteRow: () => void
+    onAutosize: () => void
+    onReset: () => void
+}
+
+function HandleMenuRows(props: HandleMenuRowsProps) {
+    if (props.isCol) {
+        return (
+            <>
+                <Menu.Item label="Insert 1 column left" onSelect={props.onInsertColLeft} />
+                <Menu.Item label="Insert 1 column right" onSelect={props.onInsertColRight} />
+                <Menu.Item
+                    label="Delete column"
+                    onSelect={props.onDeleteCol}
+                    isDisabled={props.colCount <= 1}
+                />
+                <Menu.Separator />
+                <Menu.Item label="Auto-fit column width" onSelect={props.onAutosize} />
+                <Menu.Item label="Reset to default width" onSelect={props.onReset} />
+            </>
+        )
+    }
+    return (
+        <>
+            <Menu.Item label="Insert 1 row above" onSelect={props.onInsertRowAbove} />
+            <Menu.Item label="Insert 1 row below" onSelect={props.onInsertRowBelow} />
+            <Menu.Item
+                label="Delete row"
+                onSelect={props.onDeleteRow}
+                isDisabled={props.rowCount <= 1}
+            />
+            <Menu.Separator />
+            <Menu.Item label="Reset to default height" onSelect={props.onReset} />
+        </>
     )
 }

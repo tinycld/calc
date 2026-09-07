@@ -1,7 +1,7 @@
 import { useEditorMount } from '@tinycld/core/lib/editor/editor-mount'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { ConfirmDialog } from '@tinycld/core/ui/ConfirmDialog'
-import { Menu, MenuBarMenu, MenuShortcut, Separator } from '@tinycld/core/ui/menubar'
+import { Menu, MenuBarMenu } from '@tinycld/core/ui/menubar'
 import { PromptDialog } from '@tinycld/core/ui/PromptDialog'
 import { TemplatePickerDialog } from '@tinycld/drive/components/TemplatePickerDialog'
 import { useHasTemplates } from '@tinycld/drive/hooks/use-template-items'
@@ -96,73 +96,42 @@ export function FileMenu(props: MenuBarProps) {
     return (
         <>
             <MenuBarMenu menuId="file" label="File">
-                <Menu.Item onPress={() => router.push(orgHref('calc'))}>
-                    <Menu.ItemTitle>New spreadsheet</Menu.ItemTitle>
-                </Menu.Item>
-                {hasTemplates && (
-                    <Menu.Item onPress={() => setTemplatePickerOpen(true)}>
-                        <Menu.ItemTitle>New from template…</Menu.ItemTitle>
-                    </Menu.Item>
-                )}
-                <Menu.Item onPress={() => router.push(orgHref('drive'))}>
-                    <Menu.ItemTitle>Open</Menu.ItemTitle>
-                </Menu.Item>
-                <Menu.Item onPress={openImport}>
-                    <Menu.ItemTitle>Import</Menu.ItemTitle>
-                </Menu.Item>
-                <Menu.Item onPress={() => setCopyOpen(true)}>
-                    <Menu.ItemTitle>Make a copy</Menu.ItemTitle>
-                </Menu.Item>
-                {!isAlreadyTemplate && (
-                    <Menu.Item onPress={handleExportTemplate}>
-                        <Menu.ItemTitle>Export as template…</Menu.ItemTitle>
-                    </Menu.Item>
-                )}
-                {capabilities.canUseFileActions && (
-                    <Menu.Item onPress={() => setShareOpen(true)}>
-                        <Menu.ItemTitle>Share</Menu.ItemTitle>
-                    </Menu.Item>
-                )}
-                <Menu.Item onPress={() => setSaveVersionOpen(true)}>
-                    <Menu.ItemTitle>Save version</Menu.ItemTitle>
-                </Menu.Item>
-                <Separator />
-                <Menu.Sub>
-                    <Menu.SubTrigger>
-                        <Menu.ItemTitle>Download</Menu.ItemTitle>
-                    </Menu.SubTrigger>
-                    <Menu.SubContent>
-                        {props.onDownloadXlsx != null && (
-                            <Menu.Item onPress={props.onDownloadXlsx}>
-                                <Menu.ItemTitle>Download as XLSX</Menu.ItemTitle>
-                            </Menu.Item>
-                        )}
-                        <Menu.Item onPress={props.onDownloadCsvCurrent}>
-                            <Menu.ItemTitle>Download as CSV (current sheet)</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={props.onDownloadCsvAll}>
-                            <Menu.ItemTitle>Download as CSV (all sheets)</Menu.ItemTitle>
-                        </Menu.Item>
-                        <Menu.Item onPress={downloadPdf}>
-                            <Menu.ItemTitle>Download as PDF</Menu.ItemTitle>
-                        </Menu.Item>
-                    </Menu.SubContent>
+                <Menu.Item label="New spreadsheet" onSelect={() => router.push(orgHref('calc'))} />
+                <NewFromTemplateItem
+                    isVisible={hasTemplates}
+                    onSelect={() => setTemplatePickerOpen(true)}
+                />
+                <Menu.Item label="Open" onSelect={() => router.push(orgHref('drive'))} />
+                <Menu.Item label="Import" onSelect={openImport} />
+                <Menu.Item label="Make a copy" onSelect={() => setCopyOpen(true)} />
+                <ExportTemplateItem
+                    isVisible={!isAlreadyTemplate}
+                    onSelect={handleExportTemplate}
+                />
+                <ShareItem
+                    isVisible={capabilities.canUseFileActions}
+                    onSelect={() => setShareOpen(true)}
+                />
+                <Menu.Item label="Save version" onSelect={() => setSaveVersionOpen(true)} />
+                <Menu.Separator />
+                <Menu.Sub label="Download">
+                    <DownloadXlsxItem onSelect={props.onDownloadXlsx} />
+                    <Menu.Item
+                        label="Download as CSV (current sheet)"
+                        onSelect={props.onDownloadCsvCurrent}
+                    />
+                    <Menu.Item
+                        label="Download as CSV (all sheets)"
+                        onSelect={props.onDownloadCsvAll}
+                    />
+                    <Menu.Item label="Download as PDF" onSelect={downloadPdf} />
                 </Menu.Sub>
-                <Separator />
-                <Menu.Item onPress={() => setRenameOpen(true)}>
-                    <Menu.ItemTitle>Rename</Menu.ItemTitle>
-                </Menu.Item>
-                <Menu.Item onPress={() => setTrashOpen(true)}>
-                    <Menu.ItemTitle>Move to trash</Menu.ItemTitle>
-                </Menu.Item>
-                <Menu.Item onPress={props.fileActions.openDriveDetails}>
-                    <Menu.ItemTitle>Details</Menu.ItemTitle>
-                </Menu.Item>
-                <Separator />
-                <Menu.Item onPress={props.onOpenPrint}>
-                    <Menu.ItemTitle>Print</Menu.ItemTitle>
-                    <MenuShortcut keys="⌘P" />
-                </Menu.Item>
+                <Menu.Separator />
+                <Menu.Item label="Rename" onSelect={() => setRenameOpen(true)} />
+                <Menu.Item label="Move to trash" onSelect={() => setTrashOpen(true)} />
+                <Menu.Item label="Details" onSelect={props.fileActions.openDriveDetails} />
+                <Menu.Separator />
+                <Menu.Item label="Print" shortcut="⌘P" onSelect={props.onOpenPrint} />
             </MenuBarMenu>
             <TemplatePickerDialog
                 open={isTemplatePickerOpen}
@@ -216,4 +185,29 @@ export function FileMenu(props: MenuBarProps) {
             )}
         </>
     )
+}
+
+interface OptionalItemProps {
+    isVisible: boolean
+    onSelect: () => void
+}
+
+function NewFromTemplateItem({ isVisible, onSelect }: OptionalItemProps) {
+    if (!isVisible) return null
+    return <Menu.Item label="New from template…" onSelect={onSelect} />
+}
+
+function ExportTemplateItem({ isVisible, onSelect }: OptionalItemProps) {
+    if (!isVisible) return null
+    return <Menu.Item label="Export as template…" onSelect={onSelect} />
+}
+
+function ShareItem({ isVisible, onSelect }: OptionalItemProps) {
+    if (!isVisible) return null
+    return <Menu.Item label="Share" onSelect={onSelect} />
+}
+
+function DownloadXlsxItem({ onSelect }: { onSelect: (() => void) | undefined }) {
+    if (onSelect == null) return null
+    return <Menu.Item label="Download as XLSX" onSelect={onSelect} />
 }
