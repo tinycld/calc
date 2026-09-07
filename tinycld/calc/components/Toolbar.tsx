@@ -1,10 +1,17 @@
+import { ResponsiveToolbar, type ToolbarItem } from '@tinycld/core/components/ResponsiveToolbar'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {
+    AlignLeft,
     ArrowLeft,
     ArrowRight,
+    Baseline,
     Bold,
     DollarSign,
+    Grid3x3,
+    Hash,
     Italic,
+    type LucideIcon,
+    PaintBucket,
     Paintbrush,
     Percent,
     Redo,
@@ -18,15 +25,18 @@ import { Text, View } from 'react-native'
 import type * as Y from 'yjs'
 import type { HorizontalAlign } from '../hooks/grid/use-grid-format-controls'
 import type { BorderPresetId } from '../lib/border-presets'
+import { findPresetByNumFmt } from '../lib/number-format/presets'
 import type { CellBorders } from '../lib/workbook-types'
-import { PivotInsertButton } from './pivot/PivotInsertButton'
-import { BordersMenu } from './toolbar/BordersMenu'
+import { PivotTableIcon } from './icons'
+import { usePivotInsert } from './pivot/PivotInsertButton'
+import { BordersMenu, BordersRows } from './toolbar/BordersMenu'
+import { ColorPickerRows } from './toolbar/ColorPickerMenu'
 import { FillColorMenu } from './toolbar/FillColorMenu'
-import { FontSizeStepper } from './toolbar/FontSizeStepper'
-import { HorizontalAlignMenu } from './toolbar/HorizontalAlignMenu'
-import { NumberFormatMenu } from './toolbar/NumberFormatMenu'
+import { FontSizeRows, FontSizeStepper } from './toolbar/FontSizeStepper'
+import { HorizontalAlignMenu, HorizontalAlignRows } from './toolbar/HorizontalAlignMenu'
+import { NumberFormatMenu, NumberFormatRows } from './toolbar/NumberFormatMenu'
 import { TextColorMenu } from './toolbar/TextColorMenu'
-import { ToolbarButton, ToolbarDivider } from './toolbar/ToolbarButton'
+import { ToolbarButton } from './toolbar/ToolbarButton'
 
 export interface ToolbarProps {
     // Selection-based disable for the formatting buttons. Undo/Redo
@@ -122,7 +132,41 @@ export interface ToolbarProps {
 // see Grid.tsx where the inline arrows are wrapped in useCallback.
 export const Toolbar = memo(ToolbarImpl)
 
+const SEPARATOR: ToolbarItem = { type: 'separator' }
+
+// The formatting row on the shared ResponsiveToolbar: what does not fit the
+// width folds into a More menu, the pickers and popovers as submenus of the
+// same rows and panels. The pivot dialog is hoisted out of its button so it
+// stays mounted while the button is folded away.
 function ToolbarImpl(props: ToolbarProps) {
+    const pivot = usePivotInsert({
+        doc: props.doc,
+        defaultSourceRange: props.pivotSourceRangeDefault,
+        defaultTargetSheetName: props.pivotTargetSheetNameDefault,
+        onActivateSheet: props.onPivotSheetActivated,
+    })
+    const items = useToolbarItems(props, pivot)
+
+    return (
+        <View
+            className="overflow-visible"
+            {...(typeof document !== 'undefined' ? { 'data-test-id': 'calc-toolbar' } : {})}
+        >
+            <ResponsiveToolbar
+                items={items}
+                height={32}
+                gap={0}
+                className="bg-surface-secondary border-b border-border px-1"
+            />
+            {pivot.dialog}
+        </View>
+    )
+}
+
+function useToolbarItems(
+    props: ToolbarProps,
+    pivot: ReturnType<typeof usePivotInsert>
+): ToolbarItem[] {
     const {
         disabled,
         canUndo,
@@ -156,118 +200,214 @@ function ToolbarImpl(props: ToolbarProps) {
         isFormatPainterActive,
         onActivateFormatPainter,
         onOpenFind,
-        doc,
-        pivotSourceRangeDefault,
-        pivotTargetSheetNameDefault,
-        onPivotSheetActivated,
     } = props
 
-    return (
-        <View
-            className="flex-row items-center bg-surface-secondary border-b border-border overflow-visible"
-            style={{ height: 32, paddingHorizontal: 4 }}
-            {...(typeof document !== 'undefined' ? { 'data-test-id': 'calc-toolbar' } : {})}
-        >
-            <ToolbarButton icon={Undo} disabled={!canUndo} onPress={onUndo} label="Undo" />
-            <ToolbarButton icon={Redo} disabled={!canRedo} onPress={onRedo} label="Redo" />
-            <ToolbarDivider />
+    // One button: in the row as a ToolbarButton, in the More menu as a row.
+    const button = (
+        key: string,
+        icon: LucideIcon,
+        label: string,
+        onPress: () => void,
+        options: { isDisabled?: boolean; isActive?: boolean } = {}
+    ): ToolbarItem => ({
+        type: 'custom',
+        key,
+        element: (
+            <ToolbarButton
+                icon={icon}
+                active={options.isActive}
+                disabled={options.isDisabled}
+                onPress={onPress}
+                label={label}
+            />
+        ),
+        overflow: { label, icon, onPress, isDisabled: options.isDisabled },
+    })
 
-            <ToolbarButton
-                icon={Paintbrush}
-                active={isFormatPainterActive}
-                disabled={disabled}
-                onPress={onActivateFormatPainter}
-                label="Format painter"
-            />
-            <NumberFormatMenu
-                currentNumFmt={currentNumFmt}
-                disabled={disabled}
-                onApplyPreset={onApplyPreset}
-            />
-            <ToolbarButton
-                icon={DollarSign}
-                disabled={disabled}
-                onPress={onApplyCurrency}
-                label="Format as currency"
-            />
-            <ToolbarButton
-                icon={Percent}
-                disabled={disabled}
-                onPress={onApplyPercent}
-                label="Format as percent"
-            />
-            <ToolbarButton
-                disabled={disabled}
-                onPress={onDecreaseDecimal}
-                label="Decrease decimal places"
-                width={32}
-            >
-                <DecimalIcon direction="decrease" />
-            </ToolbarButton>
-            <ToolbarButton
-                disabled={disabled}
-                onPress={onIncreaseDecimal}
-                label="Increase decimal places"
-                width={32}
-            >
-                <DecimalIcon direction="increase" />
-            </ToolbarButton>
-            <ToolbarDivider />
-
-            <FontSizeStepper size={fontSize} disabled={disabled} onSetSize={onSetFontSize} />
-            <ToolbarDivider />
-
-            <ToolbarButton
-                icon={Bold}
-                active={isBold}
-                disabled={disabled}
-                onPress={onToggleBold}
-                label="Bold"
-            />
-            <ToolbarButton
-                icon={Italic}
-                active={isItalic}
-                disabled={disabled}
-                onPress={onToggleItalic}
-                label="Italic"
-            />
-            <ToolbarButton
-                icon={Underline}
-                active={isUnderline}
-                disabled={disabled}
-                onPress={onToggleUnderline}
-                label="Underline"
-            />
-            <ToolbarButton
-                icon={Strikethrough}
-                active={isStrike}
-                disabled={disabled}
-                onPress={onToggleStrike}
-                label="Strikethrough"
-            />
-            <TextColorMenu color={fontColor} disabled={disabled} onSetColor={onSetFontColor} />
-            <FillColorMenu color={fillColor} disabled={disabled} onSetColor={onSetFillColor} />
-            <BordersMenu borders={borders} disabled={disabled} onSetBorders={onSetBorders} />
-            <ToolbarDivider />
-
-            <HorizontalAlignMenu
-                align={horizontalAlign}
-                disabled={disabled}
-                onSetAlign={onSetHorizontalAlign}
-            />
-            <ToolbarDivider />
-
-            <ToolbarButton icon={Search} onPress={onOpenFind} label="Find and replace" />
-            <ToolbarDivider />
-
-            <PivotInsertButton
-                doc={doc}
-                defaultSourceRange={pivotSourceRangeDefault}
-                defaultTargetSheetName={pivotTargetSheetNameDefault}
-                onActivateSheet={onPivotSheetActivated}
-            />
-        </View>
-    )
+    return [
+        button('undo', Undo, 'Undo', onUndo, { isDisabled: !canUndo }),
+        button('redo', Redo, 'Redo', onRedo, { isDisabled: !canRedo }),
+        SEPARATOR,
+        button('format-painter', Paintbrush, 'Format painter', onActivateFormatPainter, {
+            isDisabled: disabled,
+            isActive: isFormatPainterActive,
+        }),
+        {
+            type: 'custom',
+            key: 'number-format',
+            element: (
+                <NumberFormatMenu
+                    currentNumFmt={currentNumFmt}
+                    disabled={disabled}
+                    onApplyPreset={onApplyPreset}
+                />
+            ),
+            overflow: {
+                label: 'Number format',
+                icon: Hash,
+                isDisabled: disabled,
+                children: (
+                    <NumberFormatRows
+                        activeId={findPresetByNumFmt(currentNumFmt)?.id}
+                        onSelect={onApplyPreset}
+                    />
+                ),
+            },
+        },
+        button('currency', DollarSign, 'Format as currency', onApplyCurrency, {
+            isDisabled: disabled,
+        }),
+        button('percent', Percent, 'Format as percent', onApplyPercent, { isDisabled: disabled }),
+        {
+            type: 'custom',
+            key: 'decimal-decrease',
+            element: (
+                <ToolbarButton
+                    disabled={disabled}
+                    onPress={onDecreaseDecimal}
+                    label="Decrease decimal places"
+                    width={32}
+                >
+                    <DecimalIcon direction="decrease" />
+                </ToolbarButton>
+            ),
+            overflow: {
+                label: 'Decrease decimal places',
+                icon: ArrowLeft,
+                onPress: onDecreaseDecimal,
+                isDisabled: disabled,
+            },
+        },
+        {
+            type: 'custom',
+            key: 'decimal-increase',
+            element: (
+                <ToolbarButton
+                    disabled={disabled}
+                    onPress={onIncreaseDecimal}
+                    label="Increase decimal places"
+                    width={32}
+                >
+                    <DecimalIcon direction="increase" />
+                </ToolbarButton>
+            ),
+            overflow: {
+                label: 'Increase decimal places',
+                icon: ArrowRight,
+                onPress: onIncreaseDecimal,
+                isDisabled: disabled,
+            },
+        },
+        SEPARATOR,
+        {
+            type: 'custom',
+            key: 'font-size',
+            element: (
+                <FontSizeStepper size={fontSize} disabled={disabled} onSetSize={onSetFontSize} />
+            ),
+            overflow: {
+                label: 'Font size',
+                isDisabled: disabled,
+                children: <FontSizeRows size={fontSize} onSetSize={onSetFontSize} />,
+            },
+        },
+        SEPARATOR,
+        button('bold', Bold, 'Bold', onToggleBold, { isDisabled: disabled, isActive: isBold }),
+        button('italic', Italic, 'Italic', onToggleItalic, {
+            isDisabled: disabled,
+            isActive: isItalic,
+        }),
+        button('underline', Underline, 'Underline', onToggleUnderline, {
+            isDisabled: disabled,
+            isActive: isUnderline,
+        }),
+        button('strike', Strikethrough, 'Strikethrough', onToggleStrike, {
+            isDisabled: disabled,
+            isActive: isStrike,
+        }),
+        {
+            type: 'custom',
+            key: 'text-color',
+            element: (
+                <TextColorMenu color={fontColor} disabled={disabled} onSetColor={onSetFontColor} />
+            ),
+            overflow: {
+                label: 'Text color',
+                icon: Baseline,
+                isDisabled: disabled,
+                children: <ColorPickerRows color={fontColor} onSetColor={onSetFontColor} />,
+            },
+        },
+        {
+            type: 'custom',
+            key: 'fill-color',
+            element: (
+                <FillColorMenu color={fillColor} disabled={disabled} onSetColor={onSetFillColor} />
+            ),
+            overflow: {
+                label: 'Fill color',
+                icon: PaintBucket,
+                isDisabled: disabled,
+                children: <ColorPickerRows color={fillColor} onSetColor={onSetFillColor} />,
+            },
+        },
+        {
+            type: 'custom',
+            key: 'borders',
+            element: (
+                <BordersMenu borders={borders} disabled={disabled} onSetBorders={onSetBorders} />
+            ),
+            overflow: {
+                label: 'Borders',
+                icon: Grid3x3,
+                isDisabled: disabled,
+                children: <BordersRows borders={borders} onSetBorders={onSetBorders} />,
+            },
+        },
+        SEPARATOR,
+        {
+            type: 'custom',
+            key: 'align',
+            element: (
+                <HorizontalAlignMenu
+                    align={horizontalAlign}
+                    disabled={disabled}
+                    onSetAlign={onSetHorizontalAlign}
+                />
+            ),
+            overflow: {
+                label: 'Horizontal align',
+                icon: AlignLeft,
+                isDisabled: disabled,
+                children: (
+                    <HorizontalAlignRows
+                        align={horizontalAlign}
+                        onSetAlign={onSetHorizontalAlign}
+                    />
+                ),
+            },
+        },
+        SEPARATOR,
+        button('find', Search, 'Find and replace', onOpenFind),
+        SEPARATOR,
+        {
+            type: 'custom',
+            key: 'pivot',
+            element: (
+                <ToolbarButton
+                    icon={PivotTableIcon}
+                    label="Insert pivot table"
+                    disabled={pivot.isDisabled}
+                    onPress={pivot.open}
+                />
+            ),
+            overflow: {
+                label: 'Insert pivot table',
+                onPress: pivot.open,
+                isDisabled: pivot.isDisabled,
+            },
+        },
+    ]
 }
 
 // DecimalIcon is a lightweight composition: ".0" text plus a left or
