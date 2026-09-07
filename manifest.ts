@@ -25,7 +25,6 @@ const manifest = {
     cli: {
         package: 'cli',
         module: 'tinycld.org/packages/calc/cli',
-        scopes: ['calc:read', 'calc:write'],
     },
     repository: { url: 'https://github.com/tinycld/calc' },
     dependencies: ['drive'],
