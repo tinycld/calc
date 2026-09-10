@@ -3,7 +3,7 @@
     "version": "0.2.2",
     "private": true,
     "type": "module",
-    "description": "Spreadsheets for your organization",
+    "description": "Collaborative spreadsheets for your server",
     "exports": {
         "./package.json": "./package.json",
         "./manifest": "./manifest.ts",
