@@ -51,7 +51,7 @@ Each name belongs to either the **workbook** (visible everywhere) or one **sheet
 
 Open **Data → Named ranges…** to see every defined name with its scope, expression, and current value. Use **Edit** to change any field or **Delete** to remove it.
 
-Cells that depend on a deleted name show `#NAME?` — restore by Ctrl/⌘+Z or redefine the name.
+Cells that depend on a deleted name show `#NAME?` — restore with ⌘Z or redefine the name.
 
 ## When sheets are renamed or deleted
 

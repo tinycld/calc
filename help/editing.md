@@ -24,7 +24,7 @@ Calc figures out the cell's type from what you type:
 - **A range** — click and drag, or click the first cell and shift-click the last.
 - **A whole row or column** — click the row number or column letter.
 - **Everything** — click the corner cell (top-left, above row 1).
-- **Disjoint cells** (web only) — hold ⌘ (Mac) or Ctrl (Windows) and click additional cells or ranges.
+- **Disjoint cells** (web only) — hold ⌘ and click additional cells or ranges.
 - **Extend with the keyboard** — hold Shift and use the arrow keys.
 
 On iPad, drag the small **corner handles** at the edges of a selection to extend it — there's no shift key.

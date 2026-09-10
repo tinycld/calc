@@ -34,6 +34,10 @@ Calc auto-paginates — it splits the sheet into pages that fit the paper size. 
 
 Pivot table output cells print like any other cells — what's on screen is what prints.
 
+## Saving a PDF without printing
+
+**File → Download → Download as PDF** converts the saved workbook to a PDF on the server and downloads it. Use it when you want a file to attach or share rather than a printout of the active sheet. See [Managing workbooks](help://calc:file-actions).
+
 ## See also
 
 - [Formatting cells](help://calc:formatting)

@@ -1,6 +1,6 @@
 # calc
 
-Spreadsheets for your organization.
+Collaborative spreadsheets for your server.
 
 A feature package for the [tinycld](https://tinycld.org/) ecosystem.
 Lives as a standalone git repo alongside the [tinycld app
@@ -28,8 +28,9 @@ Editing features:
   and columns in sync (`lib/formula/`)
 - Cell formatting — font (family / size / color), fill color, text
   styles (**bold / italic / underline / strike**), horizontal
-  alignment, per-edge borders with presets, and a clear-formatting
-  shortcut (⌘\)
+  alignment, per-edge borders with presets, a **Format painter**
+  toolbar button that stamps one cell's style onto a range
+  (`FormatPainterOverlay`), and a clear-formatting shortcut (⌘\)
 - Number formats — preset registry (currency, percent, decimal
   stepper, date / time, custom) backed by `numfmt` (`lib/number-format/`)
 - Structural mutations — insert / delete rows and columns, merge
@@ -37,9 +38,10 @@ Editing features:
   auto-fit), per-sheet tab color, hide / unhide sheets, freeze panes
   (rows / columns / up to selection)
 - Copy / cut / paste with a **marching-ants cut overlay**, paste
-  special (**Values only** / **Format only**), and TSV / HTML
-  clipboard codecs that round-trip with Excel and Sheets
-  (`lib/clipboard/`)
+  special (**Values only** / **Format only** in the Edit menu;
+  **Formulas only** / **Transposed** via shortcut and the cell context
+  menu), and TSV / HTML clipboard codecs that round-trip with Excel
+  and Sheets (`lib/clipboard/`)
 - **Fill handle** — drag the selected range's corner to extend a
   series; the detector (`lib/fill/detect-series.ts`) handles linear
   numeric, date, and weekday patterns; live shift-toggle mid-drag
@@ -61,7 +63,9 @@ Editing features:
   (`lib/pivot/`)
 - Per-cell **threaded comments** (`useCellComments`,
   `CommentPopover`, `CommentIndicator`), persisted in PocketBase and
-  written to the xlsx as classic cell notes on save
+  written to the xlsx as classic cell notes on save; **View → Show
+  comments** opens core's comment drawer listing every thread in the
+  workbook (`components/comments/CalcCommentDrawer.tsx`)
 - **Live presence** — peer cursors, selections, and "who's editing
   this cell" through Yjs awareness
 - Find and replace (`FindReplaceDialog`) — match scope, case
@@ -74,9 +78,17 @@ Editing features:
   from Drive's version history
 - File actions — **New spreadsheet**, **Open**, **Make a copy**,
   **Share** (Drive's share dialog rendered inside the editor),
-  **Rename**, **Move to trash**, **Details**. The Share dialog is
-  gated on `capabilities.canUseFileActions` so guest / anon
-  share-link visitors don't see it.
+  **Rename**, **Move to trash**, **Details**, and a **Download**
+  submenu (CSV per sheet / all sheets, PDF via drive's server-side
+  `exportItem`). The Share dialog is gated on
+  `capabilities.canUseFileActions` so guest / anon share-link
+  visitors don't see it.
+- **Templates** — any workbook named `*.tmpl.xlsx` is a template.
+  **File → New from template…** (and **From template…** on the index)
+  opens drive's `TemplatePickerDialog` and copies the pick into a fresh
+  workbook; **File → Export as template…** saves the current workbook
+  as a `.tmpl.xlsx` through the folder-picker copy flow. Naming helpers
+  come from `@tinycld/drive/lib/template-naming`.
 - **Print** (`lib/print/`) — dedicated render pipeline that
   paginates the active sheet for browser print on web and the iOS
   print sheet on iPad
@@ -150,7 +162,7 @@ Docs: [Automation rules](https://tinycld.org/docs/automation-rules)
 | Sort / filter                        | ✅  | ✅   |
 | Conditional formatting               | ✅  | ✅   |
 | Pivot tables                         | ✅  | ✅   |
-| Disjoint selection (Ctrl-click)      | ✅  | n/a (no modifier key) |
+| Disjoint selection (⌘-click)         | ✅  | n/a (no modifier key) |
 | Live shift toggle mid-fill-drag      | ✅  | n/a (no modifier key) |
 | Marching-ants cut animation          | ✅  | static dashed border |
 
@@ -164,39 +176,53 @@ For manual iPad release-gating, see `tinycld/calc/tests/manual/ipad-smoke.md`.
 
 A Sheets-style menubar sits above the toolbar:
 
-- **File** — New spreadsheet, Open, Import, Make a copy (clones the
-  workbook's xlsx blob into a new drive_items row and opens it), Share
+- **File** — New spreadsheet, New from template… (shown only when a
+  `.tmpl.xlsx` exists in Drive), Open, Import, Make a copy (clones the
+  workbook's xlsx blob into a new drive_items row and opens it), Export
+  as template… (hidden when the workbook already is one), Share
   (Drive's share dialog rendered directly inside the editor — gated on
   EditorMount `capabilities.canUseFileActions` so guest/anon share-link
   visitors don't see it), Save version (snapshots the current xlsx +
-  yjs state for later restore from Drive's version history), Download
-  as CSV (current sheet / all sheets), Rename, Move to trash, Details,
-  Print. The menu is wired to accept an optional XLSX download handler
-  (`onDownloadXlsx` on `FileMenu` / `Toolbar`), but no caller currently
-  provides one — the "Download as XLSX" item is conditionally hidden
-  until that handler is connected. Round-tripping the doc back to xlsx
-  happens server-side on every save, so the bits for an XLSX download
-  already exist on `drive_items.file`; wiring is the missing piece.
+  yjs state for later restore from Drive's version history), a
+  **Download** submenu (Download as CSV — current sheet / all sheets —
+  and Download as PDF, which calls drive's server-side `exportItem`),
+  Rename, Move to trash, Details, Print (⌘P). The Download submenu is
+  wired to accept an optional XLSX download handler (`onDownloadXlsx`
+  on `FileMenu` / `Toolbar`), but no caller currently provides one —
+  the "Download as XLSX" item is conditionally hidden until that
+  handler is connected. Round-tripping the doc back to xlsx happens
+  server-side on every save, so the bits for an XLSX download already
+  exist on `drive_items.file`; wiring is the missing piece.
 - **Edit** — Undo, Redo, Cut, Copy, Paste, Paste special (Values only,
-  Format only), Find and replace.
-- **View** — Freeze (rows / columns / up to selection / Unfreeze), Hidden
-  sheets (re-show a hidden tab).
+  Format only — Formulas only and Transposed are reachable by shortcut
+  and from the cell context menu), Find and replace (⌘⇧H).
+- **View** — Freeze (rows / columns / up to selection / Unfreeze), Show
+  comments (opens the workbook-wide comment drawer), Hidden sheets
+  (re-show a hidden tab).
 - **Format** — Number (preset registry), Text (Bold / Italic / Underline /
   Strikethrough with active-state check), Alignment (Left / Center / Right),
-  Font size, Merge cells, Conditional formatting, Clear formatting (⌘\\).
+  Font size, Merge cells (submenu: Merge all / Merge horizontally / Merge
+  vertically / Unmerge), Conditional formatting, Clear formatting (⌘\\).
 - **Data** — Sort range, Create / Remove filter, Named ranges. (Pivot
   tables are created from a toolbar button, not the Data menu.)
 - **Help** — Search help (⌘/), Keyboard shortcuts, Function list (every
   HyperFormula function name), Browse calc help (opens the package's
   topic index).
 
-The toolbar is trimmed to the core formatting controls (Undo/Redo, number
-format, currency / percent / decimal stepper, font size, bold / italic /
-underline / strike, text color, fill color, borders, horizontal alignment,
-find), plus a "Insert pivot table" button (`PivotInsertButton`) that
-opens the new-pivot dialog pre-filled with the current selection and
-active sheet. Sort, filter, merge, freeze, download, and print are
-menu-only.
+The toolbar (`components/Toolbar.tsx`) is built on core's
+`ResponsiveToolbar`: each control is declared once as a `ToolbarItem`
+with both an in-row element and an `overflow` row, and whatever does
+not fit the current width folds into a trailing **More** menu (the
+pickers become submenus there). It carries the core formatting
+controls (Undo/Redo, Format painter, number format, currency / percent
+/ decimal stepper, font size, bold / italic / underline / strike, text
+color, fill color, borders, horizontal alignment, find), plus an
+"Insert pivot table" button (`usePivotInsert` from
+`components/pivot/PivotInsertButton.tsx`) that opens the new-pivot
+dialog pre-filled with the current selection and active sheet — the
+dialog is hoisted out of the button so it stays mounted while the
+button is folded away. Sort, filter, merge, freeze, download, and print
+are menu-only.
 
 ## Architecture
 
@@ -447,6 +473,10 @@ overwritten).
 ```
 server/
     register.go               Register(app) — wires realtime + API
+    oauth_scopes.go           oauth.RegisterPackage: calc:read / calc:write
+                              scopes governing the calc_comments collection
+    automation.go             calc:comment-added trigger registration + the
+                              participant owner resolver (see Automation rules)
     realtime_authorize.go     RoomKind "calc"; drive_shares-based access;
                               SaveCoordinator + Journal wiring; WAL cascade hook
     runtime.go                per-room ycrdt.Doc registry; Snapshot()
@@ -482,42 +512,81 @@ through the standard go.mod replace directive the app shell installs.
 ### Client package layout
 
 ```
+The tree below is a map, not an inventory — `ls tinycld/calc/<dir>` is
+the source of truth.
+
+```
 tinycld/calc/
-    manifest.ts        package manifest (slug, nav, provider, server, deps)
+    manifest.ts        package manifest (slug, nav, provider, server, cli, deps)
     provider.tsx       registers CalcPreview for xlsx mime + drive actions
     collections.ts     calc_comments pbtsdb registration
     types.ts           CalcSchema (for MergedSchema) + CalcComments row shape
+    automation.ts      calc:comment-added trigger catalog
     seed.ts            sample data
     screens/
-        index.tsx      workbook list + "new spreadsheet"
-        [id].tsx       editor — opens room, mounts Grid + SheetTabs
+        _layout.tsx
+        index.tsx      workbook list, "new spreadsheet", template picker, CSV import
+        [id].tsx       editor — opens room, mounts MenuBar + Toolbar + Grid + SheetTabs
     components/
-        Grid.tsx, Toolbar (+ submenus), FormulaBar, SheetTabs, CalcPreview
-        grid/
-            Body, Cell, CellContextMenu, ColumnHeader, RowHeader,
-            CornerCell, CommentPopover, CommentIndicator,
-            CutMarchingAntsOverlay
-        menubar/
-            MenuBar.tsx, FileMenu, EditMenu, ViewMenu, FormatMenu,
-            DataMenu, HelpMenu
+        Grid.tsx, Toolbar.tsx, FormulaBar, FormulaSuggestionList, NameBox,
+        SheetTabs, CalcPreview (+ preview-css), CsvImportDialog,
+        FindReplaceDialog, PrintDialog, SelectionStatusBanner, SortStatusBanner
+        grid/              Body, Cell, CellContextMenu, HeaderContextMenu,
+                           HandleContextMenu, ColumnHeader, RowHeader, CornerCell,
+                           CommentPopover, CommentIndicator, CommentsContext,
+                           CutMarchingAntsOverlay, FormatPainterOverlay,
+                           FindMatchOverlay, SelectionEdgeHandles, SortDialog,
+                           FilterColumnDialog, GridCanvasTheme, overlays
+        menubar/           MenuBar.tsx, FileMenu, EditMenu, ViewMenu, FormatMenu,
+                           DataMenu, HelpMenu, SaveVersionDialog
+        toolbar/           ToolbarButton + the picker menus (number format, font
+                           size, text/fill color, borders, horizontal align);
+                           each exports both a menu and a `*Rows` overflow view
+        comments/          CalcCommentDrawer (View → Show comments)
+        conditional-format/  ConditionalFormatPanel, RuleEditor, RuleListRow,
+                           ConditionTypePicker, StylePicker
+        named-ranges/      NamedRangesDialog, NamedRangesList, NamedRangeForm
+        pivot/             NewPivotDialog, PivotInsertButton (usePivotInsert),
+                           PivotSidePanel, PivotGrid, PivotBanner, field rows
+        print/             PrintScopeFields, PrintPageFields, PrintLayoutFields
+        sheet-tabs/        SheetTabContextMenu, RenameSheetInput
+        dialogs/           display-keys
+        icons/             PivotTableIcon
     hooks/
         use-realtime.ts            calc-flavored useRealtimeRoom
         use-workbook-context.tsx   provider with doc + awareness
         use-y-cell.ts              read/write a single cell with origin tagging
         use-y-sheets.ts            sheets + sparse dim/style overrides
-        use-grid-store.tsx         zustand store for grid UI state
+        use-sheet-actions.ts       add / rename / delete / reorder / hide sheets
+        use-sheet-tabs-store.ts    tab-bar UI state
+        grid-store.ts, use-grid-store.tsx   zustand store for grid UI state
+        grid/                      one hook per Grid concern: toolbar actions +
+                                   toggles, format controls, formula bar,
+                                   freeze, filter, print dialog, viewport,
+                                   column/row resize, suggestions, ref-drag
+        find/                      find store + actions (FindReplaceDialog)
         use-formula-bridge.ts      mounts FormulaBridge to the doc
+        use-formula-function-names.ts
         use-cell-comments.ts       live calc_comments per workbook
+        use-comment-mutations.ts   insert / update / delete / resolve threads
+        use-comment-shortcut.ts, use-mention-suggestions.ts
         use-presence.ts            awareness selection/editing
-        use-undo-manager.ts        Y.UndoManager wired to typing
+        use-undo-manager.ts        Y.UndoManager scoped to cells + sheets + names
         use-clipboard.ts           copy/cut/paste (web + native adapters)
         use-column-resize.ts, use-row-resize.ts
-        use-calc-shortcuts.ts      keyboard handler + shortcut docs
+        use-calc-shortcuts.ts      shortcut registry + docs for Help → Keyboard shortcuts
         use-clear-formatting.ts    wipe cell styles in a range (⌘\)
-        use-workbook-file-actions.ts  rename / trash / details from File menu
+        use-cell-merge.ts          merge all / horizontal / vertical / unmerge
+        use-borders-picker-store.ts
+        use-conditional-style.ts, use-sheet-conditional-formats.ts
+        use-filter-view.ts, use-reactive-filter.ts
+        use-named-ranges.ts        name manager bindings
+        use-pivots.ts, use-pivot-for-sheet.ts, use-rendered-pivot.ts
+        use-print-dialog.tsx
+        use-workbook-file-actions.ts  rename / trash / copy / export-as-template / details
     lib/
         workbook-types.ts          CellKind, CellStyle, formatCell, PivotDefinition
-        y-doc-bootstrap.ts         SHEETS_MAP / CELLS_MAP / PIVOTS_MAP / readYCell / bootstrap
+        y-doc-bootstrap.ts         SHEETS_MAP / CELLS_MAP / PIVOTS_MAP / NAMED_RANGES_MAP / bootstrap
         y-cell-key.ts              ${sheet}:${row}:${col} keying
         cell-key-action.ts         cell-key-derived selection helpers
         cell-input.ts              parse a typed cell value into kind + raw
@@ -527,20 +596,32 @@ tinycld/calc/
         formula/
             bridge.ts              HyperFormula ↔ Y.Doc mirror
             rewrite-on-structural-mutation.ts
-            normalize.ts, origins.ts, autocomplete.ts, function-names.ts
-        clipboard/                 web + native adapters, TSV/HTML codecs
-        fill/detect-series.ts      fill-handle pattern detection
-        number-format/             presets + formatter
-        pivot/                     PivotDefinition writer, range materializer
-        conditional-format/        rule model + evaluator
-        csv/                       CSV import + export
+            normalize.ts, origins.ts, autocomplete.ts, cell-ref-insertion.ts,
+            function-names.ts, function-catalog.ts, hyperformula-license.ts
+        clipboard/                 web + native adapters, TSV/HTML codecs,
+                                   formula rewriting on paste
+        fill/                      detect-series.ts + apply-fill.ts (fill handle)
+        number-format/             presets, formatter, decimal stepper
+        named-ranges/              types, Y.Map binding, sheet-prefix, lifecycle
+        pivot/                     PivotDefinition writer, aggregate + render,
+                                   range parser, Y.Map binding
+        conditional-format/        rule model, evaluator, range index, Y.Map binding
+        csv/                       CSV decode/encode, import store, per-platform download
         print/                     print-rendering pipeline (web + iOS)
-        stores/                    zustand stores scoped to calc
+        stores/                    zustand stores: conditional-format panel,
+                                   named-ranges dialog, pivot panel,
+                                   pending sheet selection
         sheet-styles.ts, dimensions.ts, border-presets.ts, cell-style-render.ts
+        grid-colors.ts, render-class-styles.ts
         comments.ts                comment thread grouping
-        blank-workbook.ts          minimal xlsx for "new spreadsheet"
         open-in-calc-action.tsx, open-in-calc-drive-action.tsx
 ```
+
+There is no client-side blank-workbook generator: the index screen calls
+drive's `useCreateBlankDriveItem`, and `server/register.go` registers
+the embedded `server/blank.xlsx` with core's `blankfile.Register` so the
+server attaches it to a file-less create. The client never parses or
+builds xlsx (see "Why server-side bootstrap").
 
 ## Command line
 
@@ -548,8 +629,8 @@ Calc contributes exactly one command group to the `tinycld` binary:
 
 ```sh
 tinycld calc comments <path>            # list a workbook's threads
-tinycld calc comments <path> --add "Where does this rate come from?" --cell B7
-tinycld calc comments <path> --add "Q3 tab" --cell B7 --sheet <id>
+tinycld calc comments <path> --add "Where does this rate come from?" --cell B7 --sheet sheet1
+tinycld calc comments <path> --add "Q3 tab" --cell B7 --sheet sheet3
 tinycld calc comments <path> --add "Agreed" --reply-to <id>
 tinycld calc comments <path> --resolve <id>
 tinycld calc comments <path> --reopen <id>
@@ -557,8 +638,13 @@ tinycld calc comments <path> --all      # include resolved threads
 ```
 
 `comment` is accepted as an alias. The group requests the `calc:read`
-and `calc:write` OAuth scopes. `--cell` takes one-based A1 notation,
-converted at the CLI edge.
+and `calc:write` OAuth scopes. A new root comment requires both
+`--cell` (A1 notation, converted at the CLI edge to the **one-based**
+`row` / `col` the collection stores — `min: 1`, so A1 is `1,1`) and
+`--sheet` (the sheet **id**, `sheet1` / `sheet2` / …, not its display
+name). A `--reply-to` reply inherits its thread's anchor and rejects
+`--cell` / `--sheet`. `cli/cell.go` documents why the conversion must
+not subtract one.
 
 There is deliberately **no `calc new` command.** Workbooks *are*
 `drive_items`, so `tinycld drive put` / `cat` / `get` / `rm` already
@@ -569,8 +655,11 @@ comments only.
 The `tinycld` binary is a Go CLI the server cross-compiles containing
 exactly its installed package set; users download it from **Settings →
 Personal → About**. This package's group is sourced from `cli/` and
-declared by a `cli` manifest block naming the Go module and the OAuth
-scopes above. The in-app help topic is `help/command-line.md`.
+declared by a `cli` manifest block naming the Go module. The OAuth
+scopes above are not on the manifest: `server/oauth_scopes.go`
+registers them (and the `calc_comments` collection they govern) with
+core via `oauth.RegisterPackage`. The in-app help topic is
+`help/command-line.md`.
 
 Docs: [Command line tool](https://tinycld.org/docs/command-line-tool) ·
 [CLI reference](https://tinycld.org/docs/reference/cli-reference).

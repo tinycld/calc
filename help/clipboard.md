@@ -17,16 +17,16 @@ After a cut, the source range gets a **marching-ants** dashed border that animat
 
 ## Paste special
 
-When you only want part of what's on the clipboard, use **Edit → Paste special**:
+When you only want part of what's on the clipboard, use a paste-special variant. Two are in **Edit → Paste special**; all four are in the cell's right-click menu (long-press on iPad) under **Paste special**, and every one has a shortcut:
 
 - **Values only** (⌘⌥V) — paste just the computed values; formulas and formatting are dropped.
-- **Formulas only** (⌘⌥⇧V) — paste the formula text; formatting is dropped.
 - **Format only** (⌘⇧V) — paste fonts, fills, borders, and number formats; cell values are untouched.
-- **Transposed** (⌘⌥T) — swap rows and columns. A 3-row × 2-column range becomes 2-row × 3-column.
+- **Formulas only** (⌘⌥⇧V, right-click menu) — paste the formula text; formatting is dropped.
+- **Transposed** (⌘⌥T, right-click menu) — swap rows and columns. A 3-row × 2-column range becomes 2-row × 3-column.
 
 ## Format Painter toolbar button
 
-The **Format Painter** button in the toolbar (paintbrush icon) copies the formatting of the selected cell and lets you apply it to another range without affecting values.
+The **Format painter** button in the toolbar (paintbrush icon, next to Undo and Redo; on a narrow window it may sit under the toolbar's **More** menu) copies the formatting of the selected cell and lets you apply it to another range without affecting values.
 
 1. Select the cell whose formatting you want to copy.
 2. Click the paintbrush button — the cursor changes to a crosshair-paintbrush to indicate paint mode.
