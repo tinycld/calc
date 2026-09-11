@@ -7,7 +7,7 @@ order: 40
 
 ## Text formatting
 
-Select cells and apply formatting from the toolbar or the **Format → Text** menu:
+Select cells and apply formatting from the toolbar or the **Format → Text** menu. (On a narrow window, toolbar controls that don't fit fold into a **More** menu at the right end of the toolbar.)
 
 - **Bold** — ⌘B
 - **Italic** — ⌘I
@@ -44,7 +44,14 @@ Number formats are display-only — the underlying value never changes.
 
 ## Merging cells
 
-Select a rectangular range and choose **Format → Merge cells** to combine them into a single cell. Only the top-left value is kept; other values in the merged range are discarded. Unmerge by selecting the merged cell and choosing **Merge cells** again.
+Select a rectangular range and open **Format → Merge cells**. The submenu offers:
+
+- **Merge all** — combine the whole range into a single cell.
+- **Merge horizontally** — merge each row of the range separately.
+- **Merge vertically** — merge each column of the range separately.
+- **Unmerge** — split the selected merged cells back into individual cells.
+
+Only the top-left value of each merge is kept; other values in the merged area are discarded.
 
 ## Conditional formatting
 

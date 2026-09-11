@@ -9,6 +9,6 @@ describe('calc manifest', () => {
     })
 
     it('has a description', () => {
-        expect(manifest.description).toBe('Spreadsheets for your organization')
+        expect(manifest.description).toBe('Collaborative spreadsheets for your server')
     })
 })

@@ -43,15 +43,24 @@ indented under the comment they answer.
 ## Adding and answering
 
 ```
-tinycld calc comments /Budget.xlsx --cell B7 --add "This looks off"
-tinycld calc comments /Budget.xlsx --cell C10 --sheet Sheet1 --add "Check the formula"
+tinycld calc comments /Budget.xlsx --cell B7 --sheet sheet1 --add "This looks off"
+tinycld calc comments /Budget.xlsx --cell C10 --sheet sheet2 --add "Check the formula"
 tinycld calc comments /Budget.xlsx --add "Fixed" --reply-to cmt123
 ```
 
+A new comment anchors to one cell on one sheet, so `--add` needs both
+`--cell` and `--sheet`; the command refuses to post without them.
+
 `--cell` takes A1 notation and is case-insensitive, so `b7` and `B7` are the
-same cell. `--sheet` names which sheet the cell is on, for a workbook with
-more than one. Replies are one level deep: replying to a reply attaches your
-comment to the same thread, and inherits its cell.
+same cell. `--sheet` takes the sheet's **id**, not the name shown on its tab.
+Ids are `sheet1`, `sheet2`, … in the order the sheets were created, so the
+first sheet of a workbook is always `sheet1`. A listing (`--json`) shows each
+comment's `sheet_id`, which is the quickest way to find the id for a sheet
+that already has comments.
+
+Replies are one level deep: replying to a reply attaches your comment to the
+same thread. A reply inherits its thread's cell and sheet, so `--cell` and
+`--sheet` are not accepted with `--reply-to`.
 
 ## Resolving
 
@@ -69,10 +78,11 @@ in the app.
 ## Scripting
 
 Every command accepts `--json` for stable, machine-readable output. The stored
-row and column come through as numbers (both zero-based) even though the table
-renders them as A1, so a script can filter on a range:
+row and column come through as numbers even though the table renders them as
+A1. Both are **one-based**, the same way the grid labels them: column A is
+`1`, column B is `2`, and row 1 is `1`. So a script can filter on a range:
 
 ```
 tinycld calc comments /Budget.xlsx --json | jq '.[].body'
-tinycld calc comments /Budget.xlsx --json | jq '[.[] | select(.col == 1)]'
+tinycld calc comments /Budget.xlsx --json | jq '[.[] | select(.col == 2)]'   # column B
 ```

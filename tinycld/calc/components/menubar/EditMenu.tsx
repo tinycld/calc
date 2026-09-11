@@ -12,7 +12,7 @@ export function EditMenu(props: MenuBarProps) {
             />
             <Menu.Item
                 label="Redo"
-                shortcut="⌘Y"
+                shortcut="⌘⇧Z"
                 onSelect={props.onRedo}
                 isDisabled={!props.canRedo}
             />

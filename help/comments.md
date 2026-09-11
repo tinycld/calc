@@ -15,6 +15,12 @@ Cells with comments are marked with a small triangle in the top-right corner.
 
 Click the triangle (or click the cell and choose **View comment** from the context menu) to open the thread. The popover shows the original comment, every reply, and a box to add your own reply. Comments are threaded — replies stay grouped under the root.
 
+To see every thread in the workbook in one place, choose **View → Show comments**. A drawer lists the threads across all sheets; pick one to jump to its cell.
+
+## Who can see comments
+
+Comments follow the workbook's sharing. Everyone the workbook is shared with can read its threads and post their own — including people with the *commentor* role, who can't edit cells. The workbook's creator can always see its comments, whether or not they hold a share of their own. A suspended account loses access to comments along with everything else, even if its shares were never removed.
+
 ## Editing and deleting
 
 Hover (or tap) your own comment and use the **⋯** menu:

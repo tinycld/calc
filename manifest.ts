@@ -2,7 +2,7 @@ const manifest = {
     name: 'Calc',
     slug: 'calc',
     version: '0.2.2',
-    description: 'Spreadsheets for your organization',
+    description: 'Collaborative spreadsheets for your server',
     routes: { directory: 'screens' },
     nav: {
         label: 'Calc',

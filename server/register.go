@@ -15,8 +15,9 @@ import (
 const xlsxMimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 // blankXLSX is a minimal valid empty workbook, attached server-side to a
-// blank-sheet create that arrives with no file. Same bytes the client used to
-// upload (calc/tinycld/calc/lib/blank-workbook.bytes.ts).
+// blank-sheet create that arrives with no file. The client sends no bytes of
+// its own: the index screen calls drive's useCreateBlankDriveItem and relies
+// on this registration.
 //
 //go:embed blank.xlsx
 var blankXLSX []byte

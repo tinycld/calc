@@ -17,6 +17,21 @@ order: 160
 
 **File → Import** brings outside data in — see [CSV import and export](help://calc:csv-import-export).
 
+## New from template and Export as template
+
+**File → New from template…** starts a workbook from one of your `.tmpl.xlsx` templates; **File → Export as template…** saves the current workbook as one. See [Spreadsheet templates](help://calc:templates).
+
+## Save version
+
+**File → Save version** snapshots the workbook as a named version you can restore later — see [Saving a version](help://calc:save-version).
+
+## Download
+
+**File → Download** is a submenu:
+
+- **Download as CSV (current sheet)** and **Download as CSV (all sheets)** — see [CSV import and export](help://calc:csv-import-export).
+- **Download as PDF** — converts the last-saved workbook to a PDF on the server and downloads it. This is a file export, so it reflects what has been saved (Calc saves a few seconds after you stop typing); to print the active sheet as shown on screen, use **File → Print** instead — see [Printing a workbook](help://calc:print).
+
 ## Make a copy
 
 **File → Make a copy** clones the workbook. The current `.xlsx` blob is duplicated into a new Drive item, and the copy opens in a new tab/window so you keep the original handy. The copy is independent — edits don't propagate back to the source.

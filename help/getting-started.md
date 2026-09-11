@@ -24,7 +24,7 @@ From the Calc index, click **New spreadsheet**. A blank workbook is created in D
 ## The editor at a glance
 
 - **Menu bar** — File, Edit, View, Format, Data, Help. Most actions live here.
-- **Toolbar** — formatting controls (bold, fill, borders, number format), plus **Insert pivot table**.
+- **Toolbar** — undo / redo, the **Format painter**, number formats, font size, text styles, colors, borders, alignment, find, and **Insert pivot table**. On a narrow window the controls that don't fit fold into a **More** menu at the right end of the toolbar.
 - **Formula bar** — shows the active cell's content; type a formula starting with `=`.
 - **Grid** — the cells. Click to select, drag to extend, double-click (or just start typing) to edit.
 - **Sheet tabs** — at the bottom, one per sheet. Right-click a tab for rename / color / hide / delete.

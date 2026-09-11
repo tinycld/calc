@@ -37,8 +37,9 @@ The reference below is the complete set.
 | Shortcut | Action |
 |---|---|
 | ⌘F | Open Find |
-| Enter / ▼ | Next match |
-| ⇧Enter / ▲ | Previous match |
+| ⌘⇧H | Open Find and replace |
+| Enter / ▼ / ⌘G | Next match |
+| ⇧Enter / ▲ / ⌘⇧G | Previous match |
 | Esc | Close Find |
 
 ## Undo / redo
@@ -74,7 +75,7 @@ The reference below is the complete set.
 
 | Shortcut | Action |
 |---|---|
-| ⌘/ | This keyboard shortcuts dialog |
+| ⌘/ | Help search palette (type "shortcuts" to land here) |
 | ? | Help drawer |
 
 ## Adding new shortcuts

@@ -13,7 +13,7 @@ import { XLSX_MIME_TYPE } from '../types'
  * .xlsx.
  *
  * The onPress handler navigates to the full calc editor at
- * /a/<orgSlug>/calc/<drive_item_id>. The previewed file's recordId
+ * /a/calc/<drive_item_id>. The previewed file's recordId
  * IS the drive_item.id — calc uses drive_items directly as the
  * canonical workbook record (see manifest.ts: `dependencies: ['drive']`),
  * so no lookup is required.

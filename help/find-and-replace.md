@@ -7,14 +7,14 @@ order: 80
 
 ## Opening the find bar
 
-Press **⌘F** or choose **Edit → Find and replace**. A bar appears at the top of the grid.
+Press **⌘F** to open the find bar, or **⌘⇧H** (the same as **Edit → Find and replace**, or the magnifier button in the toolbar — under **More** on a narrow window) to open it with the **Replace** field already showing. A bar appears at the top of the grid.
 
 Type to search. Matching cells highlight as you type. The bar shows the count of matches and which one is currently active.
 
 ## Navigating between matches
 
-- **Enter** or **▼** — next match.
-- **Shift+Enter** or **▲** — previous match.
+- **Enter**, **▼**, or ⌘G — next match.
+- **⇧Enter**, **▲**, or ⌘⇧G — previous match.
 - **Esc** — close the find bar.
 
 Matches are visited in row-then-column order across all sheets in the workbook.
