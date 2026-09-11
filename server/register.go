@@ -37,8 +37,9 @@ func Register(app *pocketbase.PocketBase) {
 	// calc binds no listener and mounts no protocol server, so this single
 	// entry point serves the single-org app and a hosting tenant
 	// identically. If hosted behavior must ever differ (e.g. a listener),
-	// detect it with coreserver.GetTenantContext — never fork registerShared
-	// (see hosting/docs/FINDING-tenant-composition-gap.md).
+	// detect it with coreserver.GetEmbeddedContext — never fork registerShared
+	// (a composition that drifts from the shared set is how guards go missing;
+	// see the seam's own doc comment in core/server/coreserver/embedded.go).
 }
 
 // registerShared is the single source of truth for what BOTH compositions run.
