@@ -1,6 +1,6 @@
+import { useLiveQuery } from '@tanstack/react-db'
 import { useEditorMount } from '@tinycld/core/lib/editor/editor-mount'
 import { useStore } from '@tinycld/core/lib/pocketbase'
-import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import type { MentionSuggestion } from '@tinycld/core/ui/comments'
 import { useMemo } from 'react'
 
@@ -28,7 +28,7 @@ export function useMentionSuggestions(
     const { capabilities } = useEditorMount()
     const [usersCollection] = useStore('users')
 
-    const { data: members = [] } = useOrgLiveQuery(
+    const { data: members = [] } = useLiveQuery(
         query => {
             // Guests must not enumerate the roster — skip the query
             // entirely (returning null runs no query) when mentions are

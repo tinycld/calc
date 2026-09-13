@@ -1,6 +1,6 @@
 import { eq } from '@tanstack/db'
+import { useLiveQuery } from '@tanstack/react-db'
 import { useStore } from '@tinycld/core/lib/pocketbase'
-import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { useMemo } from 'react'
 import {
     buildThreads,
@@ -26,7 +26,7 @@ export interface CellCommentsResult {
 // Wired at the screen level so all cells share one subscription —
 // per-cell useLiveQuery would issue O(visible cells) PB filters.
 //
-// We use useOrgLiveQuery for the bootstrap-only side effect: the wrapper
+// We use useMyLiveQuery for the bootstrap-only side effect: the wrapper
 // gates the query until org context loads, preventing a cross-org flash
 // while the user navigates between orgs. The query body itself does not
 // filter by org — comments are scoped to a single drive_item, and PB
@@ -34,7 +34,7 @@ export interface CellCommentsResult {
 // dimension is redundant in the WHERE.
 export function useCellComments(driveItemID: string): CellCommentsResult {
     const [calcCommentsCollection] = useStore('calc_comments')
-    const { data: rows = [] } = useOrgLiveQuery(
+    const { data: rows = [] } = useLiveQuery(
         query =>
             query
                 .from({ comment: calcCommentsCollection })
