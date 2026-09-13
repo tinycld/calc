@@ -1,4 +1,5 @@
 import { eq } from '@tanstack/db'
+import { useLiveQuery } from '@tanstack/react-db'
 import { DocumentTitle } from '@tinycld/core/components/DocumentTitle'
 import { useAuth } from '@tinycld/core/lib/auth'
 import { type EditorMount, EditorMountProvider } from '@tinycld/core/lib/editor/editor-mount'
@@ -6,7 +7,6 @@ import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useCommentsDrawerStore } from '@tinycld/core/lib/stores/comments-drawer-store'
 import { useWorkspaceStore } from '@tinycld/core/lib/stores/workspace-store'
-import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { CopyToFolderDialog } from '@tinycld/drive/components/CopyToFolderDialog'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useRef } from 'react'
@@ -70,7 +70,7 @@ export default function CalcDetail() {
     const clearLastPackageHref = useWorkspaceStore(s => s.clearLastPackageHref)
     const orgHref = useOrgHref()
 
-    const { data: items = [], isLoading: isItemLoading } = useOrgLiveQuery(
+    const { data: items = [], isLoading: isItemLoading } = useLiveQuery(
         query => query.from({ item: driveItems }).where(({ item }) => eq(item.id, id ?? '')),
         [id]
     )

@@ -1,9 +1,9 @@
 import { eq } from '@tanstack/db'
+import { useLiveQuery } from '@tanstack/react-db'
 import { useAuth } from '@tinycld/core/lib/auth'
 import { buildThreads, groupCommentsByKey } from '@tinycld/core/lib/comments'
 import { useStore } from '@tinycld/core/lib/pocketbase'
 import { useCommentsDrawerStore } from '@tinycld/core/lib/stores/comments-drawer-store'
-import { useOrgLiveQuery } from '@tinycld/core/lib/use-org-live-query'
 import { CommentDrawer, type CommentDrawerGroup } from '@tinycld/core/ui/comments'
 import { useMemo } from 'react'
 import { useCommentMutations } from '../../hooks/use-comment-mutations'
@@ -39,7 +39,7 @@ export function CalcCommentDrawer({
     const isOpen = storeIsOpen && storeDriveItemId === driveItemId
 
     const [calcCommentsCollection] = useStore('calc_comments')
-    const { data: rows = [] } = useOrgLiveQuery(
+    const { data: rows = [] } = useLiveQuery(
         query =>
             query
                 .from({ comment: calcCommentsCollection })
