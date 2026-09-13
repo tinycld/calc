@@ -10,7 +10,7 @@ import type { CalcSchema } from './types'
 type MergedSchema = Omit<Schema, keyof CalcSchema> & CalcSchema
 
 // Hoisted rather than written inline at each call site: an inline
-// `collectionOptions` literal defeats `alwaysExpand` inference in pbtsdb 0.8.0.
+// `collectionOptions` literal defeats `alwaysFetchRelations` inference in pbtsdb.
 const indexing = {
     autoIndex: 'eager' as const,
     defaultIndexType: BasicIndex,
@@ -23,7 +23,6 @@ export function registerCollections(
     const calc_comments = newCollection('calc_comments', {
         omitOnInsert: ['created', 'updated'] as const,
         relations: { author: coreStores.users },
-        alwaysExpand: ['author'],
         collectionOptions: indexing,
     })
     return { calc_comments }
