@@ -382,7 +382,7 @@ hash so the prior version isn't overwritten in place.
 ### How core's WAL provides durability
 
 The journal is core's, not calc's. Core exports a `Journal` interface
-(`core/realtime/journal.go`) with three operations:
+(`core/server/realtime/journal.go`) with three operations:
 
 ```go
 type Journal interface {
@@ -393,7 +393,7 @@ type Journal interface {
 ```
 
 Calc uses the production implementation, `PocketBaseJournal`
-(`core/realtime/journal_pocketbase.go`), which stores each update as a
+(`core/server/realtime/journal_pocketbase.go`), which stores each update as a
 row in the `realtime_doc_updates` PocketBase collection — created by a
 core migration. The collection lives in the same SQLite database as
 the rest of the app, so writes are durable against SIGKILL via
@@ -516,8 +516,8 @@ The tree below is a map, not an inventory — `ls tinycld/calc/<dir>` is
 the source of truth.
 
 ```
+manifest.ts            package manifest (slug, nav, provider, server, cli, deps) — repo root
 tinycld/calc/
-    manifest.ts        package manifest (slug, nav, provider, server, cli, deps)
     provider.tsx       registers CalcPreview for xlsx mime + drive actions
     collections.ts     calc_comments pbtsdb registration
     types.ts           CalcSchema (for MergedSchema) + CalcComments row shape
@@ -705,9 +705,11 @@ ecosystem. This repo intentionally ships no `biome.json` of its own.
 
 ## CI
 
-`.github/workflows/ci.yml` runs typecheck, unit tests, Go tests, and
-end-to-end Playwright specs on every push to `main` and every PR. It
-checks out the workspace meta-repo (`tinycld/workspace`), puts this
+`.github/workflows/ci.yml` runs two jobs on every push to `main` and
+every PR: `tinycld-pkg check` (biome lint, typecheck, and unit tests)
+and `tinycld-pkg test:e2e` (end-to-end Playwright specs). There is no
+Go test step. It checks out
+the workspace meta-repo (`tinycld/workspace`), puts this
 package into its workspace slot, runs `bootstrap --assemble-only` to
 clone app + core + drive as siblings, installs at the workspace root,
 and invokes `tinycld-pkg check` / `tinycld-pkg test:e2e` from inside
@@ -717,8 +719,8 @@ this package — exactly what a developer does locally.
 
 - `manifest.ts` — single source of truth for capabilities (routes, nav,
   collections, migrations, provider, server module, package dependencies)
-- `package.json` — name, exports map, peer deps (yjs, y-protocols,
-  hyperformula, numfmt, pbtsdb, @tanstack/db, expo-clipboard, …)
+- `package.json` — name, exports map, peer deps (`@tinycld/drive`,
+  `expo-print`, `expo-sharing`, `hyperformula`, `numfmt`)
 - `pb-migrations/` — PocketBase migrations (symlinked into the app shell's
   server on `packages:generate`)
 - `server/` — Go server module, registered by the generator; includes
