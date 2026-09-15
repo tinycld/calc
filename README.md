@@ -699,8 +699,9 @@ pnpm run pkg:check   # typecheck + unit across every present member
 pnpm run pkg:test:e2e  # Playwright across every present member
 ```
 
-Biome lives only in `app/` and is the single config for the whole
-ecosystem. This repo intentionally ships no `biome.json` of its own.
+The canonical Biome config lives in the app shell (`tinycld/biome.json`)
+and the workspace root extends it. This repo intentionally ships no
+`biome.json` of its own.
 
 ## CI
 
