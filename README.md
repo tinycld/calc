@@ -511,7 +511,6 @@ through the standard go.mod replace directive the app shell installs.
 
 ### Client package layout
 
-```
 The tree below is a map, not an inventory — `ls tinycld/calc/<dir>` is
 the source of truth.
 
@@ -708,9 +707,8 @@ ecosystem. This repo intentionally ships no `biome.json` of its own.
 `.github/workflows/ci.yml` runs two jobs on every push to `main` and
 every PR: `tinycld-pkg check` (biome lint, typecheck, and unit tests)
 and `tinycld-pkg test:e2e` (end-to-end Playwright specs). There is no
-Go test step. It checks out
-the workspace meta-repo (`tinycld/workspace`), puts this
-package into its workspace slot, runs `bootstrap --assemble-only` to
+Go test step. It checks out this package into a workspace member slot
+(`ws/calc`), runs `npx @tinycld/bootstrap@latest --assemble-only` to
 clone app + core + drive as siblings, installs at the workspace root,
 and invokes `tinycld-pkg check` / `tinycld-pkg test:e2e` from inside
 this package — exactly what a developer does locally.
