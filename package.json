@@ -26,7 +26,7 @@
         "@tinycld/package-scripts": "*"
     },
     "peerDependencies": {
-        "@tinycld/drive": ">=0.2.0 <0.3.0",
+        "@tinycld/drive": ">=0.3.0 <0.4.0",
         "expo-print": "^55.0.14",
         "expo-sharing": "~55.0.18",
         "hyperformula": ">=3.0.0",
