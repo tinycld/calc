@@ -28,7 +28,7 @@ const manifest = {
     },
     repository: { url: 'https://github.com/tinycld/calc' },
     dependencies: ['drive'],
-    peerVersions: { '@tinycld/core': '>=0.0.4 <0.1.0' },
+    peerVersions: { '@tinycld/core': '>=0.1.0 <0.2.0' },
 }
 
 export default manifest
