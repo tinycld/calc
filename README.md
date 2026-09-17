@@ -44,8 +44,8 @@ Editing features:
   and Sheets (`lib/clipboard/`)
 - **Fill handle** — drag the selected range's corner to extend a
   series; the detector (`lib/fill/detect-series.ts`) handles linear
-  numeric, date, and weekday patterns; live shift-toggle mid-drag
-  switches between extend and overwrite on web
+  numeric, date, and weekday patterns; holding shift as the drag
+  STARTS overwrites instead of extending, on web
 - Sort and filter — single- or multi-column sort, filter banner with
   per-column predicates (`lib/sort.ts`, `lib/filter.ts`)
 - **Named ranges** — assign workbook-defined names to a cell, range,
@@ -163,7 +163,7 @@ Docs: [Automation rules](https://tinycld.org/docs/automation-rules)
 | Conditional formatting               | ✅  | ✅   |
 | Pivot tables                         | ✅  | ✅   |
 | Disjoint selection (⌘-click)         | ✅  | n/a (no modifier key) |
-| Live shift toggle mid-fill-drag      | ✅  | n/a (no modifier key) |
+| Shift-at-drag-start overwrite (fill) | ✅  | n/a (no modifier key) |
 | Marching-ants cut animation          | ✅  | static dashed border |
 
 iPhone (small screens) is not supported yet. Android has no testing surface
@@ -460,8 +460,8 @@ client recomputes from there.
 
 Comments are not in the `Y.Doc`. They live in a regular PocketBase
 collection, `calc_comments` (see `pb-migrations/`), one row per thread
-root or reply. The grid subscribes via `useCellComments` with
-`useOrgLiveQuery`; mutations go through `useCommentMutations`, which
+root or reply. The grid subscribes via `useCellComments`, which wraps
+`useLiveQuery`; mutations go through `useCommentMutations`, which
 writes the `calc_comments` collection directly (`.insert`/`.update`).
 On save,
 `SaveRoom` snapshots the threads and writes them into the xlsx as
@@ -684,7 +684,7 @@ Run quality checks from inside this package via the workspace-installed
 
 ```sh
 cd ~/code/tinycld/calc
-pnpm exec tinycld-pkg check     # typecheck + vitest (scoped to this package)
+pnpm exec tinycld-pkg check     # biome lint + typecheck + vitest (scoped to this package)
 pnpm exec tinycld-pkg test      # vitest only
 pnpm exec tinycld-pkg test:e2e  # Playwright for this package
 pnpm exec tinycld-pkg typecheck # tsc only
