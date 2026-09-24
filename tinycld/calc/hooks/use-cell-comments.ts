@@ -34,13 +34,12 @@ export interface CellCommentsResult {
 // dimension is redundant in the WHERE.
 export function useCellComments(driveItemID: string): CellCommentsResult {
     const [calcCommentsCollection] = useStore('calc_comments')
-    const { data: rows = [] } = useLiveQuery(
-        query =>
+    const { data: rows = [] } = useLiveQuery({
+        query: query =>
             query
                 .from({ comment: calcCommentsCollection })
                 .where(({ comment }) => eq(comment.drive_item, driveItemID)),
-        [driveItemID]
-    )
+    })
 
     return useMemo(() => {
         const rowsByCell = groupCommentsByCell(rows as CommentRow[])

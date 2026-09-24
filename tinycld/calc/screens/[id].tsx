@@ -70,10 +70,9 @@ export default function CalcDetail() {
     const clearLastPackageHref = useWorkspaceStore(s => s.clearLastPackageHref)
     const orgHref = useOrgHref()
 
-    const { data: items = [], isLoading: isItemLoading } = useLiveQuery(
-        query => query.from({ item: driveItems }).where(({ item }) => eq(item.id, id ?? '')),
-        [id]
-    )
+    const { data: items = [], isLoading: isItemLoading } = useLiveQuery({
+        query: query => query.from({ item: driveItems }).where(({ item }) => eq(item.id, id ?? '')),
+    })
 
     const item = items[0]
 
