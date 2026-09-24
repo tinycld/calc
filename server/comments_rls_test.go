@@ -68,6 +68,8 @@ func setupTextCommentsRLSApp(t *testing.T) *calcCommentsEnv {
 		t.Fatalf("add users.disabled: %v", err)
 	}
 
+	stubGroupsCollection(t, app)
+
 	// drive's migrations run first: the comment rules walk drive_shares.
 	rlstest.Apply(t, app,
 		rlstest.MigrationsDir(t, "../../drive/pb-migrations"),
