@@ -28,8 +28,8 @@ export function useMentionSuggestions(
     const { capabilities } = useEditorMount()
     const [usersCollection] = useStore('users')
 
-    const { data: members = [] } = useLiveQuery(
-        query => {
+    const { data: members = [] } = useLiveQuery({
+        query: query => {
             // Guests must not enumerate the roster — skip the query
             // entirely (returning null runs no query) when mentions are
             // off. Same short-circuit applies for `disabled` (read-only
@@ -41,8 +41,7 @@ export function useMentionSuggestions(
                 email: u.email,
             }))
         },
-        [capabilities.canMention, disabled]
-    )
+    })
 
     return useMemo(() => {
         const out: MentionSuggestion[] = []

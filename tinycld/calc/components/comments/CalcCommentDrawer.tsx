@@ -39,13 +39,12 @@ export function CalcCommentDrawer({
     const isOpen = storeIsOpen && storeDriveItemId === driveItemId
 
     const [calcCommentsCollection] = useStore('calc_comments')
-    const { data: rows = [] } = useLiveQuery(
-        query =>
+    const { data: rows = [] } = useLiveQuery({
+        query: query =>
             query
                 .from({ comment: calcCommentsCollection })
                 .where(({ comment }) => eq(comment.drive_item, driveItemId)),
-        [driveItemId]
-    )
+    })
 
     const { user } = useAuth()
     const currentUserId = user.id
