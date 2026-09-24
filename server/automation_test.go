@@ -42,6 +42,8 @@ func setupResolverApp(t *testing.T) *resolverEnv {
 		t.Fatalf("add users.disabled: %v", err)
 	}
 
+	stubGroupsCollection(t, app)
+
 	rlstest.Apply(t, app,
 		rlstest.MigrationsDir(t, "../../drive/pb-migrations"),
 		rlstest.MigrationsDir(t, "../pb-migrations"),
