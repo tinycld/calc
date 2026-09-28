@@ -16,12 +16,19 @@ const indexing = {
     defaultIndexType: BasicIndex,
 }
 
+// Every collection syncs on demand and subscribes per query (pbtsdb 0.10):
+// only the rows a live query asks for enter the store, and realtime covers
+// exactly those rows. The server emits a delete to a subscription a row
+// leaves, so a filtered view stays correct across updates.
+const onDemand = { syncMode: 'on-demand', realtime: 'query' } as const
+
 export function registerCollections(
     newCollection: ReturnType<typeof createCollection<MergedSchema>>,
     coreStores: CoreStores
 ) {
     const calc_comments = newCollection('calc_comments', {
         omitOnInsert: ['created', 'updated'] as const,
+        ...onDemand,
         relations: { author: coreStores.users },
         collectionOptions: indexing,
     })

@@ -49,7 +49,6 @@ export function CalcCommentDrawer({
     const { user } = useAuth()
     const currentUserId = user.id
     const { reply, editBody, resolve, reopen, remove } = useCommentMutations()
-    const mentionSuggestions = useMentionSuggestions(currentUserId)
     const gridStore = useGridStoreApi()
 
     const sheetNameById = useMemo(() => {
@@ -99,7 +98,7 @@ export function CalcCommentDrawer({
             onDelete={id => remove.mutate({ id })}
             onResolve={id => resolve.mutate({ id })}
             onReopen={id => reopen.mutate({ id })}
-            mentionSuggestions={mentionSuggestions}
+            useMentionSuggestions={useMentionSuggestions}
         />
     )
 }
