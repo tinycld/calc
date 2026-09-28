@@ -1,4 +1,5 @@
-import { useEditorMount } from '@tinycld/core/lib/editor/editor-mount'
+import { useAuth } from '@tinycld/core/lib/auth'
+import { useEditorMountOptional } from '@tinycld/core/lib/editor/editor-mount'
 import { useMentionCandidates } from '@tinycld/core/lib/use-mention-candidates'
 import type { MentionSuggestion } from '@tinycld/core/ui/comments'
 
@@ -22,16 +23,28 @@ import type { MentionSuggestion } from '@tinycld/core/ui/comments'
 // because this is passed to CommentComposer AS a hook — see that
 // component's `useMentionSuggestions` prop. Everything else it needs
 // (the current user to exclude, whether mentions are allowed at all)
-// comes from useEditorMount, so no caller has to bind arguments and
+// is read from context here, so no caller has to bind arguments and
 // the prop can stay a stable module-level function reference.
 //
-// A viewer mount reports `canMention: false`, which disables the
-// search; guests must not enumerate the roster at all.
+// The identity comes from `useAuth`, not the editor mount. The
+// composer is rendered by surfaces that do not all sit under the
+// editor screen's EditorMountProvider, and a required
+// `useEditorMount()` throws there — which took the whole screen down
+// behind the error boundary the moment the drawer opened. Auth sits
+// above every one of those surfaces, so the user id is always in
+// scope. The mount is consulted only for the editor-scoped
+// capability, and optionally: a viewer mount reports
+// `canMention: false` and disables the search, because a read-only
+// viewer must not enumerate the roster. With no mount in scope there
+// is no editor-scoped restriction to apply, so the app-level auth
+// gate is the only one that governs — the same rule every other
+// authed comments surface runs under.
 export function useMentionSuggestions(query: string): MentionSuggestion[] {
-    const { identity, capabilities } = useEditorMount()
+    const mount = useEditorMountOptional()
+    const { user } = useAuth()
 
     return useMentionCandidates(query, {
-        disabled: !capabilities.canMention,
-        currentUserId: identity.userId,
+        disabled: mount != null && !mount.capabilities.canMention,
+        currentUserId: mount?.identity.userId ?? user.id,
     })
 }
