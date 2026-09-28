@@ -26,8 +26,9 @@ const useMentionCandidatesMock = vi.fn(() => [])
 vi.mock('@tinycld/core/lib/editor/editor-mount', () => ({
     useEditorMountOptional: () => editorMountMock(),
 }))
+const authMock = vi.fn(() => ({ user: { id: 'user_auth' } }))
 vi.mock('@tinycld/core/lib/auth', () => ({
-    useAuth: () => ({ user: { id: 'user_auth' } }),
+    useAuth: () => authMock(),
 }))
 vi.mock('@tinycld/core/lib/use-mention-candidates', () => ({
     useMentionCandidates: (search: string, options?: unknown) =>
@@ -39,6 +40,7 @@ import { useMentionSuggestions } from '../tinycld/calc/hooks/use-mention-suggest
 afterEach(() => {
     cleanup()
     editorMountMock.mockClear()
+    authMock.mockClear()
     useMentionCandidatesMock.mockClear()
 })
 
@@ -89,5 +91,28 @@ describe('useMentionSuggestions', () => {
             disabled: false,
             currentUserId: 'user_auth',
         })
+    })
+
+    // The mount-less path leaves the search ENABLED, which is only safe
+    // because `useAuth()` throws for an anonymous viewer (it defaults to
+    // `throwIfAnon: true`), so the hook cannot run at all without an authed
+    // identity. That is the whole guard on this path — a signed-out or share
+    // viewer never reaches the search — so pin it: if `useAuth` is ever made
+    // to answer null instead of throwing, this fails rather than silently
+    // letting an anon enumerate the roster.
+    it('cannot run at all without an authed identity', () => {
+        const authed = authMock.getMockImplementation()
+        authMock.mockImplementation(() => {
+            throw new Error('Authentication required')
+        })
+        editorMountMock.mockReturnValueOnce(null)
+        try {
+            expect(() => renderHook(() => useMentionSuggestions('ali'))).toThrow(
+                /Authentication required/
+            )
+            expect(useMentionCandidatesMock).not.toHaveBeenCalled()
+        } finally {
+            if (authed) authMock.mockImplementation(authed)
+        }
     })
 })
