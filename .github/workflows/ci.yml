@@ -64,7 +64,7 @@ jobs:
           node-version-file: ws/.node-version
       - uses: actions/setup-go@v6
         with:
-          go-version-file: ws/.go-version
+          go-version-file: ws/tinycld/core/server/go.mod
       - name: Install (workspace root)
         working-directory: ws
         run: corepack enable && pnpm install --no-frozen-lockfile
@@ -117,7 +117,7 @@ jobs:
           node-version-file: ws/.node-version
       - uses: actions/setup-go@v6
         with:
-          go-version-file: ws/.go-version
+          go-version-file: ws/tinycld/core/server/go.mod
       - name: Install (workspace root)
         working-directory: ws
         run: corepack enable && pnpm install --no-frozen-lockfile
