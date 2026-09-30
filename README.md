@@ -273,7 +273,9 @@ are menu-only.
 
 The wire format and the in-memory format are the same: a Yjs document with
 three top-level `Y.Map`s, mirrored byte-for-byte on the client (yjs) and
-the server (`github.com/skyterra/y-crdt`).
+the server (`github.com/skyterra/y-crdt`). A fourth map, `namedRanges`
+(`NAMED_RANGES_MAP` in `lib/y-doc-bootstrap.ts`), is written only by the
+client; the server bootstrap does not create it.
 
 **`sheets`** — keyed by stable sheet id (`sheet1`, `sheet2`, …). Each value
 is a `Y.Map` with:
