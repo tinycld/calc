@@ -2,7 +2,7 @@ package calc
 
 import (
 	"encoding/json"
-	"math"
+	"fmt"
 
 	"github.com/pocketbase/pocketbase/core"
 
@@ -26,19 +26,23 @@ const roomKindCalc = "calc"
 //   - Authorize: enforces drive_shares membership before the WS
 //     upgrade.
 //   - RuntimeProvider: hands out per-room server-side Y.Doc handles.
+//   - Checkpoints / Fingerprint: the broker parks a workbook's Y.Doc
+//     when its room empties, reuses it on a reopen whose stored file is
+//     unchanged, and stores its full state at eviction, read-only enter,
+//     drain and terminate.
 //   - OnRoomCreate / OnDocUpdate / OnEmpty: the save coordinator
 //     consumes broker events to drive debounce/ceiling/teardown
 //     persistence.
 //   - Runtime.SetBootstrap: server reads the drive_items xlsx and
-//     populates the doc before the broker's first SyncReply, so
-//     clients never see xlsx bytes.
+//     populates the doc when the broker seeds a room, so clients never
+//     see xlsx bytes.
 func registerRealtime(app core.App) {
 	runtime := NewRuntime()
 	runtime.SetBootstrap(makeXLSXBootstrap(app))
 
-	journal := realtime.NewPocketBaseJournal(app)
+	checkpoints := realtime.NewPocketBaseCheckpointStore(app)
 	coordinator := realtime.NewSaveCoordinator(MakeProductionFlush(app))
-	coordinator.SetJournal(roomKindCalc, journal)
+	coordinator.SetKind(roomKindCalc)
 
 	realtime.RegisterRoomKindWith(roomKindCalc, realtime.RoomKindOptions{
 		Authorize: func(auth *core.Record, roomID string) error {
@@ -56,10 +60,11 @@ func registerRealtime(app core.App) {
 			return authorizeAnonShare(app, claims, roomID)
 		},
 		RuntimeProvider: runtime,
-		Journal:         journal,
+		Checkpoints:     checkpoints,
+		Fingerprint:     driveItemFingerprint(app),
+		FlushDirty:      coordinator.FlushDirty,
 		OnRoomCreate:    coordinator.OnRoomCreate,
 		OnDocUpdate:     coordinator.OnDocUpdate,
-		OnDocUpdateSeq:  coordinator.NoteSeq,
 		OnEmpty:         coordinator.OnRoomEmpty,
 		ForceFlush:      coordinator.FlushNow,
 		OnConnect:       makeOnConnect(app),
@@ -75,17 +80,29 @@ func registerRealtime(app core.App) {
 		},
 	})
 
-	// Cascade-clean WAL rows when a drive_items record (calc workbook)
-	// is deleted. Scoped to room_kind = "calc"; other kinds register
-	// their own parallel hook. math.MaxInt64 as the upper bound
-	// effectively truncates every row regardless of seq.
+	// A deleted workbook leaves nothing behind: its parked Y.Doc is closed
+	// and its checkpoint row removed.
 	app.OnRecordAfterDeleteSuccess("drive_items").BindFunc(func(e *core.RecordEvent) error {
-		if err := journal.Truncate(roomKindCalc, e.Record.Id, math.MaxInt64); err != nil {
-			app.Logger().Warn("calc: WAL cleanup on drive_items delete failed",
+		if err := realtime.DropRoom(roomKindCalc, e.Record.Id); err != nil {
+			app.Logger().Warn("calc: checkpoint cleanup on drive_items delete failed",
 				"itemID", e.Record.Id, "err", err)
 		}
 		return e.Next()
 	})
+}
+
+// driveItemFingerprint identifies the stored file a room is seeded from.
+// Every save writes the file under a fresh random suffix, so the name
+// alone changes whenever the content does — by this package's flush or by
+// anything else (an upload, a version restore).
+func driveItemFingerprint(app core.App) realtime.FingerprintFn {
+	return func(roomID string) (string, error) {
+		item, err := app.FindRecordById(driveItemsCollection, roomID)
+		if err != nil {
+			return "", fmt.Errorf("calc: fingerprint of %s: %w", roomID, err)
+		}
+		return item.GetString("file"), nil
+	}
 }
 
 // calcServerHello is the JSON payload of the MsgServerHello frame calc
