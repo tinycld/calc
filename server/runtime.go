@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"strconv"
 	"strings"
@@ -24,11 +23,12 @@ import (
 // own internal state machine; the per-room mutex below only guards the
 // docs map itself.
 type Runtime struct {
-	// bootstrap, when non-nil, runs synchronously inside NewDoc with
-	// the freshly-minted Y.Doc. Production wires this to load the
-	// drive_items xlsx and stamp it into the doc, so the broker's
-	// first SyncReply already carries populated sheets/cells. Tests
-	// leave it nil — they construct doc state via ApplyUpdate.
+	// bootstrap, when non-nil, runs inside Seed with the room's Y.Doc.
+	// Production wires this to load the drive_items xlsx and stamp it
+	// into the doc. The broker calls Seed only when it has neither a
+	// parked document nor a matching checkpoint, and before its first
+	// SyncReply, so the first joiner already sees populated sheets.
+	// Tests leave it nil — they construct doc state via ApplyUpdate.
 	bootstrap func(ctx context.Context, roomID string, doc *ycrdt.Doc) error
 
 	mu   sync.Mutex
@@ -41,7 +41,7 @@ func NewRuntime() *Runtime {
 	return &Runtime{docs: map[string]*ycrdt.Doc{}}
 }
 
-// SetBootstrap registers a per-room bootstrap hook. NewDoc invokes the
+// SetBootstrap registers a per-room bootstrap hook. Seed invokes the
 // hook (if set) inside the same critical section that creates the doc,
 // so MsgSyncRequest replies are guaranteed to see the populated state.
 //
@@ -53,34 +53,42 @@ func (r *Runtime) SetBootstrap(hook func(ctx context.Context, roomID string, doc
 	r.bootstrap = hook
 }
 
-// NewDoc satisfies realtime.DocRuntime: mints a fresh server-side
-// Y.Doc identified by the broker's roomID and returns an opaque
-// handle the broker calls into for the room's lifetime.
-//
-// If a bootstrap hook is registered, it runs synchronously after the
-// doc is created. Bootstrap failures are logged but do not abort the
-// room creation — a partially-bootstrapped (or empty) doc is preferable
-// to refusing the connection, since a peer-driven SyncRequest path
-// can still recover (the client treats an empty SyncReply as "you're
-// alone" and previously fell back to its own xlsx parse).
+// NewDoc satisfies realtime.DocRuntime: an empty Y.Doc registered under
+// the broker's roomID. Content arrives through Seed or through the broker
+// applying a checkpoint.
 func (r *Runtime) NewDoc(roomID string) (realtime.DocHandle, error) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if _, exists := r.docs[roomID]; exists {
-		r.mu.Unlock()
 		return nil, fmt.Errorf("calc: room %s already has a Y.Doc", roomID)
 	}
 	doc := ycrdt.NewDoc(roomID, false, nil, nil, false)
 	r.docs[roomID] = doc
+	return &sheetsDocHandle{runtime: r, id: roomID, doc: doc}, nil
+}
+
+// Seed satisfies realtime.DocRuntime: it runs the bootstrap hook (the xlsx
+// parse) on the room's Y.Doc. The error is returned for the broker to log;
+// the document stays usable with whatever the hook wrote — an empty
+// workbook still lets clients connect and edit, whereas refusing the room
+// takes the feature down for everyone in it.
+func (r *Runtime) Seed(ctx context.Context, roomID string, handle realtime.DocHandle) error {
+	r.mu.Lock()
 	hook := r.bootstrap
 	r.mu.Unlock()
-
-	if hook != nil {
-		if err := hook(context.Background(), roomID, doc); err != nil {
-			slog.Warn("calc: bootstrap hook failed; room continues with empty doc",
-				"roomID", roomID, "err", err)
-		}
+	if hook == nil {
+		return nil
 	}
-	return &sheetsDocHandle{runtime: r, id: roomID, doc: doc}, nil
+	h, ok := handle.(*sheetsDocHandle)
+	if !ok {
+		return fmt.Errorf("calc: seed of a handle this runtime did not create for room %s", roomID)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed || h.doc == nil {
+		return fmt.Errorf("calc: seed of a closed room %s", roomID)
+	}
+	return hook(ctx, roomID, h.doc)
 }
 
 // closeDoc removes the doc from the registry. Returns true if the

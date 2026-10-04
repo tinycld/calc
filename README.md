@@ -342,32 +342,30 @@ via `useRealtimeRoom({ roomKind: 'calc', roomID: driveItemID, … })`:
 
 1. **Authorize** — the room rejects clients without a `drive_shares` row
    linking them to the item.
-2. **Bootstrap** — on first open, `Runtime.NewDoc` invokes the bootstrap
-   hook, which loads `drive_items.file`, parses the xlsx with
-   omnidoc `pkg/xlsx`,
-   and seeds the `Y.Doc` via `BootstrapYDocFromWorkbook` — all
-   synchronously, before the broker sends `SyncReply`. Empty / missing
-   files yield an empty doc that the next save will materialize from
-   scratch.
-3. **WAL replay** — immediately after bootstrap, the broker calls
-   `Journal.Replay` for this `(calc, roomID)` and folds every
-   un-truncated update from the previous server lifetime back into
-   the doc, in seq order. This is what makes edits that arrived
-   between the last successful save and a server crash survive.
-4. **Updates** — every accepted `MsgDocUpdate` is `Journal.Append`'d
-   under a freshly minted, strictly-monotonic per-room seq, then
-   folded into the server's doc via `ycrdt.ApplyUpdate`, then fanned
-   out to other peers. Append precedes apply: a failed WAL write
-   rejects the update rather than letting the in-memory doc and the
-   on-disk WAL diverge.
-5. **Save** — the `SaveCoordinator` watches doc updates and triggers
+2. **Open** — the broker decides where the document comes from. A
+   document whose room emptied within the last 30 minutes is still in
+   memory (parked) and is reused as is. Otherwise, if a checkpoint is
+   stored for the room and its fingerprint still matches the stored
+   file, the Y.Doc is rebuilt from that state. Only when neither exists
+   does `Runtime.Seed` run the bootstrap hook: load `drive_items.file`,
+   parse the xlsx with omnidoc `pkg/xlsx`, and seed the `Y.Doc` via
+   `BootstrapYDocFromWorkbook` — all before the broker sends
+   `SyncReply`. Empty / missing files yield an empty doc that the next
+   save will materialize from scratch.
+3. **Updates** — every accepted `MsgDocUpdate` is folded into the
+   server's doc via `ycrdt.ApplyUpdate`, then fanned out to other peers.
+   Nothing is written per edit.
+4. **Save** — the `SaveCoordinator` watches doc updates and triggers
    `SaveRoom` on a 3-second debounce, 15-second ceiling, or 30-second
    teardown when the last client leaves. Failures retry with exponential
-   backoff (1s, 2s, 4s, 8s, 16s, 30s cap).
-6. **Truncate** — once a save completes, the coordinator calls
-   `Journal.Truncate(throughSeq)` with the highest seq it observed at
-   save start, dropping WAL rows whose state is now reflected in the
-   xlsx blob.
+   backoff (1s, 2s, 4s, 8s, 16s, 30s cap). While the server is read-only
+   a save is deferred, not failed.
+5. **Park and checkpoint** — when the last client leaves, the broker
+   keeps the Y.Doc in memory and reuses it on a reopen within
+   `realtime.ParkIdle` (30 min). It stores the full state, the document's
+   epoch and the stored file's name in `realtime_doc_checkpoints` when it
+   evicts the parked document, when read-only mode begins, at drain and
+   at terminate; the next open from that row is the same document.
 
 `SaveRoom` reads the current xlsx bytes off `drive_items`, snapshots the
 server-side `Y.Doc` (`Snapshot()` walks the `sheets` and `cells` maps
@@ -381,60 +379,30 @@ the source file byte-intact. The resulting bytes replace
 `drive_items.file`; PocketBase renames the on-disk blob to a fresh
 hash so the prior version isn't overwritten in place.
 
-### How core's WAL provides durability
+### Why the document identity matters
 
-The journal is core's, not calc's. Core exports a `Journal` interface
-(`core/server/realtime/journal.go`) with three operations:
+A Y.Doc rebuilt from the xlsx is a new incarnation: y-crdt mints a fresh
+clientID and the seed order is not stable, so every item gets a new
+identity even though the cells are the same. A client that still holds the
+previous incarnation then duplicates the content when it merges, and its
+unsent edits reference items the server never had. The parked document
+and the checkpoint keep the identities. The epoch names the incarnation:
+the broker puts it in every `MsgServerHello`, and core's `useRealtimeRoom`
+discards the local doc only when the epoch it synced under changes.
 
-```go
-type Journal interface {
-    Append(kind, id string, seq int64, update []byte) error
-    Replay(kind, id string, apply func(seq int64, update []byte) error) error
-    Truncate(kind, id string, throughSeq int64) error
-}
-```
+The fingerprint is the stored file's name. Every save writes the file
+under a fresh random suffix, so an upload or any other replacement changes
+it, and the broker then re-seeds from the new file.
 
-Calc uses the production implementation, `PocketBaseJournal`
-(`core/server/realtime/journal_pocketbase.go`), which stores each update as a
-row in the `realtime_doc_updates` PocketBase collection — created by a
-core migration. The collection lives in the same SQLite database as
-the rest of the app, so writes are durable against SIGKILL via
-SQLite's WAL journal-mode `fsync`. The `update` column is
-base64-encoded so the raw CRDT bytes survive PocketBase's text-field
-encoding; the `(room_kind, room_id, seq)` index is unique so a
-duplicate-seq write is a programming bug rather than a silent
-overwrite.
+A cascade hook in `realtime_authorize.go` calls `realtime.DropRoom` when a
+`drive_items` record is deleted, so a deleted workbook's parked Y.Doc and
+checkpoint row don't linger.
 
-The contract is:
-
-- The broker serializes `Append` calls per `(kind, id)` (one
-  goroutine per room route path), so seq monotonicity is the
-  broker's responsibility, not the journal's.
-- A failed `Append` aborts the apply — the in-memory doc and the
-  on-disk WAL never diverge.
-- A failed `Replay` aborts room bootstrap entirely; the alternative
-  (silently dropping rows we can't decode) would let stale state
-  leak back into the doc.
-- `Truncate` with a `throughSeq` ≤ the current floor is a no-op,
-  which keeps the post-save bookkeeping idempotent under retries.
-
-A cascade hook in `realtime_authorize.go` calls
-`Journal.Truncate(roomKindCalc, driveItemID, math.MaxInt64)` when a
-`drive_items` record is deleted, so a deleted workbook's WAL rows
-don't linger.
-
-Worst-case durability window: between saves, the xlsx blob in
-`drive_items.file` lags by up to `DefaultCeilingInterval` (15s) of
-continuous editing, but the WAL has every accepted update. After a
-server crash, the next client to open the room sees:
-
-1. The bootstrap parses the last-saved xlsx into a fresh Y.Doc.
-2. `Replay` folds every un-truncated WAL row on top, in seq order.
-3. The `SyncReply` reflects the union — nothing is lost.
-
-If a `Truncate` partially applies before a crash, replay re-applies
-updates the doc has already absorbed; Yjs handles this as a no-op via
-CRDT idempotence.
+Worst-case durability window: the xlsx blob in `drive_items.file` lags by
+up to `DefaultCeilingInterval` (15s) of continuous editing. Every graceful
+stop stores the document first and loses nothing; a hard crash loses at
+most that window, and the next open re-seeds from the xlsx under a new
+epoch.
 
 ### Why server-side bootstrap
 
@@ -480,7 +448,7 @@ server/
     automation.go             calc:comment-added trigger registration + the
                               participant owner resolver (see Automation rules)
     realtime_authorize.go     RoomKind "calc"; drive_shares-based access;
-                              SaveCoordinator + Journal wiring; WAL cascade hook
+                              SaveCoordinator + checkpoint wiring; cascade drop
     runtime.go                per-room ycrdt.Doc registry; Snapshot()
     bootstrap.go              ReadWorkbookFromXLSX, BootstrapYDocFromWorkbook
     bootstrap_hook.go         production bootstrap closure (load drive_items file)
