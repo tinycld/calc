@@ -412,8 +412,9 @@ parses xlsx, everyone else syncs from peer" race, and a peer dropping
 mid-edit doesn't strand the next joiner with stale state. The client
 package has no xlsx parser at all; omnidoc `pkg/xlsx` is a Go-only
 dependency. (`excelize` remains in `server/go.mod` as a test-only
-dependency — the parity suite in `parity_oracle_test.go` uses it as an
-independent oracle for the read and write paths.)
+dependency — `parity_oracle_test.go` and the other `*_test.go` files use
+it as an independent oracle for the read and write paths; no non-test
+file imports it.)
 
 ### Formula evaluation
 
@@ -471,13 +472,22 @@ server/
     style_map.go              hand-written CellStyle ⇄ xlsx.Style /
                               xlsx.StylePatch mappers (read, patch-write,
                               and dxf builds)
-    parity_oracle_test.go     excelize-as-oracle parity suite — the one
-                              place excelize is still used (test-only)
+    indexed_palette.go        resolves legacy indexed (64-color palette)
+                              style colors to hex on the read path
+    render/                   content-only HTML renderer for one workbook
+                              (RenderHTML); sanitized by core/render
+    render_shim.go            WorkbookModel → render.Workbook conversion,
+                              so render/ never imports calc's wire types
     api.go                    GET /api/calc/render/{id} (thumbnail / file preview)
+    parity_oracle_test.go     excelize-as-oracle parity suite (excelize is
+                              a test-only dependency; no non-test file
+                              imports it)
 ```
 
 Go module: `tinycld.org/packages/calc`. Imports `tinycld.org/core/realtime`
-through the standard go.mod replace directive the app shell installs.
+through the `replace` directive in `server/go.work`, which the app shell
+generates (`tinycld/scripts/gen-server.ts`) and git ignores. `server/go.mod`
+only requires `tinycld.org/core v0.0.0`.
 
 ### Client package layout
 
