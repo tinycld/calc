@@ -2,6 +2,7 @@ import { DocumentTitle } from '@tinycld/core/components/DocumentTitle'
 import { captureException } from '@tinycld/core/lib/errors'
 import { useOrgHref } from '@tinycld/core/lib/org-routes'
 import { useToastStore } from '@tinycld/core/lib/stores/toast-store'
+import type { UploadFile } from '@tinycld/core/lib/upload-file'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { NoFilePanel } from '@tinycld/drive/components/NoFilePanel'
 import { TemplatePickerDialog } from '@tinycld/drive/components/TemplatePickerDialog'
@@ -60,7 +61,7 @@ export default function CalcIndex() {
     }, [createBlank, orgHref])
 
     const handleUpload = useCallback(
-        (files: File[]) => {
+        (files: UploadFile[]) => {
             void handleUploadFiles({
                 files,
                 createMutation: create.mutateAsync,
@@ -156,7 +157,7 @@ function TemplatePickerTrigger({ isVisible, onPress, disabled }: TemplatePickerT
 }
 
 interface UploadHandlerArgs {
-    files: File[]
+    files: UploadFile[]
     createMutation: ReturnType<typeof useCreateDriveItem>['mutateAsync']
     setPickedCsv: (csv: { text: string; name: string } | null) => void
     orgHref: ReturnType<typeof useOrgHref>
@@ -171,8 +172,8 @@ async function handleUploadFiles({
     addToast,
 }: UploadHandlerArgs): Promise<void> {
     const single = files.length === 1
-    const csvSingles: File[] = []
-    const xlsxFiles: File[] = []
+    const csvSingles: UploadFile[] = []
+    const xlsxFiles: UploadFile[] = []
     for (const f of files) {
         if (isCsvLike(f)) csvSingles.push(f)
         else xlsxFiles.push(f)
@@ -234,24 +235,13 @@ async function handleUploadFiles({
     }
 }
 
-// Reads a picked file's bytes as text. Web's <input type="file"> returns
-// a real Blob, so Blob.text() works. NoFilePanel's native picker hands
-// us a { uri, name, type } shim cast as File — Blob.text() is undefined
-// there, and we have to read via expo-file-system. Branching on
-// duck-type rather than Platform.OS keeps tests honest: a unit test that
-// constructs a real Blob still hits the web path.
-async function readFileText(file: File): Promise<string> {
-    if (typeof file.text === 'function') return file.text()
-    const uri = (file as unknown as { uri?: string }).uri
-    if (!uri) throw new Error('readFileText: picked file has neither .text() nor a uri')
-    // SDK 55 moved readAsStringAsync to the `/legacy` entry; the new default
-    // export has no such method, so the bare import would read undefined.
-    const fs = await import('expo-file-system/legacy')
-    const reader = fs as unknown as { readAsStringAsync: (uri: string) => Promise<string> }
-    return reader.readAsStringAsync(uri)
+// A picked file is a browser File on web and an expo-file-system File on
+// native; both read their text the Blob way.
+function readFileText(file: UploadFile): Promise<string> {
+    return file.text()
 }
 
-export function isCsvLike(file: File): boolean {
+export function isCsvLike(file: UploadFile): boolean {
     const name = file.name.toLowerCase()
     if (name.endsWith('.csv') || name.endsWith('.tsv') || name.endsWith('.txt')) return true
     const type = (file.type || '').toLowerCase()
