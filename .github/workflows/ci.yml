@@ -68,25 +68,79 @@ jobs:
       - name: Install (workspace root)
         working-directory: ws
         run: corepack enable && pnpm install --no-frozen-lockfile
+      - name: Typecheck + unit
+        working-directory: ws/${{ env.PACKAGE }}
+        run: pnpm exec tinycld-pkg check
+
+  # Its OWN job, not a step inside `check`. GitHub's checks list shows one
+  # entry per job, so an audit buried in another job is invisible on the PR,
+  # cannot be made a required status check in branch protection, and reports
+  # a failure under that job's name — "Typecheck & Unit failed" when nothing
+  # about the types is wrong. The extra assembly costs ~2 minutes and buys a
+  # check you can see and require.
+  security:
+    name: Security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: ws/${{ env.PACKAGE }}
+      - name: Resolve sibling refs
+        id: sibling
+        run: |
+          # Coordinated cross-repo work (e.g. the single-org migration) lives on
+          # the SAME branch name in every repo. Assembling siblings from their
+          # default branch then typechecks this PR against a core that predates
+          # it — the branch's own APIs are simply absent, so every consumer
+          # fails with errors that look like the PR's fault.
+          #
+          # For each sibling, prefer a branch matching this PR's HEAD and fall
+          # back to its default branch when there is none (the ordinary
+          # single-repo PR, where every sibling should be at its release state).
+          BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          for repo in tinycld drive; do
+            if [ -n "$BRANCH" ] && \
+               git ls-remote --exit-code --heads "https://github.com/tinycld/$repo" "$BRANCH" >/dev/null 2>&1; then
+              echo "${repo}_ref=@$BRANCH" >> "$GITHUB_OUTPUT"
+              echo "$repo -> $BRANCH"
+            else
+              echo "${repo}_ref=" >> "$GITHUB_OUTPUT"
+              echo "$repo -> (default branch)"
+            fi
+          done
+      - name: Assemble workspace (app + core + drive)
+        working-directory: ws
+        run: |
+          TINYCLD_REPO_BASE=https://github.com/tinycld \
+            npx @tinycld/bootstrap@latest --assemble-only \
+            --with "tinycld${{ steps.sibling.outputs.tinycld_ref }}" \
+            --with "drive${{ steps.sibling.outputs.drive_ref }}"
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: ws/.node-version
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ws/tinycld/core/server/go.mod
+      - name: Install (workspace root)
+        working-directory: ws
+        run: corepack enable && pnpm install --no-frozen-lockfile
       # The same audit core runs, from the composite action in the tinycld
-      # member, so calc and core cannot drift apart on audit policy. It has
-      # to come after the install: no lockfile is committed anywhere in the
-      # ecosystem, so the resolved tree this audits only exists once pnpm
-      # has produced it.
+      # member, so calc and core cannot drift apart on audit policy. It must
+      # follow the install: no lockfile is committed anywhere in the
+      # ecosystem, so the resolved tree this audits only exists once pnpm has
+      # produced it.
       #
-      # This matters for a package rather than being core's job already:
-      # CI here assembles tinycld + core + drive + calc, so the audit sees
-      # calc's OWN production dependencies — hyperformula, numfmt,
-      # expo-print, expo-sharing and the expo-file-system path behind CSV
-      # export — none of which core's app+core assembly reaches.
+      # This is not already core's job: core's Security workflow assembles
+      # app + core only. Here the workspace is tinycld + core + drive + calc,
+      # so the audit covers calc's OWN production surface — hyperformula,
+      # numfmt, expo-print, expo-sharing, and the expo-file-system path
+      # behind native CSV export, which exists in no other package.
       - name: Audit dependencies
         uses: ./ws/tinycld/.github/actions/security-scan
         with:
           severity: high
           working-directory: ws
-      - name: Typecheck + unit
-        working-directory: ws/${{ env.PACKAGE }}
-        run: pnpm exec tinycld-pkg check
 
   e2e:
     name: E2E
