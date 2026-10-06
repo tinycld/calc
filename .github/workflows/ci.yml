@@ -68,6 +68,22 @@ jobs:
       - name: Install (workspace root)
         working-directory: ws
         run: corepack enable && pnpm install --no-frozen-lockfile
+      # The same audit core runs, from the composite action in the tinycld
+      # member, so calc and core cannot drift apart on audit policy. It has
+      # to come after the install: no lockfile is committed anywhere in the
+      # ecosystem, so the resolved tree this audits only exists once pnpm
+      # has produced it.
+      #
+      # This matters for a package rather than being core's job already:
+      # CI here assembles tinycld + core + drive + calc, so the audit sees
+      # calc's OWN production dependencies — hyperformula, numfmt,
+      # expo-print, expo-sharing and the expo-file-system path behind CSV
+      # export — none of which core's app+core assembly reaches.
+      - name: Audit dependencies
+        uses: ./ws/tinycld/.github/actions/security-scan
+        with:
+          severity: high
+          working-directory: ws
       - name: Typecheck + unit
         working-directory: ws/${{ env.PACKAGE }}
         run: pnpm exec tinycld-pkg check
