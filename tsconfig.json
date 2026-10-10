@@ -9,7 +9,6 @@
     // tsc handles either form.
     "extends": "../tinycld/core/tsconfig.package-base.json",
     "compilerOptions": {
-        "baseUrl": ".",
         "paths": {
             "~/tinycld/calc/*": ["./tinycld/calc/*"]
         }

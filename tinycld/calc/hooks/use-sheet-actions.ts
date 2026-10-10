@@ -301,20 +301,17 @@ function cloneSheetMetaForDuplicate(
     source: Y.Map<unknown>,
     overrides: CloneSheetOverrides
 ): Y.Map<unknown> {
+    // `out` is not in a document yet, so it is written but never read: Yjs
+    // warns on any read of a type before it joins a document.
     const out = new Y.Map<unknown>()
     source.forEach((value, key) => {
-        if (key === 'name') {
-            out.set('name', overrides.name)
-            return
-        }
-        if (key === 'position') return
-        if (key === SHEET_HIDDEN_KEY) return
+        if (key === 'name' || key === 'position' || key === SHEET_HIDDEN_KEY) return
         if (value instanceof Y.Map) {
             out.set(key, cloneYMapDeep(value as Y.Map<unknown>))
         } else {
             out.set(key, value)
         }
     })
-    if (!out.has('name')) out.set('name', overrides.name)
+    out.set('name', overrides.name)
     return out
 }
