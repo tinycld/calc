@@ -13,8 +13,6 @@ Select the range you want to sort, then choose **Data → Sort range**. A dialog
 - Pick **A → Z** (ascending) or **Z → A** (descending).
 - Toggle **Data has header row** so the header isn't sorted into the body.
 
-You can add multiple sort keys — the secondary key breaks ties from the primary, and so on.
-
 Sorting moves the rows themselves; formulas that reference moved cells follow them.
 
 ## Creating a filter

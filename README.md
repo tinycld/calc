@@ -26,13 +26,13 @@ Editing features:
   function set surfaced through **Help → Function list**, and a
   rewrite layer that keeps cross-sheet refs and inserted/deleted rows
   and columns in sync (`lib/formula/`)
-- Cell formatting — font (family / size / color), fill color, text
+- Cell formatting — font (size / color), fill color, text
   styles (**bold / italic / underline / strike**), horizontal
   alignment, per-edge borders with presets, a **Format painter**
   toolbar button that stamps one cell's style onto a range
   (`FormatPainterOverlay`), and a clear-formatting shortcut (⌘\)
 - Number formats — preset registry (currency, percent, decimal
-  stepper, date / time, custom) backed by `numfmt` (`lib/number-format/`)
+  stepper, date / time) backed by `numfmt` (`lib/number-format/`)
 - Structural mutations — insert / delete rows and columns, merge
   cells, column / row resize (drag the gridline; double-click to
   auto-fit), per-sheet tab color, hide / unhide sheets, freeze panes
@@ -46,7 +46,7 @@ Editing features:
   series; the detector (`lib/fill/detect-series.ts`) handles linear
   numeric, date, and weekday patterns; holding shift as the drag
   STARTS overwrites instead of extending, on web
-- Sort and filter — single- or multi-column sort, filter banner with
+- Sort and filter — single-column sort, filter banner with
   per-column predicates (`lib/sort.ts`, `lib/filter.ts`)
 - **Named ranges** — assign workbook-defined names to a cell, range,
   or constant and use them in formulas; managed from **Data → Named
@@ -167,8 +167,7 @@ Docs: [Automation rules](https://tinycld.org/docs/automation-rules)
 | Marching-ants cut animation          | ✅  | static dashed border |
 
 iPhone (small screens) is not supported yet. Android has no testing surface
-today; iOS-specific code paths use `Platform.OS === 'ios'` rather than
-`Platform.OS !== 'web'` where the behavior is iOS-only (e.g. `InputAccessoryView`).
+today.
 
 For manual iPad release-gating, see `tinycld/calc/tests/manual/ipad-smoke.md`.
 
@@ -331,7 +330,8 @@ The `style` `Y.Map` shape is intentionally additive: a new attribute
 lands as one field in TS `CellStyle`, one field in Go `CellStyle`, one
 reader in `server/style_map.go::styleToCellStyle` (the xlsx→`CellStyle`
 mapping bootstrap runs via `readRowStyles`), and one writer in
-`persist.go` (`cellStyleToPatch` → `PatchCellStyle`). Nothing in
+`server/style_map.go::cellStyleToPatch` (which `persist.go` passes to
+`PatchCellStyle`). Nothing in
 between needs to change.
 
 ### Realtime room lifecycle
@@ -680,14 +680,17 @@ pnpm run pkg:test:e2e  # Playwright across every present member
 ```
 
 The canonical Biome config lives in the app shell (`tinycld/biome.json`)
-and the workspace root extends it. This repo intentionally ships no
+and the workspace root holds a `root: true` copy of it (written by
+`tinycld/scripts/write-workspace-root.ts`, with paths re-rooted and no
+`extends`). This repo intentionally ships no
 `biome.json` of its own.
 
 ## CI
 
-`.github/workflows/ci.yml` runs two jobs on every push to `main` and
-every PR: `tinycld-pkg check` (biome lint, typecheck, and unit tests)
-and `tinycld-pkg test:e2e` (end-to-end Playwright specs). There is no
+`.github/workflows/ci.yml` runs three jobs on every push to `main` and
+every PR: `tinycld-pkg check` (biome lint, typecheck, and unit tests),
+a security audit of dependencies, and `tinycld-pkg test:e2e`
+(end-to-end Playwright specs). There is no
 Go test step. It checks out this package into a workspace member slot
 (`ws/calc`), runs `npx @tinycld/bootstrap@latest --assemble-only` to
 clone app + core + drive as siblings, installs at the workspace root,
