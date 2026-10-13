@@ -103,19 +103,14 @@ export function PrintDialog({
     const {
         control,
         handleSubmit,
-        watch,
         setError,
         getValues,
-        formState: { errors, isSubmitted },
+        formState: { errors, isSubmitted, isValid },
     } = useForm<PrintConfig>({
         resolver: zodResolver(printConfigSchema),
         defaultValues: DEFAULT_PRINT_CONFIG,
         mode: 'onChange',
     })
-
-    const scopeValue = watch('scope.sheets')
-
-    const submitDisabled = typeof scopeValue === 'object' && scopeValue.ids.length === 0
 
     // useMutation gives us the failure-surface the previous
     // handleSubmit-only path was missing: onError lands in
@@ -177,7 +172,7 @@ export function PrintDialog({
                 <Dialog.ActionButton
                     label="Print"
                     onPress={onSubmit}
-                    isDisabled={submitDisabled || printMutation.isPending}
+                    isDisabled={!isValid || printMutation.isPending}
                 />
             </Dialog.Footer>
         </Dialog>

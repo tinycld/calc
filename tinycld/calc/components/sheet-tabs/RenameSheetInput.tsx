@@ -12,10 +12,8 @@ interface RenameSheetInputProps {
 // auto-focuses, selects all on mount; commits on Enter / blur, cancels
 // on Esc.
 //
-// Validation (non-empty, unique-name) lives in the parent — this
-// component just emits the trimmed string and lets the action layer
-// reject invalid names. Rejected commits surface as the parent
-// re-opening the input with the previous value.
+// An empty name cancels, like Esc. Uniqueness is checked by the action
+// layer; the parent reports a rejected name to the user.
 export function RenameSheetInput({ initialValue, onCommit, onCancel }: RenameSheetInputProps) {
     const [value, setValue] = useState(initialValue)
     const ref = useRef<TextInput | null>(null)
@@ -30,7 +28,12 @@ export function RenameSheetInput({ initialValue, onCommit, onCancel }: RenameShe
     const commit = () => {
         if (committedRef.current) return
         committedRef.current = true
-        onCommit(value.trim())
+        const trimmed = value.trim()
+        if (!trimmed) {
+            onCancel()
+            return
+        }
+        onCommit(trimmed)
     }
 
     const handleKeyPress = (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
