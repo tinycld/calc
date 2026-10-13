@@ -1,6 +1,14 @@
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
+import {
+    type Control,
+    Controller,
+    useFieldArray,
+    useForm,
+    useWatch,
+    zodResolver,
+} from '@tinycld/core/ui/form'
 import { Plus, X } from 'lucide-react-native'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import type * as Y from 'yjs'
 import { useGridFilterControls } from '../../hooks/grid/use-grid-filter-controls'
@@ -8,6 +16,13 @@ import { useFilterView } from '../../hooks/use-filter-view'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { FilterCondition, FilterCriterion } from '../../lib/filter'
 import { columnLabel } from '../../lib/workbook-types'
+import {
+    type FilterColumnFormValues,
+    filterColumnDefaults,
+    filterColumnSchema,
+    opNeedsValues,
+    toFilterCriterion,
+} from './filter-column-schema'
 
 interface FilterColumnDialogProps {
     doc: Y.Doc | null
@@ -26,6 +41,8 @@ const CONDITION_OPS: ReadonlyArray<{ op: FilterCondition['op']; label: string }>
     { op: 'isNotEmpty', label: 'is not empty' },
 ]
 
+const NATIVE_HIT_SLOP = Platform.OS === 'web' ? undefined : { top: 6, bottom: 6, left: 4, right: 4 }
+
 const PANEL_WIDTH = 360
 // Sits above context menus / popovers (those land around 60).
 const OVERLAY_ZINDEX = 80
@@ -33,7 +50,7 @@ const OVERLAY_ZINDEX = 80
 // Outer gate: subscribes to filterDialogCol so the rest of Grid
 // doesn't re-render on open/close. When non-null, remounts the inner
 // editor with key={col} so opening on a different column re-seeds
-// form state via remount (no useState+useEffect sync pair).
+// the form via remount.
 export function FilterColumnDialog({ doc, sheetId }: FilterColumnDialogProps) {
     const col = useGridStore(s => s.filterDialogCol)
     if (col == null) return null
@@ -50,7 +67,6 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
     const store = useGridStoreApi()
     const onClose = useCallback(() => store.getState().closeFilterDialog(), [store])
     const fg = useThemeColor('foreground')
-    const muted = useThemeColor('muted-foreground')
     const panelRef = useRef<View | null>(null)
 
     const view = useFilterView(doc, sheetId)
@@ -70,46 +86,24 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
     const initial = initialRef.current
     const isEditing = initial?.type === 'condition'
 
-    const [op, setOp] = useState<FilterCondition['op']>(() =>
-        initial?.type === 'condition' ? initial.condition.op : 'eq'
-    )
-    const [values, setValues] = useState<string[]>(() => {
-        if (initial?.type !== 'condition') return ['']
-        if (!('values' in initial.condition)) return ['']
-        return initial.condition.values.length > 0 ? [...initial.condition.values] : ['']
+    const {
+        control,
+        handleSubmit,
+        formState: { isValid },
+    } = useForm({
+        mode: 'onChange',
+        resolver: zodResolver(filterColumnSchema),
+        defaultValues: filterColumnDefaults(initial),
     })
+    const values = useFieldArray({ control, name: 'values' })
+    const op = useWatch({ control, name: 'op' })
+    const needsValues = opNeedsValues(op)
+    const applyDisabled = !isValid
 
-    const needsValues = op !== 'isEmpty' && op !== 'isNotEmpty'
-
-    const onChangeValue = useCallback((idx: number, next: string) => {
-        setValues(prev => {
-            const out = prev.slice()
-            out[idx] = next
-            return out
-        })
-    }, [])
-    const onAddValue = useCallback(() => setValues(prev => [...prev, '']), [])
-    const onRemoveValue = useCallback((idx: number) => {
-        setValues(prev => {
-            if (prev.length <= 1) return prev
-            return prev.slice(0, idx).concat(prev.slice(idx + 1))
-        })
-    }, [])
-
-    // Trimmed values list used for both the disabled-state of Apply
-    // and the criterion payload itself.
-    const trimmed = needsValues ? values.map(v => v.trim()).filter(v => v.length > 0) : []
-    const applyDisabled = needsValues && trimmed.length === 0
-
-    const onApply = useCallback(() => {
-        if (applyDisabled) return
-        const criterion: FilterCriterion =
-            op === 'isEmpty' || op === 'isNotEmpty'
-                ? { type: 'condition', condition: { op } }
-                : { type: 'condition', condition: { op, values: trimmed } }
-        applyHeaderCriterion(col, criterion)
+    const onApply = handleSubmit(data => {
+        applyHeaderCriterion(col, toFilterCriterion(data))
         onClose()
-    }, [applyDisabled, applyHeaderCriterion, col, onClose, op, trimmed])
+    })
 
     const onRemove = useCallback(() => {
         removeHeaderCriterion(col)
@@ -206,11 +200,7 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
                             onPress={onClose}
                             accessibilityLabel="Close"
                             accessibilityRole="button"
-                            hitSlop={
-                                Platform.OS === 'web'
-                                    ? undefined
-                                    : { top: 6, bottom: 6, left: 4, right: 4 }
-                            }
+                            hitSlop={NATIVE_HIT_SLOP}
                             style={{
                                 width: 22,
                                 height: 22,
@@ -223,98 +213,21 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
                         </Pressable>
                     </View>
 
-                    <ScrollView
-                        style={{ maxHeight: 200, marginBottom: 8 }}
-                        className="border border-border rounded"
-                    >
-                        {CONDITION_OPS.map(option => {
-                            const active = option.op === op
-                            return (
-                                <Pressable
-                                    key={option.op}
-                                    onPress={() => setOp(option.op)}
-                                    accessibilityLabel={option.label}
-                                    accessibilityRole="button"
-                                    accessibilityState={{ selected: active }}
-                                    className={`px-3 py-2 ${active ? 'bg-accent' : ''}`}
-                                >
-                                    <Text
-                                        className={
-                                            active ? 'text-accent-foreground' : 'text-foreground'
-                                        }
-                                        style={{ fontSize: 13 }}
-                                    >
-                                        {option.label}
-                                    </Text>
-                                </Pressable>
-                            )
-                        })}
-                    </ScrollView>
+                    <Controller
+                        control={control}
+                        name="op"
+                        render={({ field }) => (
+                            <ConditionOpList value={field.value} onChange={field.onChange} />
+                        )}
+                    />
 
-                    {needsValues ? (
-                        <View style={{ marginBottom: 8, gap: 6 }}>
-                            {values.map((value, idx) => (
-                                <View
-                                    key={idx}
-                                    className="flex-row items-center"
-                                    style={{ gap: 6 }}
-                                >
-                                    <TextInput
-                                        value={value}
-                                        onChangeText={next => onChangeValue(idx, next)}
-                                        placeholder="Value"
-                                        placeholderTextColor={muted}
-                                        accessibilityLabel={`Filter value ${idx + 1}`}
-                                        className="flex-1 rounded border border-border bg-surface-secondary"
-                                        style={{
-                                            height: 28,
-                                            paddingHorizontal: 8,
-                                            fontSize: 13,
-                                            color: fg,
-                                        }}
-                                    />
-                                    {idx > 0 ? (
-                                        <Pressable
-                                            onPress={() => onRemoveValue(idx)}
-                                            accessibilityLabel={`Remove value ${idx + 1}`}
-                                            accessibilityRole="button"
-                                            hitSlop={
-                                                Platform.OS === 'web'
-                                                    ? undefined
-                                                    : { top: 6, bottom: 6, left: 4, right: 4 }
-                                            }
-                                            style={{
-                                                width: 24,
-                                                height: 24,
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                borderRadius: 4,
-                                            }}
-                                        >
-                                            <X size={14} color={fg} />
-                                        </Pressable>
-                                    ) : null}
-                                </View>
-                            ))}
-                            <Pressable
-                                onPress={onAddValue}
-                                accessibilityLabel="Add value"
-                                accessibilityRole="button"
-                                hitSlop={
-                                    Platform.OS === 'web'
-                                        ? undefined
-                                        : { top: 6, bottom: 6, left: 4, right: 4 }
-                                }
-                                className="flex-row items-center rounded border border-border self-start"
-                                style={{ gap: 4, paddingHorizontal: 8, paddingVertical: 4 }}
-                            >
-                                <Plus size={12} color={fg} />
-                                <Text className="text-foreground" style={{ fontSize: 12 }}>
-                                    Add value
-                                </Text>
-                            </Pressable>
-                        </View>
-                    ) : null}
+                    <FilterValueRows
+                        isVisible={needsValues}
+                        control={control}
+                        fields={values.fields}
+                        onAdd={() => values.append({ value: '' })}
+                        onRemove={values.remove}
+                    />
 
                     <View
                         className="flex-row items-center justify-between"
@@ -372,5 +285,156 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
                 </View>
             </View>
         </View>
+    )
+}
+
+function ConditionOpList({
+    value,
+    onChange,
+}: {
+    value: FilterCondition['op']
+    onChange: (op: FilterCondition['op']) => void
+}) {
+    return (
+        <ScrollView
+            style={{ maxHeight: 200, marginBottom: 8 }}
+            className="border border-border rounded"
+        >
+            {CONDITION_OPS.map(option => (
+                <ConditionOpRow
+                    key={option.op}
+                    label={option.label}
+                    isActive={option.op === value}
+                    onPress={() => onChange(option.op)}
+                />
+            ))}
+        </ScrollView>
+    )
+}
+
+function ConditionOpRow({
+    label,
+    isActive,
+    onPress,
+}: {
+    label: string
+    isActive: boolean
+    onPress: () => void
+}) {
+    return (
+        <Pressable
+            onPress={onPress}
+            accessibilityLabel={label}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isActive }}
+            className={`px-3 py-2 ${isActive ? 'bg-accent' : ''}`}
+        >
+            <Text
+                className={isActive ? 'text-accent-foreground' : 'text-foreground'}
+                style={{ fontSize: 13 }}
+            >
+                {label}
+            </Text>
+        </Pressable>
+    )
+}
+
+interface FilterValueRowsProps {
+    isVisible: boolean
+    control: Control<FilterColumnFormValues>
+    fields: { id: string }[]
+    onAdd: () => void
+    onRemove: (idx: number) => void
+}
+
+function FilterValueRows({ isVisible, control, fields, onAdd, onRemove }: FilterValueRowsProps) {
+    const fg = useThemeColor('foreground')
+    if (!isVisible) return null
+    return (
+        <View style={{ marginBottom: 8, gap: 6 }}>
+            {fields.map((row, idx) => (
+                <FilterValueRow key={row.id} control={control} idx={idx} onRemove={onRemove} />
+            ))}
+            <Pressable
+                onPress={onAdd}
+                accessibilityLabel="Add value"
+                accessibilityRole="button"
+                hitSlop={NATIVE_HIT_SLOP}
+                className="flex-row items-center rounded border border-border self-start"
+                style={{ gap: 4, paddingHorizontal: 8, paddingVertical: 4 }}
+            >
+                <Plus size={12} color={fg} />
+                <Text className="text-foreground" style={{ fontSize: 12 }}>
+                    Add value
+                </Text>
+            </Pressable>
+        </View>
+    )
+}
+
+interface FilterValueRowProps {
+    control: Control<FilterColumnFormValues>
+    idx: number
+    onRemove: (idx: number) => void
+}
+
+function FilterValueRow({ control, idx, onRemove }: FilterValueRowProps) {
+    const fg = useThemeColor('foreground')
+    const muted = useThemeColor('muted-foreground')
+    return (
+        <View className="flex-row items-center" style={{ gap: 6 }}>
+            <Controller
+                control={control}
+                name={`values.${idx}.value`}
+                render={({ field }) => (
+                    <TextInput
+                        value={field.value}
+                        onChangeText={field.onChange}
+                        onBlur={field.onBlur}
+                        placeholder="Value"
+                        placeholderTextColor={muted}
+                        accessibilityLabel={`Filter value ${idx + 1}`}
+                        className="flex-1 rounded border border-border bg-surface-secondary"
+                        style={{
+                            height: 28,
+                            paddingHorizontal: 8,
+                            fontSize: 13,
+                            color: fg,
+                        }}
+                    />
+                )}
+            />
+            <RemoveValueButton isVisible={idx > 0} idx={idx} onRemove={onRemove} />
+        </View>
+    )
+}
+
+function RemoveValueButton({
+    isVisible,
+    idx,
+    onRemove,
+}: {
+    isVisible: boolean
+    idx: number
+    onRemove: (idx: number) => void
+}) {
+    const fg = useThemeColor('foreground')
+    if (!isVisible) return null
+    return (
+        <Pressable
+            onPress={() => onRemove(idx)}
+            accessibilityLabel={`Remove value ${idx + 1}`}
+            accessibilityRole="button"
+            hitSlop={NATIVE_HIT_SLOP}
+            style={{
+                width: 24,
+                height: 24,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 4,
+            }}
+        >
+            <X size={14} color={fg} />
+        </Pressable>
     )
 }

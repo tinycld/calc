@@ -62,15 +62,16 @@ export function ConditionalFormatPanel({ doc, sheetId, readOnly }: ConditionalFo
     const onDelete = (id: string) => {
         deleteRule(doc, sheetId, id)
     }
-    const onDone = () => {
-        const rule = editorRef.current?.commit()
-        if (rule == null) return
+    const saveRule = (rule: CFRule) => {
         if (editingRuleId === NEW_RULE_ID) {
             addRule(doc, sheetId, rule)
         } else if (editingRuleId != null) {
             updateRule(doc, sheetId, editingRuleId, rule)
         }
         setEditingRule(null)
+    }
+    const onDone = () => {
+        editorRef.current?.submit(saveRule)
     }
 
     return (

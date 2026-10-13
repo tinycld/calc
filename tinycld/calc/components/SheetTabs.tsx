@@ -1,3 +1,4 @@
+import { useToastStore } from '@tinycld/core/lib/stores/toast-store'
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { Menu } from '@tinycld/core/ui/menu'
 import { Plus } from 'lucide-react-native'
@@ -50,6 +51,7 @@ export function SheetTabs({ doc, allSheets, activeSheetId, onSelect }: SheetTabs
     const cancelRename = useSheetTabsStore(s => s.cancelRename)
     const openContextMenu = useSheetTabsStore(s => s.openContextMenu)
     const actions = useSheetActions(doc)
+    const addToast = useToastStore(s => s.addToast)
 
     const handleAdd = useCallback(() => {
         const id = actions.addSheet()
@@ -66,13 +68,21 @@ export function SheetTabs({ doc, allSheets, activeSheetId, onSelect }: SheetTabs
 
     const handleRenameCommit = useCallback(
         (sheetId: string, next: string) => {
-            // Whether or not the rename succeeds, close the editor.
-            // A failed rename leaves the original name in place; the
-            // user can re-trigger via the context menu.
-            actions.renameSheet(sheetId, next)
+            // Whether or not the rename succeeds, close the editor. A
+            // rejected name (e.g. a duplicate) leaves the original name in
+            // place and tells the user why.
+            const result = actions.renameSheet(sheetId, next)
             cancelRename()
+            if (!result.ok) {
+                addToast({
+                    title: 'Could not rename sheet',
+                    body: result.error,
+                    variant: 'error',
+                    duration: 6000,
+                })
+            }
         },
-        [actions, cancelRename]
+        [actions, cancelRename, addToast]
     )
 
     return (
