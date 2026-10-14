@@ -23,8 +23,8 @@ const roomKindCalc = "calc"
 // XLSX bytes back to drive_items.
 //
 // Wiring:
-//   - Authorize: enforces drive_shares membership before the WS
-//     upgrade.
+//   - Authorize: driveshare.CheckRead before the WS upgrade — the
+//     item's creator or a drive_shares row; suspended users refused.
 //   - RuntimeProvider: hands out per-room server-side Y.Doc handles.
 //   - Checkpoints / Fingerprint: the broker parks a workbook's Y.Doc
 //     when its room empties, reuses it on a reopen whose stored file is
@@ -51,8 +51,9 @@ func registerRealtime(app core.App) {
 			}
 			return driveshare.CheckRead(app, auth.Id, roomID)
 		},
-		// Anonymous editable-link visitors: admit only when the share
-		// link is still live and grants edit. The session token was
+		// Anonymous share-link visitors: admit while the link is live.
+		// Viewer and commentor links open the room read-only (enforced
+		// by the broker's write predicate). The session token was
 		// already signature-verified by the transport; we re-resolve the
 		// link here so revocation/expiry/downgrade takes effect at
 		// connect time.

@@ -258,7 +258,7 @@ are menu-only.
 │        │   └──┤ drive_items.file  (xlsx blob in PocketBase)     │    │
 │        │      └────────────────────────────────────────────────┘     │
 │        ▼                                                             │
-│   SaveCoordinator  (debounce 3s, ceiling 15s, teardown 30s)          │
+│   SaveCoordinator  (debounce 3s, ceiling 15s, final ≤30s)            │
 │        │                                                             │
 │        ▼                                                             │
 │   persist.SaveRoom: read original xlsx → snapshot ycrdt.Doc →        │
@@ -358,9 +358,11 @@ via `useRealtimeRoom({ roomKind: 'calc', roomID: driveItemID, … })`:
    server's doc via `ycrdt.ApplyUpdate`, then fanned out to other peers.
    Nothing is written per edit.
 4. **Save** — the `SaveCoordinator` watches doc updates and triggers
-   `SaveRoom` on a 3-second debounce, 15-second ceiling, or 30-second
-   teardown when the last client leaves. Failures retry with exponential
-   backoff (1s, 2s, 4s, 8s, 16s, 30s cap). While the server is read-only
+   `SaveRoom` on a 3-second debounce or a 15-second ceiling. A failed
+   flush retries with exponential backoff (1s, 2s, 4s, 8s, 16s, 30s cap).
+   When the last client leaves, a final flush starts at once if the doc
+   has unsaved changes; it has 30 seconds to finish, and a failure is
+   logged, not retried. While the server is read-only
    a save is deferred, not failed.
 5. **Park and checkpoint** — when the last client leaves, the broker
    keeps the Y.Doc in memory and reuses it on a reopen within
@@ -619,7 +621,8 @@ tinycld calc comments <path> --all      # include resolved threads
 ```
 
 `comment` is accepted as an alias. The commands need the `calc:read`
-and `calc:write` OAuth scopes, which `server/oauth_scopes.go` registers;
+and `calc:write` OAuth scopes, which `server/oauth_scopes.go` defines and
+`registerShared` in `server/register.go` registers;
 the CLI asks for every scope the server supports at login. A new root comment requires both
 `--cell` (A1 notation, converted at the CLI edge to the **one-based**
 `row` / `col` the collection stores — `min: 1`, so A1 is `1,1`) and
