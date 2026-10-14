@@ -340,8 +340,10 @@ Calc registers itself as a `realtime.RoomKind` named `"calc"` (see
 `server/realtime_authorize.go`). For each `drive_item.id` clients reach
 via `useRealtimeRoom({ roomKind: 'calc', roomID: driveItemID, … })`:
 
-1. **Authorize** — the room rejects clients without a `drive_shares` row
-   linking them to the item.
+1. **Authorize** — `driveshare.CheckRead` admits the item's creator and
+   anyone with a `drive_shares` row for it, and refuses suspended users.
+   Anonymous share-link visitors are admitted through a separate
+   `AuthorizeShare` path.
 2. **Open** — the broker decides where the document comes from. A
    document whose room emptied within the last 30 minutes is still in
    memory (parked) and is reused as is. Otherwise, if a checkpoint is
@@ -487,7 +489,7 @@ server/
 Go module: `tinycld.org/packages/calc`. Imports `tinycld.org/core/realtime`
 through the `replace` directive in `server/go.work`, which the app shell
 generates (`tinycld/scripts/gen-server.ts`) and git ignores. `server/go.mod`
-only requires `tinycld.org/core v0.0.0`.
+pins `tinycld.org/core` at the placeholder `v0.0.0`.
 
 ### Client package layout
 
@@ -616,8 +618,9 @@ tinycld calc comments <path> --reopen <id>
 tinycld calc comments <path> --all      # include resolved threads
 ```
 
-`comment` is accepted as an alias. The group requests the `calc:read`
-and `calc:write` OAuth scopes. A new root comment requires both
+`comment` is accepted as an alias. The commands need the `calc:read`
+and `calc:write` OAuth scopes, which `server/oauth_scopes.go` registers;
+the CLI asks for every scope the server supports at login. A new root comment requires both
 `--cell` (A1 notation, converted at the CLI edge to the **one-based**
 `row` / `col` the collection stores — `min: 1`, so A1 is `1,1`) and
 `--sheet` (the sheet **id**, `sheet1` / `sheet2` / …, not its display
@@ -709,6 +712,7 @@ this package — exactly what a developer does locally.
   `server/automation.go` (trigger registration + the participant owner
   resolver)
 - `cli/` — Go source for this package's `tinycld calc` command group
-- `tests/` — vitest unit tests (sibling tests run from the app shell)
+- `tests/` — vitest unit tests (sibling tests run from the app shell) and
+  Playwright e2e specs (`*.spec.ts`)
 - `tinycld/calc/` — TypeScript source (screens, components, hooks, lib),
   including `tinycld/calc/automation.ts` — the automation trigger catalog
