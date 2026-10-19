@@ -639,7 +639,7 @@ comments only.
 
 The `tinycld` binary is a Go CLI the server cross-compiles containing
 exactly its installed package set; users download it from **Settings →
-Personal → About**. This package's group is sourced from `cli/` and
+About**. This package's group is sourced from `cli/` and
 declared by a `cli` manifest block naming the Go module. The OAuth
 scopes above are not on the manifest: `server/oauth_scopes.go`
 registers them (and the `calc_comments` collection they govern) with
