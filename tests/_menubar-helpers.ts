@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { TEST_USER_EMAIL, TEST_USER_PASSWORD } from '../../tinycld/tests/e2e/helpers'
+import { TEST_USER_PASSWORD, TEST_USER_USERNAME } from '../../tinycld/tests/e2e/helpers'
 
 export const PB_URL = 'http://127.0.0.1:7200'
 
@@ -10,7 +10,7 @@ async function authAsTestUser(): Promise<string> {
     const res = await fetch(`${PB_URL}/api/collections/users/auth-with-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identity: TEST_USER_EMAIL, password: TEST_USER_PASSWORD }),
+        body: JSON.stringify({ identity: TEST_USER_USERNAME, password: TEST_USER_PASSWORD }),
     })
     if (!res.ok) {
         throw new Error(`PB auth failed: ${res.status} ${await res.text()}`)
