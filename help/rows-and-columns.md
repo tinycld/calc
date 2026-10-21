@@ -23,8 +23,8 @@ Right-click a row number or column letter and choose **Delete row** / **Delete c
 ## Resizing
 
 - **Drag the border** between two row numbers or column letters to resize.
-- **Double-click the border** to auto-fit to the widest content in that row/column.
-- **Right-click → Resize** to type an exact pixel size.
+- **Double-click a column border** to auto-fit the column to its widest content. Double-click a row border to reset the row to the default height.
+- **Right-click a header** and choose **Auto-fit column width**, **Reset to default width** or **Reset to default height**.
 
 Resizes are remembered per-sheet and synced across collaborators.
 

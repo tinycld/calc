@@ -42,7 +42,7 @@ Long-press a cell, row, column, or sheet tab to open the same context menu that 
 A few interactions don't have a touch equivalent and are simply unavailable on iPad:
 
 - **Disjoint selection** (⌘-click on web). iPad has no modifier key, so each new tap starts a fresh selection.
-- **Live shift toggle mid-fill-drag** for the fill handle.
+- **Shift-drag on the fill handle** to extend the selection without filling. On iPad, drag the selection's corner handles instead.
 - The **marching-ants** cut animation — iPad shows a static dashed border instead.
 
 ## CSV and print

@@ -34,8 +34,9 @@ Editing features:
 - Number formats — preset registry (currency, percent, decimal
   stepper, date / time) backed by `numfmt` (`lib/number-format/`)
 - Structural mutations — insert / delete rows and columns, merge
-  cells, column / row resize (drag the gridline; double-click to
-  auto-fit), per-sheet tab color, hide / unhide sheets, freeze panes
+  cells, column / row resize (drag the gridline; double-click a
+  column gridline to auto-fit, a row gridline to reset to the
+  default height), per-sheet tab color, hide / unhide sheets, freeze panes
   (rows / columns / up to selection)
 - Copy / cut / paste with a **marching-ants cut overlay**, paste
   special (**Values only** / **Format only** in the Edit menu;
@@ -44,8 +45,8 @@ Editing features:
   and Sheets (`lib/clipboard/`)
 - **Fill handle** — drag the selected range's corner to extend a
   series; the detector (`lib/fill/detect-series.ts`) handles linear
-  numeric, date, and weekday patterns; holding shift as the drag
-  STARTS overwrites instead of extending, on web
+  numeric, date, and weekday patterns; on web, holding shift as the drag
+  STARTS extends the selection instead of filling
 - Sort and filter — single-column sort, filter banner with
   per-column predicates (`lib/sort.ts`, `lib/filter.ts`)
 - **Named ranges** — assign workbook-defined names to a cell, range,
@@ -163,7 +164,7 @@ Docs: [Automation rules](https://tinycld.org/docs/automation-rules)
 | Conditional formatting               | ✅  | ✅   |
 | Pivot tables                         | ✅  | ✅   |
 | Disjoint selection (⌘-click)         | ✅  | n/a (no modifier key) |
-| Shift-at-drag-start overwrite (fill) | ✅  | n/a (no modifier key) |
+| Shift-at-drag-start extend (fill handle) | ✅  | n/a (drag the selection's corner handles) |
 | Marching-ants cut animation          | ✅  | static dashed border |
 
 iPhone (small screens) is not supported yet. Android has no testing surface

@@ -33,7 +33,7 @@ On iPad, drag the small **corner handles** at the edges of a selection to extend
 
 Select one or more cells, then drag the small square at the bottom-right corner of the selection. Calc detects the pattern (sequential numbers, dates, weekdays, common lists) and fills the range. If no pattern is detected, the values repeat.
 
-Hold **Shift** mid-drag (web only) to toggle between *copy* and *series* modes live.
+To grow the selection without filling, hold **Shift** before you start the drag (web only). On iPad, drag the selection's corner handles instead.
 
 ## Undo and redo
 
