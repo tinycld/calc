@@ -449,8 +449,8 @@ const HIT_SLOP = 12
 // wants to grow the selection without filling. Modifier state is
 // captured at down-time (useDragGesture's contract) — toggling shift
 // mid-drag does not flip the mode. Native has no shift key — touch
-// users always get fill; "Extend selection to here" lives in the
-// long-press cell context menu as the touch-side fallback.
+// users always get fill and extend the selection with the corner
+// handles (SelectionEdgeHandles) instead.
 //
 // Hidden during edit sessions so the dot doesn't sit on top of the
 // CellEditor's caret. Hidden in readOnly mode since there's no
