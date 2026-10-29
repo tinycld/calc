@@ -509,7 +509,7 @@ tinycld/calc/
     seed.ts            sample data
     screens/
         _layout.tsx
-        index.tsx      workbook list, "new spreadsheet", template picker, CSV import
+        index.tsx      No-File panel ("new sheet", upload, recent files), template picker, CSV import
         [id].tsx       editor — opens room, mounts MenuBar + Toolbar + Grid + SheetTabs
     components/
         Grid.tsx, Toolbar.tsx, FormulaBar, FormulaSuggestionList, NameBox,
