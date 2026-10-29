@@ -20,7 +20,7 @@ import {
     type YCellValue,
     ydocSheetIds,
 } from '../y-doc-bootstrap'
-import { HYPERFORMULA_LICENSE_KEY } from './hyperformula-license'
+import { HYPERFORMULA_CONFIG } from './hyperformula-config'
 import { hfInputForCell, normalizeHfValue } from './normalize'
 import { FORMULA_ORIGIN } from './origins'
 
@@ -210,7 +210,14 @@ export class FormulaBridge {
             // HF is 0-indexed; the doc is 1-indexed. setYCellFormulaResult
             // wraps the write in a FORMULA_ORIGIN transaction and skips
             // non-formula / no-op writes internally.
-            setYCellFormulaResult(this.doc, sheetId, address.row + 1, address.col + 1, raw)
+            setYCellFormulaResult(
+                this.doc,
+                sheetId,
+                address.row + 1,
+                address.col + 1,
+                raw,
+                impliedResultFormat(this.hf.getCellValueDetailedType(address))
+            )
         }
         // Coarse-invalidate the conditional-formatting custom-formula
         // cache. Cells that hold a custom-formula rule subscribe to the
@@ -610,14 +617,29 @@ function findTopLevelCellKey(
     return head
 }
 
+// impliedResultFormat is the number format a formula result implies
+// from its inputs: a date plus a number is a date. Sheets and Excel
+// show such a result as a date; without a format it shows as a bare
+// serial (45633).
+function impliedResultFormat(type: string): string | undefined {
+    switch (type) {
+        case 'NUMBER_DATE':
+            return 'm/d/yyyy'
+        case 'NUMBER_DATETIME':
+            return 'm/d/yyyy h:mm:ss'
+        case 'NUMBER_TIME':
+            return 'h:mm:ss AM/PM'
+        default:
+            return undefined
+    }
+}
+
 // createFormulaBridge instantiates HyperFormula via dynamic import so
 // HF's ~250KB only loads when calc actually runs. Returns a started
 // bridge ready to mirror the doc.
 export async function createFormulaBridge(doc: Y.Doc): Promise<FormulaBridge> {
     const { HyperFormula } = await import('hyperformula')
-    const hf = HyperFormula.buildEmpty({
-        licenseKey: HYPERFORMULA_LICENSE_KEY,
-    })
+    const hf = HyperFormula.buildEmpty(HYPERFORMULA_CONFIG)
     const bridge = new FormulaBridge(doc, hf)
     bridge.start()
     registerFormulaBridge(doc, bridge)

@@ -44,10 +44,32 @@ export const COL_WIDTHS_KEY = 'colWidths'
 
 export type ColWidths = Record<number, number>
 
-export function readColWidth(colWidths: ColWidths | undefined, col: number): number {
-    if (colWidths == null) return DEFAULT_COL_WIDTH
-    const w = colWidths[col]
-    return typeof w === 'number' ? w : DEFAULT_COL_WIDTH
+// A sheet imported from xlsx carries its own default sizes
+// (sheetFormatPr), written by the server bootstrap in CSS px. A column
+// or row with no stored size takes the sheet's default, else the app's.
+export const SHEET_DEFAULT_COL_WIDTH_KEY = 'defaultColWidth'
+export const SHEET_DEFAULT_ROW_HEIGHT_KEY = 'defaultRowHeight'
+
+export function readSheetDefaultColWidth(meta: Y.Map<unknown> | undefined): number {
+    return positiveNumberAt(meta, SHEET_DEFAULT_COL_WIDTH_KEY) ?? DEFAULT_COL_WIDTH
+}
+
+export function readSheetDefaultRowHeight(meta: Y.Map<unknown> | undefined): number {
+    return positiveNumberAt(meta, SHEET_DEFAULT_ROW_HEIGHT_KEY) ?? DEFAULT_ROW_HEIGHT
+}
+
+function positiveNumberAt(meta: Y.Map<unknown> | undefined, key: string): number | undefined {
+    const v = meta?.get(key)
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined
+}
+
+export function readColWidth(
+    colWidths: ColWidths | undefined,
+    col: number,
+    defaultWidth = DEFAULT_COL_WIDTH
+): number {
+    const w = colWidths?.[col]
+    return typeof w === 'number' ? w : defaultWidth
 }
 
 export function clampColWidth(width: number): number {
@@ -60,18 +82,23 @@ export function clampColWidth(width: number): number {
 // setYColWidth writes a column's width to the sheet's nested colWidths
 // Y.Map, lazily creating the map on first write. Width is clamped to
 // [0, MAX_COL_WIDTH] (with a snap-to-hidden floor below
-// HIDE_SNAP_THRESHOLD). Writing DEFAULT_COL_WIDTH deletes the entry
-// instead of storing it — keeps the map sparse and lets the absence
-// of an entry mean "default" everywhere.
-export function setYColWidth(doc: Y.Doc | null, sheetId: string, col: number, width: number): void {
+// HIDE_SNAP_THRESHOLD). A null width, or the sheet's default width,
+// deletes the entry instead of storing it — keeps the map sparse and
+// lets the absence of an entry mean "default" everywhere.
+export function setYColWidth(
+    doc: Y.Doc | null,
+    sheetId: string,
+    col: number,
+    width: number | null
+): void {
     if (doc == null) return
     const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
     const meta = sheetsMap.get(sheetId)
     if (meta == null) return
-    const clamped = clampColWidth(width)
+    const clamped = width == null ? null : clampColWidth(width)
     doc.transact(() => {
         let widths = meta.get(COL_WIDTHS_KEY)
-        if (clamped === DEFAULT_COL_WIDTH) {
+        if (clamped == null || clamped === readSheetDefaultColWidth(meta)) {
             if (widths instanceof Y.Map) {
                 widths.delete(String(col))
             }
@@ -109,11 +136,15 @@ export function readColWidthsFromMeta(meta: Y.Map<unknown> | undefined): ColWidt
 // and `offsets[cols] === total content width`). Used both for direct
 // position lookups in render and as the input to the visible-range
 // binary search.
-export function buildColOffsets(cols: number, colWidths: ColWidths | undefined): Float64Array {
+export function buildColOffsets(
+    cols: number,
+    colWidths: ColWidths | undefined,
+    defaultWidth = DEFAULT_COL_WIDTH
+): Float64Array {
     const out = new Float64Array(cols + 1)
     let acc = 0
     for (let c = 1; c <= cols; c++) {
-        acc += readColWidth(colWidths, c)
+        acc += readColWidth(colWidths, c, defaultWidth)
         out[c] = acc
     }
     return out
@@ -250,10 +281,13 @@ export const ROW_HEIGHTS_KEY = 'rowHeights'
 
 export type RowHeights = Record<number, number>
 
-export function readRowHeight(rowHeights: RowHeights | undefined, row: number): number {
-    if (rowHeights == null) return DEFAULT_ROW_HEIGHT
-    const h = rowHeights[row]
-    return typeof h === 'number' ? h : DEFAULT_ROW_HEIGHT
+export function readRowHeight(
+    rowHeights: RowHeights | undefined,
+    row: number,
+    defaultHeight = DEFAULT_ROW_HEIGHT
+): number {
+    const h = rowHeights?.[row]
+    return typeof h === 'number' ? h : defaultHeight
 }
 
 export function clampRowHeight(height: number): number {
@@ -266,23 +300,23 @@ export function clampRowHeight(height: number): number {
 // setYRowHeight writes a row's height to the sheet's nested rowHeights
 // Y.Map, lazily creating the map on first write. Height is clamped to
 // [0, MAX_ROW_HEIGHT] (with a snap-to-hidden floor below
-// ROW_HIDE_SNAP_THRESHOLD). Writing DEFAULT_ROW_HEIGHT deletes the entry
-// instead of storing it — keeps the map sparse and lets the absence
-// of an entry mean "default" everywhere.
+// ROW_HIDE_SNAP_THRESHOLD). A null height, or the sheet's default
+// height, deletes the entry instead of storing it — keeps the map
+// sparse and lets the absence of an entry mean "default" everywhere.
 export function setYRowHeight(
     doc: Y.Doc | null,
     sheetId: string,
     row: number,
-    height: number
+    height: number | null
 ): void {
     if (doc == null) return
     const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
     const meta = sheetsMap.get(sheetId)
     if (meta == null) return
-    const clamped = clampRowHeight(height)
+    const clamped = height == null ? null : clampRowHeight(height)
     doc.transact(() => {
         let heights = meta.get(ROW_HEIGHTS_KEY)
-        if (clamped === DEFAULT_ROW_HEIGHT) {
+        if (clamped == null || clamped === readSheetDefaultRowHeight(meta)) {
             if (heights instanceof Y.Map) {
                 heights.delete(String(row))
             }
@@ -316,11 +350,15 @@ export function readRowHeightsFromMeta(meta: Y.Map<unknown> | undefined): RowHei
 // `offsets[rows] === total content height`). Used both for direct
 // position lookups in render and as the input to the visible-range
 // binary search.
-export function buildRowOffsets(rows: number, rowHeights: RowHeights | undefined): Float64Array {
+export function buildRowOffsets(
+    rows: number,
+    rowHeights: RowHeights | undefined,
+    defaultHeight = DEFAULT_ROW_HEIGHT
+): Float64Array {
     const out = new Float64Array(rows + 1)
     let acc = 0
     for (let r = 1; r <= rows; r++) {
-        acc += readRowHeight(rowHeights, r)
+        acc += readRowHeight(rowHeights, r, defaultHeight)
         out[r] = acc
     }
     return out

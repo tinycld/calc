@@ -10,9 +10,11 @@ import type { CellAlignment, CellBorders } from '../../lib/workbook-types'
 import type { CellRange } from '../grid-store'
 import { useBordersPickerStore } from '../use-borders-picker-store'
 import { useGridStoreApi } from '../use-grid-store'
+import { useWorkbookDefaultFont } from '../use-workbook-default-font'
 import type { useYCell } from '../use-y-cell'
 
 export type HorizontalAlign = NonNullable<CellAlignment['horizontal']>
+export type VerticalAlign = NonNullable<CellAlignment['vertical']>
 
 // GridFormatControls bundles the toolbar-side write paths for number
 // formatting, font sizing, font/fill color, borders, and alignment.
@@ -41,6 +43,8 @@ export interface GridFormatControls {
     fillColor: string | undefined
     borders: CellBorders | undefined
     horizontalAlign: HorizontalAlign | undefined
+    verticalAlign: VerticalAlign | undefined
+    fontFamily: string | undefined
     applyPreset: (id: string) => void
     applyNumFmt: (numFmt: string) => void
     stepDecimal: (delta: 1 | -1) => void
@@ -56,6 +60,8 @@ export interface GridFormatControls {
     setFillColor: (color: string) => void
     setBorders: (presetId: BorderPresetId) => void
     setHorizontalAlign: (align: HorizontalAlign) => void
+    setVerticalAlign: (align: VerticalAlign) => void
+    setFontFamily: (family: string) => void
 }
 
 interface UseGridFormatControlsArgs {
@@ -71,13 +77,18 @@ export function useGridFormatControls({
     readOnly,
     selectedCellValue,
 }: UseGridFormatControlsArgs): GridFormatControls {
+    // A cell with no font of its own draws in the workbook default, so
+    // the toolbar shows that font rather than "Default" / 10.
+    const workbookFont = useWorkbookDefaultFont(doc)
     const currentNumFmt = selectedCellValue?.style?.numFmt
-    const fontSize = selectedCellValue?.style?.font?.size
+    const fontSize = selectedCellValue?.style?.font?.size ?? workbookFont.size
     const fontColor = selectedCellValue?.style?.font?.color
     const fillColor =
         selectedCellValue?.style?.fill?.fgColor ?? selectedCellValue?.style?.fill?.bgColor
     const borders = selectedCellValue?.style?.borders
     const horizontalAlign = selectedCellValue?.style?.alignment?.horizontal
+    const verticalAlign = selectedCellValue?.style?.alignment?.vertical
+    const fontFamily = selectedCellValue?.style?.font?.name ?? workbookFont.name
 
     const store = useGridStoreApi()
 
@@ -226,6 +237,30 @@ export function useGridFormatControls({
         [doc, sheetId, resolveRanges, applyToRanges, readOnly]
     )
 
+    const setVerticalAlign = useCallback(
+        (align: VerticalAlign) => {
+            if (readOnly || doc == null) return
+            const ranges = resolveRanges()
+            if (ranges.length === 0) return
+            applyToRanges(ranges, range =>
+                applyStyleToRange(doc, sheetId, range, { alignment: { vertical: align } })
+            )
+        },
+        [doc, sheetId, resolveRanges, applyToRanges, readOnly]
+    )
+
+    const setFontFamily = useCallback(
+        (family: string) => {
+            if (readOnly || doc == null) return
+            const ranges = resolveRanges()
+            if (ranges.length === 0) return
+            applyToRanges(ranges, range =>
+                applyStyleToRange(doc, sheetId, range, { font: { name: family } })
+            )
+        },
+        [doc, sheetId, resolveRanges, applyToRanges, readOnly]
+    )
+
     return {
         currentNumFmt,
         fontSize,
@@ -233,6 +268,8 @@ export function useGridFormatControls({
         fillColor,
         borders,
         horizontalAlign,
+        verticalAlign,
+        fontFamily,
         applyPreset,
         applyNumFmt,
         stepDecimal,
@@ -245,5 +282,7 @@ export function useGridFormatControls({
         setFillColor,
         setBorders,
         setHorizontalAlign,
+        setVerticalAlign,
+        setFontFamily,
     }
 }

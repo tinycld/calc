@@ -8,7 +8,6 @@ import { useSheetConditionalFormats } from '../../hooks/use-sheet-conditional-fo
 import { useYSheets } from '../../hooks/use-y-sheets'
 import { rangeToSheetRelativeA1 } from '../../lib/conditional-format/a1'
 import { anyRuleOverlapsRect } from '../../lib/conditional-format/range-index'
-import { DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT } from '../../lib/dimensions'
 import { clearFilter } from '../../lib/filter'
 import { pluralize } from '../../lib/pluralize'
 import { allRanges, isDisjoint, primaryRange } from '../../lib/selection-range'
@@ -123,11 +122,11 @@ export function HeaderContextMenu({ doc, sheetId }: HeaderContextMenuProps) {
     }, [doc, sheetId, clickedIndex])
     const onResetColWidth = useCallback(() => {
         if (clickedIndex == null) return
-        commitColWidth(doc, sheetId, clickedIndex, DEFAULT_COL_WIDTH)
+        commitColWidth(doc, sheetId, clickedIndex, null)
     }, [doc, sheetId, clickedIndex])
     const onResetRowHeight = useCallback(() => {
         if (clickedIndex == null) return
-        commitRowHeight(doc, sheetId, clickedIndex, DEFAULT_ROW_HEIGHT)
+        commitRowHeight(doc, sheetId, clickedIndex, null)
     }, [doc, sheetId, clickedIndex])
 
     // Sort/filter only make sense on a single contiguous column

@@ -11,8 +11,9 @@ import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import * as Y from 'yjs'
 import type { CellRange } from '../hooks/grid-store'
 import { ROW_HEIGHTS_KEY } from './dimensions'
+import { formatCell } from './workbook-types'
 import { yCellKey } from './y-cell-key'
-import { CELLS_MAP, numberFromYRaw, SHEETS_MAP } from './y-doc-bootstrap'
+import { CELLS_MAP, numberFromYRaw, readYCell, SHEETS_MAP } from './y-doc-bootstrap'
 
 export type FilterCondition =
     | { op: 'gt'; values: string[] }
@@ -40,15 +41,19 @@ export interface FilterDefinition {
 
 export const FILTER_VIEW_KEY = 'filterView'
 
-// readCellDisplay returns the display string of (row, col), or empty
-// string when the cell is missing. Used for both criteria evaluation
-// and distinct-values enumeration so the user filters by what they see.
+// readCellDisplay returns the text (row, col) shows — formatted
+// through its number format, as the grid draws it — or empty string
+// when the cell is missing. Used for both criteria evaluation and
+// distinct-values enumeration so the user filters by what they see. The
+// cached `display` key is not enough: it is unformatted for imported
+// numbers ("1234" for a cell showing "$1,234.00"), while an xlsx value
+// filter lists the formatted text.
 function readCellDisplay(doc: Y.Doc, sheetId: string, row: number, col: number): string {
     const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
     const cell = cellsMap.get(yCellKey(sheetId, row, col))
     if (cell == null) return ''
-    const display = cell.get('display')
-    return typeof display === 'string' ? display : ''
+    const value = readYCell(cell)
+    return formatCell(value.kind, value.raw, value.formula, value.style?.numFmt)
 }
 
 function readCellNumber(doc: Y.Doc, sheetId: string, row: number, col: number): number | null {
@@ -285,11 +290,20 @@ export function readFilterView(doc: Y.Doc, sheetId: string): FilterDefinition | 
     return { mode, range, criteria, savedHeights }
 }
 
+// firstFilteredRow is the first row a filter may hide. The range's
+// first row is its header (an xlsx autoFilter's labels, or row 0 for a
+// filter the app spans over the whole sheet), and frozen rows 1..N stay
+// on screen, so neither is ever hidden.
+function firstFilteredRow(range: CellRange, frozenRows: number): number {
+    return Math.max(range.startRow + 1, Math.max(0, frozenRows) + 1)
+}
+
 // applyFilter persists the criteria onto sheet metadata and writes
 // rowHeights[row] = 0 for every non-matching row in the range.
 // Prior heights are stored in `savedHeights` (only on the first apply)
-// so clearFilter can restore them. Frozen rows are always protected:
-// they never get a 0-height override even if they don't match.
+// so clearFilter can restore them. The header row and frozen rows are
+// always protected: they never get a 0-height override even if they
+// don't match.
 //
 // Re-applying after a criteria change reuses the existing savedHeights
 // and unhides any rows that now match again before re-hiding the new
@@ -303,7 +317,7 @@ export function applyFilter(
     const meta = getMeta(doc, sheetId)
     if (meta == null) return
 
-    const safeFrozen = Math.max(0, frozenRows)
+    const firstRow = firstFilteredRow(filterDef.range, frozenRows)
 
     doc.transact(() => {
         const view = getOrCreateFilterView(meta)
@@ -328,12 +342,11 @@ export function applyFilter(
             view.set('savedHeights', savedHeightsMap)
             const rh = meta.get(ROW_HEIGHTS_KEY)
             if (rh instanceof Y.Map) {
-                const snapshotStart = Math.max(filterDef.range.startRow, safeFrozen)
                 rh.forEach((value, key) => {
                     if (typeof value !== 'number') return
                     const row = Number(key)
                     if (!Number.isFinite(row)) return
-                    if (row < snapshotStart || row > filterDef.range.endRow) return
+                    if (row < firstRow || row > filterDef.range.endRow) return
                     if (value === 0) return
                     ;(savedHeightsMap as Y.Map<unknown>).set(String(row), value)
                 })
@@ -347,8 +360,7 @@ export function applyFilter(
         }
         const heights = rowHeights as Y.Map<number>
 
-        const loopStart = Math.max(filterDef.range.startRow, safeFrozen)
-        for (let r = loopStart; r <= filterDef.range.endRow; r++) {
+        for (let r = firstRow; r <= filterDef.range.endRow; r++) {
             const visible = rowMatches(doc, sheetId, r, filterDef.criteria)
             if (visible) {
                 // Restore prior height if we'd previously hidden this

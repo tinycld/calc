@@ -1,5 +1,7 @@
 import { normalizeColor } from '@tinycld/core/ui/color-picker/normalize-color'
-import type { TextStyle, ViewStyle } from 'react-native'
+import { Platform, type TextStyle, type ViewStyle } from 'react-native'
+import { resolveFontFamily } from './font-family'
+import type { WorkbookFont } from './workbook-default-font'
 import type {
     CellAlignment,
     CellBorderEdge,
@@ -7,8 +9,25 @@ import type {
     CellBorders,
     CellFill,
     CellFont,
+    CellKind,
+    CellRaw,
     CellStyle,
 } from './workbook-types'
+
+// Font sizes in the doc are points, as in xlsx; the screen draws
+// pixels (96 per inch, 72 points per inch).
+export const DEFAULT_FONT_SIZE_PT = 10
+
+export function pointsToPixels(pt: number): number {
+    return (pt * 4) / 3
+}
+
+// CellContent is what a cell holds, which decides its default
+// ("General") horizontal alignment.
+export interface CellContent {
+    kind: CellKind
+    raw: CellRaw | Date
+}
 
 // CellRenderStyle is the bundle of RN style values produced from a
 // partial CellStyle. A single helper produces all three layers
@@ -35,18 +54,29 @@ export interface CellRenderStyle {
 }
 
 // cellStyleToRenderProps converts a partial CellStyle into the RN
-// style props the cell render path needs. Only attributes present on
-// the input map to output values — absence at any level means "leave
-// the defaults alone".
+// style props the cell render path needs. Attributes the style leaves
+// unset get the spreadsheet defaults: the workbook's default font
+// (`baseFont`, else 10pt in the platform font), bottom alignment, and
+// the "General" horizontal alignment of the cell's content (text
+// left, numbers and dates right, booleans and errors centered).
 //
-// The inverse mapping (excelize -> CellStyle) lives server-side in
-// bootstrap.go's readWorkbookCellStyle. The forward mapping (CellStyle
-// -> excelize) lives in style_reflect.go's overlayStyle. This file is
-// the third edge of the triangle: CellStyle -> RN render props.
-export function cellStyleToRenderProps(style: CellStyle | undefined): CellRenderStyle {
-    const viewStyle: ViewStyle = {}
-    const textStyle: TextStyle = {}
+// The inverse mapping (xlsx -> CellStyle) lives server-side in
+// style_map.go; the forward mapping (CellStyle -> xlsx) in persist.go.
+// This file is the third edge of the triangle: CellStyle -> RN render
+// props.
+export function cellStyleToRenderProps(
+    style: CellStyle | undefined,
+    content?: CellContent,
+    baseFont?: WorkbookFont
+): CellRenderStyle {
+    const viewStyle: ViewStyle = { justifyContent: 'flex-end' }
+    const textStyle: TextStyle = {
+        fontSize: pointsToPixels(validSize(baseFont?.size) ?? DEFAULT_FONT_SIZE_PT),
+    }
+    applyFontName(textStyle, baseFont?.name)
     let numberOfLines: number | undefined = 1
+
+    applyHorizontal(viewStyle, textStyle, style?.alignment?.horizontal ?? generalAlignment(content))
 
     if (style == null) {
         return { viewStyle, textStyle, numberOfLines }
@@ -67,10 +97,9 @@ export function cellStyleToRenderProps(style: CellStyle | undefined): CellRender
                 | 'line-through'
                 | 'underline line-through'
         }
-        if (typeof style.font.size === 'number') textStyle.fontSize = style.font.size
-        if (typeof style.font.name === 'string' && style.font.name !== '') {
-            textStyle.fontFamily = style.font.name
-        }
+        const size = validSize(style.font.size)
+        if (size != null) textStyle.fontSize = pointsToPixels(size)
+        applyFontName(textStyle, style.font.name)
         if (typeof style.font.color === 'string' && style.font.color !== '') {
             textStyle.color = normalizeColor(style.font.color)
         }
@@ -107,20 +136,6 @@ export function cellStyleToRenderProps(style: CellStyle | undefined): CellRender
     }
 
     if (style.alignment != null) {
-        switch (style.alignment.horizontal) {
-            case 'left':
-                textStyle.textAlign = 'left'
-                viewStyle.alignItems = 'flex-start'
-                break
-            case 'center':
-                textStyle.textAlign = 'center'
-                viewStyle.alignItems = 'center'
-                break
-            case 'right':
-                textStyle.textAlign = 'right'
-                viewStyle.alignItems = 'flex-end'
-                break
-        }
         switch (style.alignment.vertical) {
             case 'top':
                 viewStyle.justifyContent = 'flex-start'
@@ -139,6 +154,69 @@ export function cellStyleToRenderProps(style: CellStyle | undefined): CellRender
 
     return { viewStyle, textStyle, numberOfLines }
 }
+
+function validSize(size: number | undefined): number | undefined {
+    return typeof size === 'number' && size > 0 ? size : undefined
+}
+
+// A cell's own font name replaces the workbook default even when the
+// platform has no family for it: undefined then means the system font,
+// not the default font's family.
+function applyFontName(textStyle: TextStyle, name: string | undefined): void {
+    if (typeof name !== 'string' || name === '') return
+    const family = resolveFontFamily(name, Platform.OS)
+    if (family != null) textStyle.fontFamily = family
+    else delete textStyle.fontFamily
+}
+
+function applyHorizontal(
+    viewStyle: ViewStyle,
+    textStyle: TextStyle,
+    horizontal: CellAlignment['horizontal']
+): void {
+    switch (horizontal) {
+        case 'center':
+            textStyle.textAlign = 'center'
+            viewStyle.alignItems = 'center'
+            break
+        case 'right':
+            textStyle.textAlign = 'right'
+            viewStyle.alignItems = 'flex-end'
+            break
+        case 'left':
+            textStyle.textAlign = 'left'
+            viewStyle.alignItems = 'flex-start'
+            break
+    }
+}
+
+// generalAlignment is the "General" horizontal alignment of a cell
+// with no explicit one.
+function generalAlignment(content: CellContent | undefined): CellAlignment['horizontal'] {
+    if (content == null) return 'left'
+    const value = content.kind === 'formula' ? content.raw : content.kind
+    if (content.kind === 'number' || content.kind === 'date' || typeof value === 'number') {
+        return 'right'
+    }
+    if (content.kind === 'boolean' || typeof value === 'boolean') return 'center'
+    if (typeof value === 'string' && FORMULA_ERRORS.has(value)) {
+        return 'center'
+    }
+    return 'left'
+}
+
+const FORMULA_ERRORS = new Set([
+    '#DIV/0!',
+    '#N/A',
+    '#NAME?',
+    '#NULL!',
+    '#NUM!',
+    '#REF!',
+    '#VALUE!',
+    '#ERROR!',
+    '#CYCLE!',
+    '#SPILL!',
+])
 
 // applyEdge sets the per-side border width + color on `viewStyle` for
 // one CellBorders edge. `false` and absent edges are no-ops; an object

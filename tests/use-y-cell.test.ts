@@ -321,6 +321,38 @@ describe('setYCellTyped + inferred commit path', () => {
         expect(snap.raw).toBe('2024-01-15')
     })
 
+    it('typing a US date stores an ISO raw and gives an unformatted cell its format', () => {
+        const doc = new Y.Doc()
+        setYCell(doc, 'sheet1', 1, 1, '12/31/2025')
+        const snap = readYCell(
+            doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>
+        )
+        expect(snap.kind).toBe('date')
+        expect(snap.raw).toBe('2025-12-31')
+        expect(snap.style?.numFmt).toBe('mm/dd/yyyy')
+    })
+
+    it('typing currency into a formatted cell keeps the existing format', () => {
+        const doc = new Y.Doc()
+        setYCellStyle(doc, 'sheet1', 1, 1, { numFmt: '0.000' })
+        setYCell(doc, 'sheet1', 1, 1, '$1,234.50')
+        const snap = readYCell(
+            doc.getMap<Y.Map<unknown>>(CELLS_MAP).get(yCellKey('sheet1', 1, 1)) as Y.Map<unknown>
+        )
+        expect(snap.raw).toBe(1234.5)
+        expect(snap.style?.numFmt).toBe('0.000')
+    })
+
+    it('a formatted entry is still one Yjs update', () => {
+        const doc = new Y.Doc()
+        let updates = 0
+        doc.on('update', () => {
+            updates++
+        })
+        setYCell(doc, 'sheet1', 1, 1, '$5')
+        expect(updates).toBe(1)
+    })
+
     it('typing =A1+B1 stores kind=formula with the formula text', () => {
         const doc = new Y.Doc()
         setYCell(doc, 'sheet1', 1, 1, '=A1+B1')

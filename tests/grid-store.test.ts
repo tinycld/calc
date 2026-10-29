@@ -470,6 +470,66 @@ describe('createGridStore', () => {
         })
     })
 
+    describe('selectInitialCell', () => {
+        it('marks the opening selection as implicit', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().selectInitialCell({ row: 1, col: 1 })
+            expect(primaryAnchor(store.getState().selection)).toEqual({ row: 1, col: 1 })
+            expect(store.getState().isSelectionImplicit).toBe(true)
+        })
+
+        it('any later selection change makes it the user selection', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().selectInitialCell({ row: 1, col: 1 })
+            store.getState().navigateSelection('down', 100, 100)
+            expect(store.getState().isSelectionImplicit).toBe(false)
+        })
+
+        it('selecting the same cell explicitly also clears it', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().selectInitialCell({ row: 1, col: 1 })
+            store.getState().selectCell({ row: 1, col: 1 })
+            expect(store.getState().isSelectionImplicit).toBe(false)
+        })
+    })
+
+    describe('commitAndTab / commitAndEnter', () => {
+        // Sheets and Excel: typing across a row with Tab and pressing
+        // Enter moves to the next row at the column the Tab run began.
+        it('Enter after a Tab run returns to the starting column', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().editCell({ row: 36, col: 1 }, 'a')
+            store.getState().commitAndTab(36, 1, 'a', 100, 100)
+            store.getState().editCell({ row: 36, col: 2 }, 'b')
+            store.getState().commitAndTab(36, 2, 'b', 100, 100)
+            store.getState().editCell({ row: 36, col: 3 }, 'c')
+            store.getState().commitAndEnter(36, 3, 'c', 100, 100)
+            expect(primaryAnchor(store.getState().selection)).toEqual({ row: 37, col: 1 })
+        })
+
+        it('Enter without a Tab run moves straight down', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().editCell({ row: 5, col: 4 }, 'x')
+            store.getState().commitAndEnter(5, 4, 'x', 100, 100)
+            expect(primaryAnchor(store.getState().selection)).toEqual({ row: 6, col: 4 })
+        })
+
+        it('a Tab run broken by a jump elsewhere does not steer Enter', () => {
+            const stub = makeStubDeps()
+            const store = createGridStore(stub.deps)
+            store.getState().editCell({ row: 2, col: 1 }, 'a')
+            store.getState().commitAndTab(2, 1, 'a', 100, 100)
+            store.getState().editCell({ row: 9, col: 6 }, 'z')
+            store.getState().commitAndEnter(9, 6, 'z', 100, 100)
+            expect(primaryAnchor(store.getState().selection)).toEqual({ row: 10, col: 6 })
+        })
+    })
+
     describe('cellRefTap', () => {
         it('returns false when there is no active edit session', () => {
             const stub = makeStubDeps()

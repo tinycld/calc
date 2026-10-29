@@ -1,3 +1,4 @@
+import { dateFromSerial, isDateFormat, parseValue } from 'numfmt'
 import { type CellKind, type CellRaw, formatCell } from './workbook-types'
 
 // InferredCellInput is the structured result of running raw editor
@@ -10,14 +11,17 @@ export interface InferredCellInput {
     raw: CellRaw
     display: string
     formula?: string
+    // numFmt is the format the typed text implies ("$1,234" implies a
+    // currency format). The commit path applies it only to a cell that
+    // has no format yet, as Sheets and Excel do.
+    numFmt?: string
 }
 
 // inferCellInput classifies the text the user typed in the editor.
-// Rules apply in order; the first match wins. The rules are
-// locale-strict on purpose: dates are ISO-only, numbers don't accept
-// thousands separators, booleans are exact-match TRUE/FALSE. This
-// keeps the doc portable — locale-specific *display* formatting is a
-// numFmt concern, not a value concern.
+// Rules apply in order; the first match wins. Values are stored
+// locale-free (ISO dates, plain numbers); typed input is read the way
+// a US-locale spreadsheet reads it, so "12/6/24", "$1,234.50" and "45%"
+// become a date and numbers rather than text.
 //
 // Empty input is signalled by returning kind 'string' with raw '';
 // callers that care about the empty-cell semantics (the editor commit
@@ -75,10 +79,42 @@ export function inferCellInput(text: string): InferredCellInput {
         }
     }
 
-    // 6. Anything else is a string. raw is the text the user typed
+    // 6. A US-locale formatted value: M/D/Y dates and date-times,
+    //    times, currency, percent, thousands separators.
+    const formatted = inferFormattedValue(trimmed)
+    if (formatted != null) return formatted
+
+    // 7. Anything else is a string. raw is the text the user typed
     //    verbatim (no trim — leading/trailing space is preserved for
     //    string cells, matching Excel).
     return { kind: 'string', raw: text, display: text }
+}
+
+function inferFormattedValue(text: string): InferredCellInput | null {
+    const parsed = parseValue(text)
+    if (parsed == null || typeof parsed.v !== 'number' || parsed.z == null) return null
+    const numFmt = parsed.z
+    // A time alone is a fraction of a day, so it stays a number.
+    if (isDateFormat(numFmt) && parsed.v >= 1) {
+        const iso = serialToIsoDate(parsed.v)
+        return { kind: 'date', raw: iso, display: iso, numFmt }
+    }
+    return { kind: 'number', raw: parsed.v, display: formatCell('number', parsed.v), numFmt }
+}
+
+// serialToIsoDate renders a spreadsheet serial as the doc's ISO form.
+// A time of day is written as a UTC wall-clock time ("Z"), the same
+// form the xlsx import writes, so the time the user typed is the time
+// that is shown and saved.
+function serialToIsoDate(serial: number): string {
+    const [y, m, d, hh, mm, ss] = dateFromSerial(serial)
+    const date = `${y}-${pad2(m)}-${pad2(d)}`
+    if (hh === 0 && mm === 0 && ss === 0) return date
+    return `${date}T${pad2(hh)}:${pad2(mm)}:${pad2(ss)}Z`
+}
+
+function pad2(n: number): string {
+    return String(n).padStart(2, '0')
 }
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:?\d{2})?)?$/

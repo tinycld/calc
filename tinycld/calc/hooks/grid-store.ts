@@ -150,6 +150,11 @@ export interface GridState {
     // anchor drives formula bar / keyboard nav / awareness; Shift-
     // click extends its range). Ctrl-click appends.
     selection: Selection
+    // True while the selection is the one the sheet opened with (A1),
+    // not one the user made. A click on that cell selects it rather than
+    // opening the editor, which a click on a cell the user already
+    // selected does.
+    isSelectionImplicit: boolean
     editSession: EditSession | null
     pendingSelection: DraftSelection | null
     activeSurface: ActiveSurface
@@ -166,6 +171,8 @@ export interface GridState {
     bodyTop: number | null
     contextTarget: ContextTarget | null
     commentTarget: CommentTarget | null
+    // The cell whose link dialog is open, or null.
+    linkTarget: SelectedCell | null
     handleMenu: HandleMenuTarget | null
     headerMenu: HeaderMenuTarget | null
     clipboardMarker: string | null
@@ -191,6 +198,9 @@ export interface GridState {
 export interface GridRefs {
     editCursor: { current: DraftSelection }
     lastRefSlice: { current: { start: number; end: number } | null }
+    // The Tab run in progress: the row, the column it began in, and
+    // the column the next Tab commit must come from to continue it.
+    tabRun: { current: { row: number; startCol: number; nextCol: number } | null }
 }
 
 export type StructuralOp =
@@ -242,6 +252,8 @@ export interface MergeAnchor {
 
 export interface GridActions {
     selectCell: (cell: SelectedCell) => void
+    // Select the cell a sheet opens with (see isSelectionImplicit).
+    selectInitialCell: (cell: SelectedCell) => void
     // Extend the active (last) sub-range from its anchor to `cell`.
     // If there is no anchor, this is equivalent to selectCell.
     extendActiveRangeTo: (cell: SelectedCell) => void
@@ -272,6 +284,11 @@ export interface GridActions {
     // the primary anchor by one step in `direction`, clamped to bounds,
     // then calls deps.scrollToCell to ensure the new cell is visible.
     navigateSelection: (direction: ArrowDirection, maxRow: number, maxCol: number) => void
+    // Scroll the grid just enough to show a cell (name box jumps).
+    revealCell: (row: number, col: number) => void
+    // Move keyboard focus back to the grid, so typing edits the selected
+    // cell (after the name box has taken focus).
+    focusGrid: () => void
     // Commit the current edit (writing the cell value) then move
     // the selection one step in `direction`. Used by the in-cell editor
     // for Enter (down) and arrow keys.
@@ -283,9 +300,20 @@ export interface GridActions {
         maxRow: number,
         maxCol: number
     ) => void
+    // Tab and Enter commits. Enter after a run of Tabs moves to the row
+    // below the cell where the run began (Sheets / Excel data entry).
+    commitAndTab: (row: number, col: number, draft: string, maxRow: number, maxCol: number) => void
+    commitAndEnter: (
+        row: number,
+        col: number,
+        draft: string,
+        maxRow: number,
+        maxCol: number
+    ) => void
     // Select every cell in the sheet (Cmd+A / Ctrl+A).
     selectAll: (rowCount: number, colCount: number) => void
-    editCell: (cell: SelectedCell, initialDraft?: string) => void
+    // `caret` places the caret (a click's position); the end by default.
+    editCell: (cell: SelectedCell, initialDraft?: string, caret?: number) => void
     setEditDraft: (row: number, col: number, draft: string) => void
     setEditSelection: (row: number, col: number, start: number, end: number) => void
     commitEdit: (row: number, col: number, value: string) => void
@@ -312,6 +340,9 @@ export interface GridActions {
     closeCellContextMenu: () => void
     openCommentPopover: (row: number, col: number, x: number, y: number) => void
     closeCommentPopover: () => void
+    // Open the link dialog on the primary selected cell.
+    openLinkDialog: () => void
+    closeLinkDialog: () => void
     openHandleMenu: (axis: 'col' | 'row', index: number, x: number, y: number) => void
     closeHandleMenu: () => void
     // openHeaderMenu pre-selects the clicked row/col when it isn't
@@ -389,6 +420,7 @@ function rangesEqual(a: CellRange, b: CellRange): boolean {
 
 const initialState: GridState = {
     selection: null,
+    isSelectionImplicit: false,
     editSession: null,
     pendingSelection: null,
     activeSurface: 'cell',
@@ -399,6 +431,7 @@ const initialState: GridState = {
     bodyTop: null,
     contextTarget: null,
     commentTarget: null,
+    linkTarget: null,
     handleMenu: null,
     headerMenu: null,
     clipboardMarker: null,
@@ -419,6 +452,7 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
     const refs: GridRefs = {
         editCursor: { current: { start: 0, end: 0 } },
         lastRefSlice: { current: null },
+        tabRun: { current: null },
     }
 
     let clipboardTimeout: ReturnType<typeof setTimeout> | null = null
@@ -509,11 +543,16 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                         prevCommentTarget.cell.col !== target.col)
                 set({
                     selection: singleCellSelection(target),
+                    isSelectionImplicit: false,
                     editSession: null,
                     pendingSelection: null,
                     commentTarget: closeComment ? null : prevCommentTarget,
                 })
                 if (wasEditingCell) deps.focusSentinel()
+            },
+
+            selectInitialCell: cell => {
+                set({ selection: singleCellSelection(cell), isSelectionImplicit: true })
             },
 
             selectRow: (row, colCount) => {
@@ -905,9 +944,35 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 deps.focusSentinel()
             },
 
+            revealCell: (row, col) => deps.scrollToCell(row, col),
+
+            focusGrid: () => deps.focusSentinel(),
+
             commitAndNavigate: (row, col, draft, direction, maxRow, maxCol) => {
                 get().commitEdit(row, col, draft)
                 get().navigateSelection(direction, maxRow, maxCol)
+            },
+
+            commitAndTab: (row, col, draft, maxRow, maxCol) => {
+                const run = refs.tabRun.current
+                const continues = run != null && run.row === row && run.nextCol === col
+                refs.tabRun.current = {
+                    row,
+                    startCol: continues ? run.startCol : col,
+                    nextCol: col + 1,
+                }
+                get().commitAndNavigate(row, col, draft, 'right', maxRow, maxCol)
+            },
+
+            commitAndEnter: (row, col, draft, maxRow, maxCol) => {
+                const run = refs.tabRun.current
+                refs.tabRun.current = null
+                if (run == null || run.row !== row || run.nextCol !== col || row >= maxRow) {
+                    get().commitAndNavigate(row, col, draft, 'down', maxRow, maxCol)
+                    return
+                }
+                get().commitEdit(row, col, draft)
+                get().selectCell({ row: row + 1, col: run.startCol })
             },
 
             selectAll: (rowCount, colCount) => {
@@ -927,9 +992,9 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
                 })
             },
 
-            editCell: (cell, initialDraft = '') => {
+            editCell: (cell, initialDraft = '', caret) => {
                 if (deps.readOnly) return
-                const cursor = initialDraft.length
+                const cursor = Math.min(caret ?? initialDraft.length, initialDraft.length)
                 refs.editCursor.current = { start: cursor, end: cursor }
                 refs.lastRefSlice.current = null
                 set({
@@ -1142,6 +1207,15 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             },
 
             closeCommentPopover: () => set({ commentTarget: null }),
+
+            openLinkDialog: () => {
+                if (deps.readOnly) return
+                const anchor = readPrimaryAnchor(get().selection)
+                if (anchor == null) return
+                set({ linkTarget: anchor })
+            },
+
+            closeLinkDialog: () => set({ linkTarget: null }),
 
             openHandleMenu: (axis, index, x, y) => {
                 if (deps.readOnly) return
@@ -1614,6 +1688,18 @@ export function createGridStore(deps: GridStoreDeps): GridStoreApi {
             state.dismissedDraft !== state.editSession.draft
         ) {
             store.setState({ dismissedDraft: null })
+        }
+    })
+
+    // Any selection change after the sheet's opening selection — arrow
+    // keys, shift-extend, select-all — makes the selection the user's.
+    store.subscribe((state, prev) => {
+        if (
+            state.isSelectionImplicit &&
+            prev.isSelectionImplicit &&
+            state.selection !== prev.selection
+        ) {
+            store.setState({ isSelectionImplicit: false })
         }
     })
 

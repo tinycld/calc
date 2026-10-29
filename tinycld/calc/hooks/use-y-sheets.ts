@@ -6,10 +6,13 @@ import {
     type RowHeights,
     readColWidthsFromMeta,
     readRowHeightsFromMeta,
+    readSheetDefaultColWidth,
+    readSheetDefaultRowHeight,
 } from '../lib/dimensions'
 import {
     FROZEN_COLS_KEY,
     FROZEN_ROWS_KEY,
+    HIDE_GRID_LINES_KEY,
     readFrozenCount,
     SHEET_COLOR_KEY,
     SHEET_HIDDEN_KEY,
@@ -32,6 +35,19 @@ export function setFrozenRows(doc: Y.Doc | null, sheetId: string, n: number): vo
 
 export function setFrozenCols(doc: Y.Doc | null, sheetId: string, n: number): void {
     setYFrozenCount(doc, sheetId, FROZEN_COLS_KEY, n)
+}
+
+// setGridLinesVisible shows or hides a sheet's gridlines. Showing them
+// deletes the key, because absent is the default and keeps the sheet
+// meta sparse. Tagged LOCAL_ORIGIN so the toggle is one undo step.
+export function setGridLinesVisible(doc: Y.Doc | null, sheetId: string, visible: boolean): void {
+    if (doc == null) return
+    const meta = doc.getMap<Y.Map<unknown>>(SHEETS_MAP).get(sheetId)
+    if (meta == null) return
+    doc.transact(() => {
+        if (visible) meta.delete(HIDE_GRID_LINES_KEY)
+        else meta.set(HIDE_GRID_LINES_KEY, true)
+    }, LOCAL_ORIGIN)
 }
 
 // useYSheets returns the array of VISIBLE sheets in the workbook,
@@ -80,6 +96,7 @@ export function useAllYSheets(doc: Y.Doc | null): SheetWithId[] {
             const meta = sheetsMap.get(id)
             const colorRaw = meta?.get(SHEET_COLOR_KEY)
             const hiddenRaw = meta?.get(SHEET_HIDDEN_KEY)
+            const hideGridLinesRaw = meta?.get(HIDE_GRID_LINES_KEY)
             return {
                 id,
                 name: (meta?.get('name') as string) ?? id,
@@ -88,10 +105,13 @@ export function useAllYSheets(doc: Y.Doc | null): SheetWithId[] {
                 colCount: (meta?.get('colCount') as number) ?? 0,
                 colWidths: readColWidthsFromMeta(meta),
                 rowHeights: readRowHeightsFromMeta(meta),
+                defaultColWidth: readSheetDefaultColWidth(meta),
+                defaultRowHeight: readSheetDefaultRowHeight(meta),
                 color: typeof colorRaw === 'string' ? colorRaw : undefined,
                 hidden: hiddenRaw === true ? true : undefined,
                 frozenRows: readFrozenCount(meta, FROZEN_ROWS_KEY),
                 frozenCols: readFrozenCount(meta, FROZEN_COLS_KEY),
+                hideGridLines: hideGridLinesRaw === true ? true : undefined,
             }
         })
         const prev = snapshotRef.current
@@ -155,7 +175,10 @@ function sameSheets(a: SheetWithId[], b: SheetWithId[]): boolean {
             x.color !== y.color ||
             x.hidden !== y.hidden ||
             x.frozenRows !== y.frozenRows ||
-            x.frozenCols !== y.frozenCols
+            x.frozenCols !== y.frozenCols ||
+            x.hideGridLines !== y.hideGridLines ||
+            x.defaultColWidth !== y.defaultColWidth ||
+            x.defaultRowHeight !== y.defaultRowHeight
         ) {
             return false
         }

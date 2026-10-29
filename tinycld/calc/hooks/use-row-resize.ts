@@ -37,6 +37,8 @@ const DOUBLE_CLICK_MS = 300
 
 export interface RowResizeOptions {
     rowHeights: RowHeights | undefined
+    // Height of a row with no stored height (the sheet's default).
+    defaultRowHeight: number | undefined
     readOnly: boolean
     onCommit: (row: number, height: number) => void
     onResetDefault: (row: number) => void
@@ -61,6 +63,7 @@ export interface RowResizeHandlers {
 
 export function useRowResize({
     rowHeights,
+    defaultRowHeight,
     readOnly,
     onCommit,
     onResetDefault,
@@ -73,13 +76,19 @@ export function useRowResize({
 
     const rowHeightsRef = useRef(rowHeights)
     rowHeightsRef.current = rowHeights
+    const defaultRowHeightRef = useRef(defaultRowHeight)
+    defaultRowHeightRef.current = defaultRowHeight
 
     const lastClickRef = useRef<Map<number, number>>(new Map())
 
     const beginDrag = useCallback(
         (row: number) => {
             if (readOnly) return
-            const startHeight = readRowHeight(rowHeightsRef.current, row)
+            const startHeight = readRowHeight(
+                rowHeightsRef.current,
+                row,
+                defaultRowHeightRef.current
+            )
             const next: RowDragState = { row, startHeight, currentHeight: startHeight }
             dragRef.current = next
             setDragState(next)

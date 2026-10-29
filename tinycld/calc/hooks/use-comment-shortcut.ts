@@ -31,13 +31,23 @@ export function useCommentShortcut(store: GridStoreApi, readOnly: boolean) {
             // commonly, nothing).
             if (state.editSession != null) return
             e.preventDefault()
-            const x = window.innerWidth / 2
-            const y = window.innerHeight / 2
-            store.getState().openCommentPopover(anchor.row, anchor.col, x, y)
+            openCommentOnSelection(store)
         }
         window.addEventListener('keydown', onKeyDown)
         return () => {
             window.removeEventListener('keydown', onKeyDown)
         }
     }, [store, readOnly])
+}
+
+// openCommentOnSelection opens the comment popover on the primary
+// selected cell. Shared by the shortcut and the toolbar button, neither
+// of which has a cursor position to anchor to.
+export function openCommentOnSelection(store: GridStoreApi) {
+    const anchor = primaryAnchor(store.getState().selection)
+    if (anchor == null) return
+    const hasWindow = typeof window !== 'undefined'
+    const x = hasWindow ? window.innerWidth / 2 : 0
+    const y = hasWindow ? window.innerHeight / 2 : 0
+    store.getState().openCommentPopover(anchor.row, anchor.col, x, y)
 }
