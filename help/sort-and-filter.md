@@ -17,12 +17,16 @@ Sorting moves the rows themselves; formulas that reference moved cells follow th
 
 ## Creating a filter
 
-Select the range (including the header row), then choose **Data → Create a filter**. A small filter button appears in each column header. Click it to open the filter menu:
+Select the range (including the header row), then choose **Data → Create a filter**. A small filter button appears in each cell of the header row. Click it to open the filter menu for that column (you can also right-click the column letter):
 
 - **By value** — uncheck the values you want to hide.
 - **By condition** — text contains, number greater than, date is before, etc.
 
 Rows that don't match are hidden. Their data still exists and still participates in formulas — they're just not visible.
+
+A column that is filtering rows shows a filled filter button.
+
+A filter in an imported .xlsx file stays on, with its filter buttons and the rules calc can show. Rules that calc cannot show (for example, a filter by color) are kept in the file but do not hide rows in calc. The filter is saved back into the downloaded .xlsx file.
 
 ## Removing a filter
 
