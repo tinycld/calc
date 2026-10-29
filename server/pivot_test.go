@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/nathanstitt/omnidoc/pkg/xlsx"
 	ycrdt "github.com/skyterra/y-crdt"
 	"github.com/xuri/excelize/v2"
 )
@@ -613,4 +616,432 @@ func buildValueFieldArray(fields []map[string]string) *ycrdt.YArray {
 		arr.Push(ycrdt.ArrayAny{m})
 	}
 	return arr
+}
+
+// buildOccupiedTargetPivotFixture authors the Google-Sheets-export
+// shape: a pivot whose target sheet also holds the pivot's materialized
+// output as plain cells, followed by another sheet. The pivot has two
+// value fields and no column field, so its colFields carry only the
+// x="-2" "Values" placeholder. Sales cells carry a custom number format;
+// Units cells carry none.
+func buildOccupiedTargetPivotFixture(t *testing.T) []byte {
+	t.Helper()
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+	if err := f.SetSheetName("Sheet1", "Data"); err != nil {
+		t.Fatal(err)
+	}
+	rows := [][]any{
+		{"Region", "Year", "Sales", "Units"},
+		{"East", 2024, 10.5, 3},
+		{"West", 2024, 5.25, 2},
+	}
+	for i, row := range rows {
+		cell, _ := excelize.CoordinatesToCellName(1, i+1)
+		if err := f.SetSheetRow("Data", cell, &row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	money := "#,##0.00"
+	moneyStyle, err := f.NewStyle(&excelize.Style{CustomNumFmt: &money})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCellStyle("Data", "C2", "C3", moneyStyle); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.NewSheet("Report"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.NewSheet("Notes"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCellValue("Notes", "A1", "keep me"); err != nil {
+		t.Fatal(err)
+	}
+	// Sheet XML calc does not model, so only the preserved on-disk part
+	// carries it through a save.
+	dv := excelize.NewDataValidation(true)
+	dv.Sqref = "B1:B5"
+	if err := dv.SetDropList([]string{"yes", "no"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.AddDataValidation("Notes", dv); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.AddPivotTable(&excelize.PivotTableOptions{
+		DataRange:       "Data!A1:D3",
+		PivotTableRange: "Report!A1:C5",
+		Rows:            []excelize.PivotTableField{{Data: "Region"}},
+		Data: []excelize.PivotTableField{
+			{Data: "Sales", Subtotal: "Sum"},
+			{Data: "Units", Subtotal: "Sum"},
+		},
+		RowGrandTotals: true,
+		ColGrandTotals: true,
+	}); err != nil {
+		t.Fatalf("AddPivotTable: %v", err)
+	}
+	if err := f.SetCellValue("Report", "A1", "Region"); err != nil {
+		t.Fatal(err)
+	}
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// TestReadPivotsDropsValuesPlaceholderAxisField: <field x="-2"/> in an
+// axis is Excel's "Values" placeholder (where the data fields sit), not
+// a source column; surfacing it as a field named "" breaks the engine.
+func TestReadPivotsDropsValuesPlaceholderAxisField(t *testing.T) {
+	model, err := ReadWorkbookFromXLSX(t.Context(), buildOccupiedTargetPivotFixture(t), 0, 0)
+	if err != nil {
+		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
+	}
+	if len(model.Pivots) != 1 {
+		t.Fatalf("want 1 pivot, got %d", len(model.Pivots))
+	}
+	p := model.Pivots[0]
+	if len(p.Cols) != 0 {
+		t.Errorf("Cols = %+v, want none (the x=-2 placeholder is not a field)", p.Cols)
+	}
+	if len(p.Rows) != 1 || p.Rows[0].SourceColumn != "Region" {
+		t.Errorf("Rows = %+v, want Region", p.Rows)
+	}
+}
+
+// TestReadPivotsValueNumFmtFromDataField: a value field takes the number
+// format the file gives it (dataField numFmtId, else its pivotField's).
+// "SUM of Employee" sums a text column, so no source cell could supply
+// the format; Excel and Google still show $0.00.
+func TestReadPivotsValueNumFmtFromDataField(t *testing.T) {
+	model, doc, snap := importAndSnapshot(t, readGoogleExport(t))
+	p := pivotByTarget(t, model.Pivots, "Summary both $ and Hours")
+	got := map[string]string{}
+	for _, v := range p.Values {
+		got[v.SourceColumn] = v.NumFmt
+	}
+	want := map[string]string{
+		"W/C code - pay ": "",
+		"Employee":        `"$"#,##0.00`,
+		"Total for year":  `"$"#,##0.00`,
+	}
+	if d := cmp.Diff(want, got); d != "" {
+		t.Errorf("value numFmts (-want +got):\n%s", d)
+	}
+
+	entry, ok := doc.doc.GetMap("pivots").(*ycrdt.YMap).Get(p.ID).(*ycrdt.YMap)
+	if !ok {
+		t.Fatalf("pivot %q missing from the pivots map", p.ID)
+	}
+	var numFmts []any
+	entry.Get("values").(*ycrdt.YArray).ForEach(func(item any, _ ycrdt.Number, _ ycrdt.IAbstractType) {
+		numFmts = append(numFmts, item.(*ycrdt.YMap).Get("numFmt"))
+	})
+	if len(numFmts) != 3 || numFmts[0] != nil || numFmts[1] != `"$"#,##0.00` {
+		t.Errorf("Y.Doc value numFmts = %v", numFmts)
+	}
+	if got := pivotByTarget(t, snap.Pivots, p.TargetSheetName).Values[1].NumFmt; got != `"$"#,##0.00` {
+		t.Errorf("snapshot Employee numFmt = %q", got)
+	}
+}
+
+// pivotByTarget finds the pivot the file placed on target (calc may
+// have moved it to a sheet of its own; its ID still names the target).
+func pivotByTarget(t *testing.T, pivots []PivotDefinitionDTO, target string) PivotDefinitionDTO {
+	t.Helper()
+	for _, p := range pivots {
+		if p.TargetSheetName == target || strings.HasPrefix(p.ID, "p_"+sanitizeID(target)+"_") {
+			return p
+		}
+	}
+	t.Fatalf("no pivot targets %q", target)
+	return PivotDefinitionDTO{}
+}
+
+// TestPivotLayoutRoundTripsThroughSave: the facts calc does not edit —
+// cache field names, the Values placeholder, axis sort, value number
+// formats — must survive import → Y.Doc → save. Without CacheFields a
+// re-add renames Google's repeated blank headers.
+func TestPivotLayoutRoundTripsThroughSave(t *testing.T) {
+	original := readGoogleExport(t)
+	ed, err := xlsx.Edit(t.Context(), original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ed.PivotTables()
+
+	model, doc, snap := importAndSnapshot(t, original)
+	p := pivotByTarget(t, model.Pivots, "Summary of $ by person")
+	entry := doc.doc.GetMap("pivots").(*ycrdt.YMap).Get(p.ID).(*ycrdt.YMap)
+	arr, ok := entry.Get("cacheFields").(*ycrdt.YArray)
+	if !ok || arr.GetLength() != len(want[1].CacheFields) {
+		t.Fatalf("Y cacheFields = %v, want %d names", entry.Get("cacheFields"), len(want[1].CacheFields))
+	}
+	if got := pivotByTarget(t, snap.Pivots, p.TargetSheetName).CacheFields; !slices.Equal(got, want[1].CacheFields) {
+		t.Errorf("snapshot CacheFields = %q", got)
+	}
+
+	saved := saveSnapshot(t, original, snap)
+	ed2, err := xlsx.Edit(t.Context(), saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ed2.PivotTables()
+	if len(got) != len(want) {
+		t.Fatalf("saved %d pivots, want %d", len(got), len(want))
+	}
+	byName := map[string]xlsx.PivotTable{}
+	for _, pt := range got {
+		byName[pt.Name] = pt
+	}
+	for _, w := range want {
+		id := pivotByTarget(t, snap.Pivots, w.TargetSheet).ID
+		g, ok := byName[id]
+		if !ok {
+			t.Errorf("pivot %s (on %q) lost", id, w.TargetSheet)
+			continue
+		}
+		// calc names the pivot, places it (on a sheet of its own when the
+		// file's target holds data), and lays out its bands itself; an
+		// empty style or data caption reads back as omnidoc's default.
+		g.Name, g.TargetSheet, g.Location, g.LocationInfo = w.Name, w.TargetSheet, w.Location, w.LocationInfo
+		if w.StyleName == "" {
+			g.StyleName = ""
+		}
+		if w.DataCaption == "" {
+			g.DataCaption = ""
+		}
+		if d := cmp.Diff(w, g); d != "" {
+			t.Errorf("pivot on %q (-file +saved):\n%s", w.TargetSheet, d)
+		}
+	}
+}
+
+// TestBootstrapWritesPivotsIntoDoc ports writeBootstrapPivots: each
+// pivot lands in the top-level "pivots" map in the writePivot shape the
+// client reads, and its target sheet's meta carries pivotId so the grid
+// renders engine output there. Without it imported pivots never reach
+// the client.
+func TestBootstrapWritesPivotsIntoDoc(t *testing.T) {
+	data, err := os.ReadFile("testdata/pivot-basic.xlsx")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	model, err := ReadWorkbookFromXLSX(t.Context(), data, 0, 0)
+	if err != nil {
+		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
+	}
+	want := model.Pivots[0]
+	doc, snap := bootstrapAndSnapshot(t, model)
+
+	entry, ok := doc.doc.GetMap("pivots").(*ycrdt.YMap).Get(want.ID).(*ycrdt.YMap)
+	if !ok {
+		t.Fatalf("pivot %q missing from the pivots map", want.ID)
+	}
+	for _, key := range []string{"rows", "cols", "values", "filters"} {
+		if _, ok := entry.Get(key).(*ycrdt.YArray); !ok {
+			t.Errorf("pivot %s = %T, want a Y.Array", key, entry.Get(key))
+		}
+	}
+	if _, ok := entry.Get("filterSelections").(*ycrdt.YMap); !ok {
+		t.Errorf("pivot filterSelections = %T, want a Y.Map", entry.Get("filterSelections"))
+	}
+	for _, key := range []string{"rowGrandTotals", "colGrandTotals", "rowSubtotals", "colSubtotals"} {
+		if _, ok := entry.Get(key).(bool); !ok {
+			t.Errorf("pivot %s = %T, want a bool", key, entry.Get(key))
+		}
+	}
+	firstRow := entry.Get("rows").(*ycrdt.YArray).Get(0).(*ycrdt.YMap)
+	if got := firstRow.Get("sourceColumn"); got != "Region" {
+		t.Errorf("rows[0].sourceColumn = %v, want Region", got)
+	}
+	_, meta := docSheetMeta(t, doc.doc, want.TargetSheetName)
+	if got := meta.Get("pivotId"); got != want.ID {
+		t.Errorf("target sheet pivotId = %v, want %q", got, want.ID)
+	}
+
+	if len(snap.Pivots) != 1 {
+		t.Fatalf("snapshot pivots = %d, want 1", len(snap.Pivots))
+	}
+	got := snap.Pivots[0]
+	if got.ID != want.ID || got.SourceRange != want.SourceRange || got.TargetSheetName != want.TargetSheetName ||
+		!reflect.DeepEqual(got.Rows, want.Rows) || !reflect.DeepEqual(got.Cols, want.Cols) ||
+		!reflect.DeepEqual(got.Values, want.Values) || len(got.Filters) != 0 ||
+		got.RowGrandTotals != want.RowGrandTotals || got.ColGrandTotals != want.ColGrandTotals {
+		t.Errorf("snapshot pivot = %+v, want %+v", got, want)
+	}
+}
+
+// TestBootstrapPivotOnOccupiedTargetGetsOwnSheet: a pivot whose target
+// sheet already holds cells is relocated to "<sheet> pivot"
+// (ensureDistinctTargets). That sheet exists only in the doc, so the
+// bootstrap creates it right after the original target, and the save
+// path must write it out (with the pivot on it) without disturbing the
+// sheets around it.
+func TestBootstrapPivotOnOccupiedTargetGetsOwnSheet(t *testing.T) {
+	original := buildOccupiedTargetPivotFixture(t)
+	model, err := ReadWorkbookFromXLSX(t.Context(), original, 0, 0)
+	if err != nil {
+		t.Fatalf("ReadWorkbookFromXLSX: %v", err)
+	}
+	pivot := model.Pivots[0]
+	if pivot.TargetSheetName != "Report pivot" {
+		t.Fatalf("pivot target = %q, want Report pivot", pivot.TargetSheetName)
+	}
+
+	doc, snap := bootstrapAndSnapshot(t, model)
+	wantOrder := []string{"Data", "Report", "Report pivot", "Notes"}
+	var gotOrder []string
+	for _, s := range snap.Sheets {
+		gotOrder = append(gotOrder, s.Name)
+	}
+	if !reflect.DeepEqual(gotOrder, wantOrder) {
+		t.Fatalf("doc sheet order = %v, want %v", gotOrder, wantOrder)
+	}
+	for i, s := range snap.Sheets {
+		if s.Position != i {
+			t.Errorf("sheet %q position = %d, want %d", s.Name, s.Position, i)
+		}
+	}
+	reportID, reportMeta := docSheetMeta(t, doc.doc, "Report")
+	if got := reportMeta.Get("pivotId"); got != nil {
+		t.Errorf("Report pivotId = %v, want none (its cells stay)", got)
+	}
+	if _, ok := findSnapshotCell(snap, reportID, 1, 1); !ok {
+		t.Error("Report!A1 missing from the doc")
+	}
+	pivotSheetID, pivotMeta := docSheetMeta(t, doc.doc, "Report pivot")
+	if got := pivotMeta.Get("pivotId"); got != pivot.ID {
+		t.Errorf("Report pivot pivotId = %v, want %q", got, pivot.ID)
+	}
+	for _, id := range []string{"sheet1", "sheet2", "sheet3"} {
+		if id == pivotSheetID {
+			t.Errorf("pivot sheet id %q collides with an imported sheet id", id)
+		}
+	}
+	if len(snap.Pivots) != 1 || snap.Pivots[0].TargetSheetName != "Report pivot" {
+		t.Fatalf("snapshot pivots = %+v, want one targeting Report pivot", snap.Pivots)
+	}
+
+	saved, err := serializeSnapshotToXLSX(t.Context(), original, snap, nil)
+	if err != nil {
+		t.Fatalf("serializeSnapshotToXLSX: %v", err)
+	}
+	ed, err := xlsx.Edit(t.Context(), saved)
+	if err != nil {
+		t.Fatalf("reopen saved: %v", err)
+	}
+	if got := ed.SheetNames(); !reflect.DeepEqual(got, wantOrder) {
+		t.Errorf("saved sheet order = %v, want %v", got, wantOrder)
+	}
+	if got := readCell(t, saved, "Report", 1, 1); got != "Region" {
+		t.Errorf("saved Report!A1 = %q, want Region", got)
+	}
+	if got := readCell(t, saved, "Notes", 1, 1); got != "keep me" {
+		t.Errorf("saved Notes!A1 = %q, want keep me", got)
+	}
+	savedBook, err := excelize.OpenReader(bytes.NewReader(saved))
+	if err != nil {
+		t.Fatalf("open saved: %v", err)
+	}
+	defer func() { _ = savedBook.Close() }()
+	if dvs, _ := savedBook.GetDataValidations("Notes"); len(dvs) != 1 {
+		t.Errorf("saved Notes data validations = %d, want 1 (Notes must keep its own sheet part)", len(dvs))
+	}
+	if dvs, _ := savedBook.GetDataValidations("Report pivot"); len(dvs) != 0 {
+		t.Errorf("saved Report pivot data validations = %d, want 0", len(dvs))
+	}
+	pts := ed.PivotTables()
+	if len(pts) != 1 || pts[0].TargetSheet != "Report pivot" {
+		t.Errorf("saved pivots = %+v, want one on Report pivot", pts)
+	}
+
+	again, err := ReadWorkbookFromXLSX(t.Context(), saved, 0, 0)
+	if err != nil {
+		t.Fatalf("re-import: %v", err)
+	}
+	if len(again.Pivots) != 1 || again.Pivots[0].TargetSheetName != "Report pivot" {
+		t.Errorf("re-imported pivots = %+v, want one targeting Report pivot", again.Pivots)
+	}
+}
+
+// TestBootstrapPivotYShapeRoundTrips covers every pivot field the
+// writePivot shape carries, through bootstrap and collectPivots, plus a
+// target sheet the model lacks with no known original sheet: it is
+// created at the end of the tab order.
+func TestBootstrapPivotYShapeRoundTrips(t *testing.T) {
+	def := PivotDefinitionDTO{
+		ID:              "p1",
+		SourceRange:     "'My Data'!A1:D9",
+		TargetSheetName: "Out",
+		Rows:            []PivotFieldDTO{{SourceColumn: "Region", DisplayName: "Area"}, {SourceColumn: "City"}},
+		Cols:            []PivotFieldDTO{{SourceColumn: "Year"}},
+		Values: []PivotValueFieldDTO{
+			{SourceColumn: "Sales", DisplayName: "Total", Aggregation: "sum", NumFmt: "#,##0.00"},
+			{SourceColumn: "Units", Aggregation: "average"},
+		},
+		Filters:          []PivotFieldDTO{{SourceColumn: "Channel"}},
+		FilterSelections: map[string][]string{"Channel": {"web", "store", "phone"}},
+		RowGrandTotals:   true,
+		ColGrandTotals:   false,
+		RowSubtotals:     true,
+		ColSubtotals:     true,
+		StyleName:        "PivotStyleMedium9",
+
+		CacheFields:       []string{"Region", "City", " ", " 2"},
+		ValuesAxis:        "row",
+		ValuesPosition:    1,
+		AxisSort:          map[string]string{"Region": "descending"},
+		DataCaption:       "Data",
+		RowHeaderCaption:  "Rows",
+		ColHeaderCaption:  "Cols",
+		GrandTotalCaption: "All",
+		MissingCaption:    "-",
+		HideMissing:       true,
+		ErrorCaption:      "err",
+		ShowError:         true,
+	}
+	model := WorkbookModel{
+		Sheets: []WorksheetModel{{Name: "My Data", RowCount: 1, ColCount: 1, Cells: map[string]CellValueDTO{}}},
+		Pivots: []PivotDefinitionDTO{def},
+	}
+	doc, snap := bootstrapAndSnapshot(t, model)
+	if len(snap.Pivots) != 1 {
+		t.Fatalf("snapshot pivots = %d, want 1", len(snap.Pivots))
+	}
+	if d := cmp.Diff(def, snap.Pivots[0]); d != "" {
+		t.Errorf("pivot round trip (-model +snapshot):\n%s", d)
+	}
+	if len(snap.Sheets) != 2 || snap.Sheets[1].Name != "Out" || snap.Sheets[1].Position != 1 {
+		t.Fatalf("snapshot sheets = %+v, want My Data then Out", snap.Sheets)
+	}
+	id, meta := docSheetMeta(t, doc.doc, "Out")
+	if id != "sheet2" || meta.Get(pivotSheetKey) != "p1" {
+		t.Errorf("Out sheet = %s pivotId=%v, want sheet2 with pivotId p1", id, meta.Get(pivotSheetKey))
+	}
+	if meta.Get("rowCount") != 0 || meta.Get("colCount") != 0 {
+		t.Errorf("Out extent = %vx%v, want the empty 0x0 the client's pivot insert writes", meta.Get("rowCount"), meta.Get("colCount"))
+	}
+}
+
+// TestRelocatedPivotSheetNameFitsExcelLimit: Excel refuses to open a
+// workbook with a sheet name longer than 31 characters, and the
+// relocated name is a sheet the save path creates.
+func TestRelocatedPivotSheetNameFitsExcelLimit(t *testing.T) {
+	long := "Quarterly revenue by region and product"
+	for n := 1; n <= 12; n++ {
+		got := relocatedPivotSheetName(long, n)
+		if len([]rune(got)) > maxSheetNameLen {
+			t.Errorf("candidate %d = %q (%d chars), want <= %d", n, got, len([]rune(got)), maxSheetNameLen)
+		}
+	}
+	if got := relocatedPivotSheetName("Report", 1); got != "Report pivot" {
+		t.Errorf("short name = %q, want Report pivot", got)
+	}
+	if got := relocatedPivotSheetName("Report", 3); got != "Report pivot (3)" {
+		t.Errorf("third candidate = %q, want Report pivot (3)", got)
+	}
 }

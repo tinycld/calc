@@ -50,6 +50,17 @@ package calc
 //      sheetFormatPr default are no longer seeded (the oracle only
 //      filtered the global 15pt / 9.140625 defaults). Allowed only
 //      when the dropped entry really equals the sheet default.
+//   9. Formulas carry their leading "=" (the client's formula engine
+//      only evaluates "="-prefixed input); the oracle stored the bare
+//      source. Compared with exactly one "=" stripped, and a formula
+//      display falling back to the source text compares the same way.
+//  10. Empty cells whose style draws a fill or a border now arrive as
+//      empty string cells carrying that style; the oracle skipped
+//      every valueless cell. Allowed only for such decorated empties,
+//      and the sheet extent may grow to cover them.
+//  11. Pivots carry the file-only layout facts omnidoc reads (cache
+//      field names, the Values placeholder, axis sort, captions); the
+//      oracle read none of them. Not compared.
 //
 // WRITE parity: bootstrap → snapshot (no edits) → serializeSnapshotToXLSX,
 // then the output is re-opened with EXCELIZE as an independent reader
@@ -841,8 +852,9 @@ func compareParitySheet(t *testing.T, old, new *WorksheetModel, dcSheet *xlsx.Sh
 	if old.FrozenRows != new.FrozenRows || old.FrozenCols != new.FrozenCols {
 		t.Errorf("%s: freeze: oracle (%d,%d), new (%d,%d)", name, old.FrozenRows, old.FrozenCols, new.FrozenRows, new.FrozenCols)
 	}
-	if old.RowCount != new.RowCount || old.ColCount != new.ColCount {
-		t.Errorf("%s: extent: oracle %dx%d, new %dx%d", name, old.RowCount, old.ColCount, new.RowCount, new.ColCount)
+	wantRows, wantCols := parityExtentWithDecoratedEmpties(old, new)
+	if wantRows != new.RowCount || wantCols != new.ColCount {
+		t.Errorf("%s: extent: oracle %dx%d (%dx%d with decorated empties), new %dx%d", name, old.RowCount, old.ColCount, wantRows, wantCols, new.RowCount, new.ColCount)
 	}
 	if d := cmp.Diff(old.Merges, new.Merges); d != "" {
 		t.Errorf("%s: merges (-oracle +new):\n%s", name, d)
@@ -886,7 +898,11 @@ func compareParitySheet(t *testing.T, old, new *WorksheetModel, dcSheet *xlsx.Sh
 		case !oOK:
 			// A new-only cell is allowed only for a formula-only cell the
 			// oracle's GetRows/GetCellValue walk could not see (no cached
-			// value); anything else is a fabrication.
+			// value), or a decorated empty (allowlist #10); anything else
+			// is a fabrication.
+			if isParityDecoratedEmpty(nc) {
+				continue
+			}
 			if nc.Formula == "" || nc.Raw != nil {
 				t.Errorf("%s!%s: new reader has cell (kind=%q raw=%v formula=%q) the oracle never saw", name, k, nc.Kind, nc.Raw, nc.Formula)
 			}
@@ -896,6 +912,30 @@ func compareParitySheet(t *testing.T, old, new *WorksheetModel, dcSheet *xlsx.Sh
 	}
 
 	compareParityCF(t, name, old.ConditionalFormats, new.ConditionalFormats, builtins)
+}
+
+// isParityDecoratedEmpty reports an allowlist #10 cell: no value, no
+// formula, and a style that paints a fill or a border.
+func isParityDecoratedEmpty(c CellValueDTO) bool {
+	if c.Kind != "string" || c.Raw != "" || c.Display != "" || c.Formula != "" || c.Style == nil {
+		return false
+	}
+	return (c.Style.Fill != nil && c.Style.Fill.Pattern != nil) || c.Style.Borders != nil
+}
+
+// parityExtentWithDecoratedEmpties widens the oracle's extent by the
+// new-only decorated empties (allowlist #10), the only cells allowed to
+// grow it.
+func parityExtentWithDecoratedEmpties(old, new *WorksheetModel) (int, int) {
+	rows, cols := old.RowCount, old.ColCount
+	for k, c := range new.Cells {
+		if _, inOld := old.Cells[k]; inOld || !isParityDecoratedEmpty(c) {
+			continue
+		}
+		row, col := parseModelCellKey(k)
+		rows, cols = max(rows, row), max(cols, col)
+	}
+	return rows, cols
 }
 
 // compareParityRowHeights allows exactly one asymmetry: an oracle-only
@@ -964,6 +1004,16 @@ func compareParityCell(t *testing.T, sheet, key string, old, new CellValueDTO, b
 // or through an allowlisted transition), else a description of the
 // mismatch.
 func compareParityCellValue(old, new CellValueDTO) string {
+	if new.Formula != "" {
+		// Allowlist #9: the new reader prefixes formulas with "=".
+		if !strings.HasPrefix(new.Formula, "=") || strings.HasPrefix(new.Formula, "==") {
+			return fmt.Sprintf("formula %q: want exactly one leading =", new.Formula)
+		}
+		if new.Display == new.Formula {
+			new.Display = new.Formula[1:]
+		}
+		new.Formula = new.Formula[1:]
+	}
 	switch {
 	case old.Kind == new.Kind:
 		if old.Formula != new.Formula {
@@ -1339,6 +1389,10 @@ func parityCanonPivots(in []PivotDefinitionDTO) []PivotDefinitionDTO {
 		cp.Rows = parityCanonAxisFields(p.Rows)
 		cp.Cols = parityCanonAxisFields(p.Cols)
 		cp.Filters = parityCanonAxisFields(p.Filters)
+		// Allowlist #11.
+		cp.CacheFields, cp.ValuesAxis, cp.ValuesPosition, cp.AxisSort = nil, "", 0, nil
+		cp.DataCaption, cp.RowHeaderCaption, cp.ColHeaderCaption, cp.GrandTotalCaption = "", "", "", ""
+		cp.MissingCaption, cp.HideMissing, cp.ErrorCaption, cp.ShowError = "", false, "", false
 		out[i] = cp
 	}
 	return out
@@ -1453,8 +1507,10 @@ func assertWriteParitySheet(t *testing.T, f *excelize.File, ms *WorksheetModel) 
 			if err != nil {
 				t.Fatalf("formula %s!%s: %v", name, ref, err)
 			}
-			if gotFormula != v.Formula {
-				t.Errorf("%s!%s: formula: model %q, output %q", name, ref, v.Formula, gotFormula)
+			// The model carries the "=" the client needs; the file stores
+			// the bare source.
+			if want := strings.TrimPrefix(v.Formula, "="); gotFormula != want {
+				t.Errorf("%s!%s: formula: model %q, output %q (want %q)", name, ref, v.Formula, gotFormula, want)
 			}
 		}
 		raw := parityRawCellValue(t, f, name, ref)
