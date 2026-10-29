@@ -12,7 +12,7 @@ import type {
     PivotField,
     PivotValueField,
 } from '../workbook-types'
-import { PIVOTS_MAP } from './keys'
+import { CACHE_FIELDS_KEY, PIVOTS_MAP } from './keys'
 
 export function readPivotIds(doc: Y.Doc): string[] {
     const map = doc.getMap<Y.Map<unknown>>(PIVOTS_MAP)
@@ -41,6 +41,7 @@ export function readPivotFromMap(id: string, entry: Y.Map<unknown>): PivotDefini
         rowSubtotals: readBool(entry, 'rowSubtotals'),
         colSubtotals: readBool(entry, 'colSubtotals'),
         styleName: readOptionalString(entry, 'styleName'),
+        cacheFields: readCacheFields(entry),
     }
 }
 
@@ -62,6 +63,11 @@ export function writePivot(doc: Y.Doc, def: PivotDefinition): void {
         if (def.styleName != null && def.styleName !== '') {
             entry.set('styleName', def.styleName)
         }
+        if (def.cacheFields != null && def.cacheFields.length > 0) {
+            const cacheFields = new Y.Array<string>()
+            cacheFields.push(def.cacheFields.slice())
+            entry.set(CACHE_FIELDS_KEY, cacheFields)
+        }
         map.set(def.id, entry)
     }, LOCAL_ORIGIN)
 }
@@ -74,6 +80,16 @@ export function deletePivot(doc: Y.Doc, id: string): void {
 }
 
 // ---------- helpers ----------
+
+function readCacheFields(entry: Y.Map<unknown>): string[] | undefined {
+    const arr = entry.get(CACHE_FIELDS_KEY)
+    if (!(arr instanceof Y.Array)) return undefined
+    const out: string[] = []
+    arr.forEach(name => {
+        if (typeof name === 'string') out.push(name)
+    })
+    return out.length > 0 ? out : undefined
+}
 
 function buildFieldArray(fields: PivotField[]): Y.Array<Y.Map<unknown>> {
     const arr = new Y.Array<Y.Map<unknown>>()

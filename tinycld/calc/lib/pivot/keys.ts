@@ -9,3 +9,8 @@ export const PIVOTS_MAP = 'pivots'
 // PivotDefinition.id this sheet belongs to. Grid.tsx branches on
 // this to render engine output instead of the cells Y.Map.
 export const PIVOT_SHEET_KEY = 'pivotId'
+
+// CACHE_FIELDS_KEY is the pivot entry key holding a Y.Array of the
+// imported xlsx pivot cache's field names. Absent on pivots made in
+// the app and on pivots whose source range changed after import.
+export const CACHE_FIELDS_KEY = 'cacheFields'

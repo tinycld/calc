@@ -206,6 +206,47 @@ describe('aggregate — ordering', () => {
         expect(tree.rowKeys.map(k)).toEqual([k(['Austin']), k(['Berlin']), k(['Chicago'])])
     })
 
+    it('sorts items the way Sheets does: numbers by value, then text ignoring case, blanks last', () => {
+        const t = table(
+            ['Item', 'Sales'],
+            [
+                [str('banana'), num(1)],
+                [empty(), num(1)],
+                [num(10), num(1)],
+                [str('Apple'), num(1)],
+                [num(9), num(1)],
+                [str('cherry'), num(1)],
+            ]
+        )
+        const tree = aggregate(
+            t,
+            baseDef({
+                rows: [{ sourceColumn: 'Item' }],
+                values: [{ sourceColumn: 'Sales', aggregation: 'sum' }],
+            })
+        )
+        expect(tree.rowKeys).toEqual([['9'], ['10'], ['Apple'], ['banana'], ['cherry'], ['']])
+    })
+
+    it('sums a text column to 0', () => {
+        const t = table(
+            ['Code', 'Name'],
+            [
+                [str('A'), str('Ann')],
+                [str('A'), str('Bob')],
+            ]
+        )
+        const tree = aggregate(
+            t,
+            baseDef({
+                rows: [{ sourceColumn: 'Code' }],
+                values: [{ sourceColumn: 'Name', aggregation: 'sum' }],
+            })
+        )
+        expect(tree.cells.get(k(['A']))?.get(k([]))).toEqual([0])
+        expect(tree.grandTotals).toEqual([0])
+    })
+
     it('preserves values-field order in per-cell arrays', () => {
         const t = table(
             ['Region', 'Sales', 'Cost'],

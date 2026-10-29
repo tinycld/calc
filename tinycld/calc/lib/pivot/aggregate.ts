@@ -222,8 +222,32 @@ function keyFromTuple(parts: string[]): string {
 function tupleCompare(a: string[], b: string[]): number {
     const n = Math.min(a.length, b.length)
     for (let i = 0; i < n; i++) {
-        if (a[i] < b[i]) return -1
-        if (a[i] > b[i]) return 1
+        const c = itemCompare(a[i], b[i])
+        if (c !== 0) return c
     }
     return a.length - b.length
+}
+
+// Ascending order as Excel and Google Sheets sort pivot items: numbers by
+// value before text, text without regard to case, blanks last. Keys are
+// already stringified, so a number is any key that parses as one.
+function itemCompare(a: string, b: string): number {
+    const rankA = itemRank(a)
+    const rankB = itemRank(b)
+    if (rankA !== rankB) return rankA - rankB
+    if (rankA === RANK_NUMBER) return Number(a) - Number(b)
+    const la = a.toLowerCase()
+    const lb = b.toLowerCase()
+    if (la !== lb) return la < lb ? -1 : 1
+    if (a === b) return 0
+    return a < b ? -1 : 1
+}
+
+const RANK_NUMBER = 0
+const RANK_TEXT = 1
+const RANK_BLANK = 2
+
+function itemRank(s: string): number {
+    if (s === '') return RANK_BLANK
+    return Number.isFinite(Number(s)) && s.trim() !== '' ? RANK_NUMBER : RANK_TEXT
 }

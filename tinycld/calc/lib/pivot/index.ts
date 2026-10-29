@@ -24,7 +24,20 @@ export function computePivot(
     }
     const table = readSourceTable(def.sourceRange, cells, sheetIdByName)
     if (!table.ok) return table
+    const missing = findMissingField(def, table.value.headers)
+    if (missing != null) {
+        return pivotError(
+            'missing-field',
+            `Field "${missing}" is not a column header in ${def.sourceRange}.`
+        )
+    }
     const tree = aggregate(table.value, def)
     const rendered = renderPivot(tree, def)
     return ok(rendered)
+}
+
+function findMissingField(def: PivotDefinition, headers: readonly string[]): string | null {
+    const known = new Set(headers)
+    const fields = [...def.rows, ...def.cols, ...def.values, ...def.filters]
+    return fields.find(f => !known.has(f.sourceColumn))?.sourceColumn ?? null
 }

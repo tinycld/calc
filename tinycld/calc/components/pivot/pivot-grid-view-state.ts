@@ -10,6 +10,7 @@
 // the JSX.
 
 import type { RenderedPivotResult } from '../../hooks/use-rendered-pivot'
+import { AUTOSIZE_PADDING, DEFAULT_COL_WIDTH } from '../../lib/dimensions'
 import type { PivotDefinition } from '../../lib/workbook-types'
 
 export type PivotGridViewState =
@@ -38,14 +39,21 @@ export function selectPivotGridViewState(
 }
 
 // Pure cell-iteration helper. The grid's body is a 1..rows x 1..cols
-// loop pulling out engine cells and deciding whether each falls inside
-// the header band. Extracted so the loop bounds + isHeader logic can be
-// unit-tested without rendering React Native primitives.
+// loop pulling out engine cells and deciding how each one is styled.
+// Extracted so the loop bounds + style flags can be unit-tested without
+// rendering React Native primitives.
 export interface PivotGridCellMeta {
     row: number
     col: number
     display: string
+    // Inside the shaded header band (the top headerRowCount rows).
     isHeader: boolean
+    // A row- or col-field caption, drawn italic like Sheets does.
+    isFieldLabel: boolean
+    // On the grand-total row, drawn bold under a rule.
+    isGrandTotal: boolean
+    // Numbers align right, as in the normal grid.
+    isNumber: boolean
 }
 
 export function buildPivotGridCellMatrix(
@@ -55,18 +63,48 @@ export function buildPivotGridCellMatrix(
     for (let r = 1; r <= rendered.rows; r++) {
         const row: PivotGridCellMeta[] = []
         for (let c = 1; c <= rendered.cols; c++) {
-            const cell = rendered.cells.get(`${r}:${c}`)
-            const isHeader = r <= rendered.headerRowCount || c <= rendered.headerColCount
+            const key = `${r}:${c}`
+            const cell = rendered.cells.get(key)
             row.push({
                 row: r,
                 col: c,
                 display: cell?.display ?? '',
-                isHeader,
+                isHeader: r <= rendered.headerRowCount,
+                isFieldLabel: rendered.fieldLabelCells.has(key),
+                isGrandTotal: r === rendered.grandTotalRow,
+                isNumber: cell?.kind === 'number',
             })
         }
         rows.push(row)
     }
     return rows
+}
+
+// A pivot sheet has no stored column widths, so each column is sized to
+// its widest text. One width per column, shared by every row, is what
+// keeps the cells lined up as a grid.
+export const PIVOT_MAX_COL_WIDTH = 320
+
+const AVG_CHAR_WIDTH = 7
+
+function measureByCharCount(text: string): number {
+    return text.length * AVG_CHAR_WIDTH
+}
+
+export function pivotColumnWidths(
+    matrix: PivotGridCellMeta[][],
+    measure: (text: string) => number = measureByCharCount
+): number[] {
+    const widest: number[] = []
+    for (const row of matrix) {
+        row.forEach((cell, i) => {
+            const w = cell.display === '' ? 0 : measure(cell.display)
+            widest[i] = Math.max(widest[i] ?? 0, w)
+        })
+    }
+    return widest.map(w =>
+        Math.min(PIVOT_MAX_COL_WIDTH, Math.max(DEFAULT_COL_WIDTH, w + AUTOSIZE_PADDING))
+    )
 }
 
 // True when the pivot side panel should mount alongside this sheet's
