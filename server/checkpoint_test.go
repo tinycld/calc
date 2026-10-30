@@ -80,7 +80,6 @@ func TestFingerprintIsTheStoredFileName(t *testing.T) {
 // Deleting the workbook removes its checkpoint row through the
 // production hook.
 func TestDeleteDropsTheCheckpointRow(t *testing.T) {
-	t.Cleanup(realtime.ResetRegistryForTest)
 	app := setupPersistTestApp(t)
 	addCheckpointCollection(t, app)
 	registerRealtime(app)
