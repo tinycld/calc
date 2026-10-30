@@ -41,7 +41,7 @@ func registerRealtime(app core.App) {
 	runtime.SetBootstrap(makeXLSXBootstrap(app))
 
 	checkpoints := realtime.NewPocketBaseCheckpointStore(app)
-	coordinator := realtime.NewSaveCoordinator(MakeProductionFlush(app))
+	coordinator := realtime.NewSaveCoordinator(app, MakeProductionFlush(app))
 	coordinator.SetKind(roomKindCalc)
 
 	realtime.RegisterRoomKindWith(roomKindCalc, realtime.RoomKindOptions{
