@@ -11,6 +11,9 @@ import { login, navigateToPackage } from '../../tinycld/tests/e2e/helpers'
 // edits never leak between tests.
 
 const FIXTURE = join(import.meta.dirname, 'assets', 'google-export.xlsx')
+// A filter over A1:C6 that hides rows 3 (30pt tall) and 4, row 8 hidden by
+// hand, and column C hidden with its own width.
+const HIDDEN_FIXTURE = join(import.meta.dirname, 'assets', 'hidden-rows.xlsx')
 
 const cell = (page: Page, label: string) => page.getByLabel(`Cell ${label}`, { exact: true })
 const nameBox = (page: Page) => page.getByRole('textbox', { name: 'Name box' })
@@ -259,6 +262,32 @@ test.describe('Calc xlsx import fidelity', () => {
         // "SUM of Employee" sums a text column to 0, shown in the pivot's
         // "$" format as in Excel and Sheets.
         await expect(page.getByText('$0.00', { exact: true }).first()).toBeVisible()
+    })
+
+    test('hidden rows and columns stay hidden, and removing the filter shows its rows', async ({
+        page,
+    }) => {
+        await navigateToPackage(page, 'calc')
+        await expect(page.getByRole('heading', { level: 1, name: 'A fresh sheet.' })).toBeVisible()
+        await page.getByTestId('nofile-upload-input').setInputFiles(HIDDEN_FIXTURE)
+        await expect(cell(page, 'A1')).toHaveText('Name', { timeout: 10_000 })
+
+        await expect(cell(page, 'A2')).toHaveText('Avery')
+        await expect(cell(page, 'A5')).toHaveText('Devon')
+        for (const label of ['A3', 'A4', 'A8', 'C2']) {
+            await expect(cell(page, label)).toBeHidden()
+        }
+
+        await page.getByRole('button', { name: 'Data', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Remove filter' }).click()
+        await expect(cell(page, 'A3')).toHaveText('Blake')
+        await expect(cell(page, 'A4')).toHaveText('Casey')
+        // Row 3 comes back at its own 30pt (40px) height.
+        const height = await cell(page, 'A3').evaluate(el => el.getBoundingClientRect().height)
+        expect(Math.round(height)).toBe(40)
+        // The filter did not hide row 8 or column C, so they stay hidden.
+        await expect(cell(page, 'A8')).toBeHidden()
+        await expect(cell(page, 'C2')).toBeHidden()
     })
 
     test('imported formulas and editing work at phone size', async ({ page }) => {
