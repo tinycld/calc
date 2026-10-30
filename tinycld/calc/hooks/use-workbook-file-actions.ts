@@ -20,7 +20,6 @@ export function useWorkbookFileActions(workbookId: string): WorkbookFileActions 
     const actions = useDriveItemFileActions({
         itemId: workbookId,
         onTrashed,
-        roomKind: 'calc',
     })
     // Guests (no org membership) can't rename/trash/copy/open-in-drive.
     // Return inert handlers so any still-mounted control is a no-op.

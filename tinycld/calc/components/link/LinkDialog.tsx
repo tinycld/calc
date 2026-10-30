@@ -73,7 +73,7 @@ function LinkDialogForm({ doc, sheetId, target }: LinkDialogFormProps) {
                                 autoCapitalize="none"
                                 autoCorrect={false}
                                 keyboardType="url"
-                                onSubmitEditing={onSubmit}
+                                onSubmitEditing={() => void onSubmit()}
                                 accessibilityLabel="Link"
                                 testID="calc-link-url"
                                 className="flex-1 text-foreground"

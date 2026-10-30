@@ -66,9 +66,15 @@ func SaveRoom(ctx context.Context, app core.App, handle realtime.DocHandle, driv
 		return fmt.Errorf("calc: load drive_items %s: %w", driveItemID, err)
 	}
 
-	originalBytes, err := readDriveItemBytes(app, item)
-	if err != nil {
-		return fmt.Errorf("calc: read existing file for %s: %w", driveItemID, err)
+	// The base the serializer patches is the previous save's output, which
+	// the handle still holds; storage is read only when the record names a
+	// blob this room did not write (first save, or an external write).
+	originalBytes, ok := sh.cachedSource(item.GetString("file"))
+	if !ok {
+		originalBytes, err = readDriveItemBytes(app, item)
+		if err != nil {
+			return fmt.Errorf("calc: read existing file for %s: %w", driveItemID, err)
+		}
 	}
 
 	snap, err := sh.Snapshot()
@@ -126,6 +132,8 @@ func SaveRoom(ctx context.Context, app core.App, handle realtime.DocHandle, driv
 	if err := app.Save(item); err != nil {
 		return fmt.Errorf("calc: save drive_items %s: %w", driveItemID, err)
 	}
+	// After Save the record names the blob PocketBase stored these bytes under.
+	sh.rememberSource(item.GetString("file"), updatedBytes)
 	return nil
 }
 

@@ -57,8 +57,9 @@ export function FileMenu(props: MenuBarProps) {
         )
     }
 
-    // "Export as template" reuses the folder-picker copy flow (which
-    // force-flushes the live room first), saving the current workbook as a
+    // "Export as template" reuses the folder-picker copy flow (the copy
+    // reads this room's current state through drive's stable file
+    // endpoint), saving the current workbook as a
     // `.tmpl.xlsx`. Hidden when it's already a template.
     const isAlreadyTemplate = isTemplateName(props.workbookName, TEMPLATE_EXTENSIONS.xlsx)
     const handleExportTemplate = () => {
