@@ -3,7 +3,7 @@ import type {
     LayoutChangeEvent,
     NativeScrollEvent,
     NativeSyntheticEvent,
-    ScrollView,
+    ScrollViewInstance,
 } from 'react-native'
 import { scrollIntoView } from '../../lib/scroll-into-view'
 
@@ -41,18 +41,18 @@ export interface GridViewport {
     // Read this from imperative callbacks (e.g. scroll-to-ensure-visible)
     // to avoid stale closure values.
     snapshotRef: React.MutableRefObject<ViewportSnapshot>
-    horizontalRef: React.RefObject<ScrollView | null>
-    verticalRef: React.RefObject<ScrollView | null>
-    headerScrollRef: React.RefObject<ScrollView | null>
-    leftColumnScrollRef: React.RefObject<ScrollView | null>
+    horizontalRef: React.RefObject<ScrollViewInstance | null>
+    verticalRef: React.RefObject<ScrollViewInstance | null>
+    headerScrollRef: React.RefObject<ScrollViewInstance | null>
+    leftColumnScrollRef: React.RefObject<ScrollViewInstance | null>
     // Freeze-pane mirror refs. `frozenRowHorizontalRef` is the
     // horizontal-only ScrollView that holds the top-right quadrant
     // (frozen rows × free cols); `frozenColVerticalRef` holds the
     // bottom-left quadrant (free rows × frozen cols). Both stay null
     // when no freeze is active; callers tolerate the null target on
     // scrollTo (it's a no-op).
-    frozenRowHorizontalRef: React.RefObject<ScrollView | null>
-    frozenColVerticalRef: React.RefObject<ScrollView | null>
+    frozenRowHorizontalRef: React.RefObject<ScrollViewInstance | null>
+    frozenColVerticalRef: React.RefObject<ScrollViewInstance | null>
     onHorizontalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
     onVerticalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
     onBodyLayout: (e: LayoutChangeEvent) => void
@@ -106,12 +106,12 @@ export function useGridViewport({
         height: 0,
     })
 
-    const horizontalRef = useRef<ScrollView>(null)
-    const verticalRef = useRef<ScrollView>(null)
-    const headerScrollRef = useRef<ScrollView>(null)
-    const leftColumnScrollRef = useRef<ScrollView>(null)
-    const frozenRowHorizontalRef = useRef<ScrollView>(null)
-    const frozenColVerticalRef = useRef<ScrollView>(null)
+    const horizontalRef = useRef<ScrollViewInstance>(null)
+    const verticalRef = useRef<ScrollViewInstance>(null)
+    const headerScrollRef = useRef<ScrollViewInstance>(null)
+    const leftColumnScrollRef = useRef<ScrollViewInstance>(null)
+    const frozenRowHorizontalRef = useRef<ScrollViewInstance>(null)
+    const frozenColVerticalRef = useRef<ScrollViewInstance>(null)
     const snapshotRef = useRef<ViewportSnapshot>({ scrollX: 0, scrollY: 0, width: 0, height: 0 })
 
     useImperativeHandle(

@@ -9,7 +9,15 @@ import {
 } from '@tinycld/core/ui/form'
 import { Plus, X } from 'lucide-react-native'
 import { useCallback, useEffect, useRef } from 'react'
-import { Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import {
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
+    type ViewInstance,
+} from 'react-native'
 import type * as Y from 'yjs'
 import { useGridFilterControls } from '../../hooks/grid/use-grid-filter-controls'
 import { useFilterView } from '../../hooks/use-filter-view'
@@ -67,7 +75,7 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
     const store = useGridStoreApi()
     const onClose = useCallback(() => store.getState().closeFilterDialog(), [store])
     const fg = useThemeColor('foreground')
-    const panelRef = useRef<View | null>(null)
+    const panelRef = useRef<ViewInstance | null>(null)
 
     const view = useFilterView(doc, sheetId)
     const { applyHeaderCriterion, removeHeaderCriterion } = useGridFilterControls({
@@ -100,10 +108,11 @@ function FilterColumnDialogInner({ doc, sheetId, col }: InnerProps) {
     const needsValues = opNeedsValues(op)
     const applyDisabled = !isValid
 
-    const onApply = handleSubmit(data => {
-        applyHeaderCriterion(col, toFilterCriterion(data))
-        onClose()
-    })
+    const onApply = () =>
+        void handleSubmit(data => {
+            applyHeaderCriterion(col, toFilterCriterion(data))
+            onClose()
+        })()
 
     const onRemove = useCallback(() => {
         removeHeaderCriterion(col)

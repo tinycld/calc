@@ -2,7 +2,7 @@ import { Dialog } from '@tinycld/core/ui/dialog'
 import { Controller, FormErrorSummary, useForm, zodResolver } from '@tinycld/core/ui/form'
 import { PlainInput } from '@tinycld/core/ui/PlainInput'
 import { useRef } from 'react'
-import type { TextInput } from 'react-native'
+import type { TextInputInstance } from 'react-native'
 import { Text, View } from 'react-native'
 import type * as Y from 'yjs'
 import type { SelectedCell } from '../../hooks/grid-store'
@@ -46,7 +46,7 @@ function LinkDialogForm({ doc, sheetId, target }: LinkDialogFormProps) {
     )
     // The dialog focuses this on open; an input's own autoFocus fires
     // before the dialog's surface is in the page and is lost.
-    const inputRef = useRef<TextInput>(null)
+    const inputRef = useRef<TextInputInstance>(null)
     return (
         <Dialog
             isOpen

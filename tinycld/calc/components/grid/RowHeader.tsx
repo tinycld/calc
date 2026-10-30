@@ -2,9 +2,11 @@ import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { useMemo, useRef } from 'react'
 import {
     type GestureResponderEvent,
+    type KeyDownEvent,
     Platform,
     Pressable,
     ScrollView,
+    type ScrollViewInstance,
     Text,
     View,
 } from 'react-native'
@@ -19,7 +21,7 @@ import { primaryAnchor } from '../../lib/selection-range'
 import { ACTIVE_HEADER_INSET_STYLE, ROW_HEADER_WIDTH, webCursor } from './constants'
 
 interface RowHeaderProps {
-    scrollRef: React.RefObject<ScrollView | null>
+    scrollRef: React.RefObject<ScrollViewInstance | null>
     contentHeight: number
     rowOffsets: Float64Array
     firstRow: number
@@ -242,8 +244,9 @@ function appendRowHeaderCells(
                                   .getState()
                                   .openHeaderMenu('row', row, colCount, e.clientX, e.clientY)
                           },
-                          onKeyDown: (e: { key: string; preventDefault: () => void }) => {
-                              if (e.key === 'Delete' || e.key === 'Backspace') {
+                          onKeyDown: (e: KeyDownEvent) => {
+                              const key = e.nativeEvent.key
+                              if (key === 'Delete' || key === 'Backspace') {
                                   e.preventDefault()
                                   store.getState().clearSelection()
                               }

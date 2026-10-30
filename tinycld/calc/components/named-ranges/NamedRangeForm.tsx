@@ -174,21 +174,22 @@ function useNamedRangeForm({
         },
     })
 
-    const onSubmit = handleSubmit(data => {
-        const next: NamedRange = {
-            name: data.name,
-            expression: data.expression,
-            scope: data.scope,
-            comment: data.comment || undefined,
-        }
-        const result =
-            initial == null ? mutations.create(next) : mutations.update(initial.key, next)
-        if (result.ok) {
-            onSaved()
-            return
-        }
-        setError('name', { message: result.reason })
-    })
+    const onSubmit = () =>
+        void handleSubmit(data => {
+            const next: NamedRange = {
+                name: data.name,
+                expression: data.expression,
+                scope: data.scope,
+                comment: data.comment || undefined,
+            }
+            const result =
+                initial == null ? mutations.create(next) : mutations.update(initial.key, next)
+            if (result.ok) {
+                onSaved()
+                return
+            }
+            setError('name', { message: result.reason })
+        })()
 
     return { control, errors, isValid, onSubmit }
 }

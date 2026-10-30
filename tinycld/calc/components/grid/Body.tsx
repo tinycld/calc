@@ -44,7 +44,8 @@ import {
     type NativeScrollEvent,
     type NativeSyntheticEvent,
     ScrollView,
-    type TextInput,
+    type ScrollViewInstance,
+    type TextInputInstance,
     View,
 } from 'react-native'
 import type * as Y from 'yjs'
@@ -77,8 +78,8 @@ import {
 import { SelectionEdgeHandles } from './SelectionEdgeHandles'
 
 interface BodyProps {
-    horizontalRef: React.RefObject<ScrollView | null>
-    verticalRef: React.RefObject<ScrollView | null>
+    horizontalRef: React.RefObject<ScrollViewInstance | null>
+    verticalRef: React.RefObject<ScrollViewInstance | null>
     contentWidth: number
     contentHeight: number
     colOffsets: Float64Array
@@ -87,13 +88,13 @@ interface BodyProps {
     rowDragState: RowDragState | null
     visible: { firstRow: number; lastRow: number; firstCol: number; lastCol: number }
     sheet: SheetWithId | null
-    cellEditorInputRef: React.RefObject<TextInput | null>
+    cellEditorInputRef: React.RefObject<TextInputInstance | null>
     presenceOnSheet: RemotePresence[]
     readOnly: boolean
     frozenRows: number
     frozenCols: number
-    frozenRowHorizontalRef: React.RefObject<ScrollView | null>
-    frozenColVerticalRef: React.RefObject<ScrollView | null>
+    frozenRowHorizontalRef: React.RefObject<ScrollViewInstance | null>
+    frozenColVerticalRef: React.RefObject<ScrollViewInstance | null>
     onSpecialKey: (key: FormulaSpecialKey) => boolean
     onLayout: (e: LayoutChangeEvent) => void
     onHorizontalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
@@ -599,7 +600,7 @@ interface RenderQuadrantCellsArgs {
     colOffsets: Float64Array
     rowOffsets: Float64Array
     readOnly: boolean
-    cellEditorInputRef: React.RefObject<TextInput | null>
+    cellEditorInputRef: React.RefObject<TextInputInstance | null>
     remoteEditingByCell: Map<string, RemotePresence>
     onSpecialKey: (key: FormulaSpecialKey) => boolean
     isFilled: (row: number, col: number) => boolean

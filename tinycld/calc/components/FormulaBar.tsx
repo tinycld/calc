@@ -1,9 +1,9 @@
 import { forwardRef, type ReactNode, useCallback } from 'react'
 import {
     type LayoutChangeEvent,
-    type NativeSyntheticEvent,
     TextInput,
-    type TextInputSelectionChangeEventData,
+    type TextInputInstance,
+    type TextInputSelectionChangeEvent,
     View,
 } from 'react-native'
 
@@ -38,7 +38,7 @@ interface FormulaBarProps {
 // any keystroke here implicitly opens an edit session in the Grid via
 // onChange. There is no separate enter-edit-mode step for the formula
 // bar, so it behaves the same way Excel/Sheets do.
-export const FormulaBar = forwardRef<TextInput, FormulaBarProps>(function FormulaBar(
+export const FormulaBar = forwardRef<TextInputInstance, FormulaBarProps>(function FormulaBar(
     {
         leftSlot,
         value,
@@ -75,7 +75,7 @@ export const FormulaBar = forwardRef<TextInput, FormulaBarProps>(function Formul
     )
 
     const onSelChange = useCallback(
-        (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+        (e: TextInputSelectionChangeEvent) => {
             const sel = e.nativeEvent.selection
             onSelectionChange(sel.start, sel.end)
         },
