@@ -44,121 +44,134 @@ export interface CellRenderStyle {
 // -> excelize) lives in style_reflect.go's overlayStyle. This file is
 // the third edge of the triangle: CellStyle -> RN render props.
 export function cellStyleToRenderProps(style: CellStyle | undefined): CellRenderStyle {
-    const viewStyle: ViewStyle = {}
-    const textStyle: TextStyle = {}
-    let numberOfLines: number | undefined = 1
-
     if (style == null) {
-        return { viewStyle, textStyle, numberOfLines }
+        return { viewStyle: {}, textStyle: {}, numberOfLines: 1 }
     }
 
-    if (style.font != null) {
-        if (style.font.bold) textStyle.fontWeight = 'bold'
-        if (style.font.italic) textStyle.fontStyle = 'italic'
-        // RN's textDecorationLine accepts at most the combined
-        // `'underline line-through'`, so build the value from whichever
-        // of the two flags are set.
-        const decorations: string[] = []
-        if (style.font.underline) decorations.push('underline')
-        if (style.font.strike) decorations.push('line-through')
-        if (decorations.length > 0) {
-            textStyle.textDecorationLine = decorations.join(' ') as
-                | 'underline'
-                | 'line-through'
-                | 'underline line-through'
-        }
-        if (typeof style.font.size === 'number') textStyle.fontSize = style.font.size
-        if (typeof style.font.name === 'string' && style.font.name !== '') {
-            textStyle.fontFamily = style.font.name
-        }
-        if (typeof style.font.color === 'string' && style.font.color !== '') {
-            textStyle.color = normalizeColor(style.font.color)
-        }
+    const horizontal = horizontalAlignmentStyles(style.alignment?.horizontal)
+    const textStyle: TextStyle = {
+        ...fontTextStyle(style.font),
+        ...horizontal.text,
     }
-
-    if (style.fill != null) {
-        // Excel fills carry both fgColor (the pattern color) and
-        // bgColor (the cell background). For solid fills (the only
-        // pattern most users care about), fgColor IS the visible
-        // color. Render path: prefer fgColor when present, fall back
-        // to bgColor.
-        const color = style.fill.fgColor ?? style.fill.bgColor
-        if (typeof color === 'string' && color !== '') {
-            viewStyle.backgroundColor = normalizeColor(color)
-        }
+    const viewStyle: ViewStyle = {
+        ...fillViewStyle(style.fill),
+        ...bordersViewStyle(style.borders),
+        ...horizontal.view,
+        ...verticalAlignmentStyle(style.alignment?.vertical),
     }
-
-    if (style.borders != null) {
-        // Per-edge translation: each edge is either an object describing
-        // its style + color, the literal `false` (clear; render as no
-        // border), or absent. RN's `borderStyle` is shared across all
-        // four edges and limited to solid/dotted/dashed — we pick one
-        // for the whole cell with preference dashed > dotted > solid
-        // and downgrade medium/thick/double to solid (the width carries
-        // weight on render). The xlsx export path preserves the user's
-        // full intent; the on-screen render is intentionally lossy on
-        // mixed line styles.
-        applyEdge(viewStyle, 'Top', style.borders.top)
-        applyEdge(viewStyle, 'Right', style.borders.right)
-        applyEdge(viewStyle, 'Bottom', style.borders.bottom)
-        applyEdge(viewStyle, 'Left', style.borders.left)
-        const cellBorderStyle = pickBorderStyle(style.borders)
-        if (cellBorderStyle != null) viewStyle.borderStyle = cellBorderStyle
-    }
-
-    if (style.alignment != null) {
-        switch (style.alignment.horizontal) {
-            case 'left':
-                textStyle.textAlign = 'left'
-                viewStyle.alignItems = 'flex-start'
-                break
-            case 'center':
-                textStyle.textAlign = 'center'
-                viewStyle.alignItems = 'center'
-                break
-            case 'right':
-                textStyle.textAlign = 'right'
-                viewStyle.alignItems = 'flex-end'
-                break
-        }
-        switch (style.alignment.vertical) {
-            case 'top':
-                viewStyle.justifyContent = 'flex-start'
-                break
-            case 'middle':
-                viewStyle.justifyContent = 'center'
-                break
-            case 'bottom':
-                viewStyle.justifyContent = 'flex-end'
-                break
-        }
-        if (style.alignment.wrapText) {
-            numberOfLines = undefined
-        }
-    }
+    const numberOfLines = style.alignment?.wrapText ? undefined : 1
 
     return { viewStyle, textStyle, numberOfLines }
 }
 
-// applyEdge sets the per-side border width + color on `viewStyle` for
-// one CellBorders edge. `false` and absent edges are no-ops; an object
-// edge writes width derived from its style (medium=2, thick/double=3,
-// thin/dashed/dotted=1) and color via normalizeColor (defaulting to
-// black when the edge has no color).
-//
-// `side` is the PascalCase RN suffix ("Top", "Right", …). The function
-// is a thin assignment shim — keeping it factored avoids repeating the
-// width-from-style switch four times in the borders block.
-function applyEdge(
-    viewStyle: ViewStyle,
+function fontTextStyle(font: CellFont | undefined): TextStyle {
+    if (font == null) return {}
+    const decoration = textDecorationFor(font)
+    return {
+        ...(font.bold ? { fontWeight: 'bold' } : {}),
+        ...(font.italic ? { fontStyle: 'italic' } : {}),
+        ...(decoration != null ? { textDecorationLine: decoration } : {}),
+        ...(typeof font.size === 'number' ? { fontSize: font.size } : {}),
+        ...(typeof font.name === 'string' && font.name !== '' ? { fontFamily: font.name } : {}),
+        ...(typeof font.color === 'string' && font.color !== ''
+            ? { color: normalizeColor(font.color) }
+            : {}),
+    }
+}
+
+// RN's textDecorationLine accepts at most the combined
+// `'underline line-through'`, so build the value from whichever of the
+// two flags are set.
+function textDecorationFor(font: CellFont): TextStyle['textDecorationLine'] {
+    if (font.underline && font.strike) return 'underline line-through'
+    if (font.underline) return 'underline'
+    if (font.strike) return 'line-through'
+    return undefined
+}
+
+// Excel fills carry both fgColor (the pattern color) and bgColor (the
+// cell background). For solid fills (the only pattern most users care
+// about), fgColor IS the visible color. Render path: prefer fgColor
+// when present, fall back to bgColor.
+function fillViewStyle(fill: CellFill | undefined): ViewStyle {
+    const color = fill?.fgColor ?? fill?.bgColor
+    if (typeof color !== 'string' || color === '') return {}
+    return { backgroundColor: normalizeColor(color) }
+}
+
+// Per-edge translation: each edge is either an object describing its
+// style + color, the literal `false` (clear; render as no border), or
+// absent. RN's `borderStyle` is shared across all four edges and
+// limited to solid/dotted/dashed — we pick one for the whole cell with
+// preference dashed > dotted > solid and downgrade medium/thick/double
+// to solid (the width carries weight on render). The xlsx export path
+// preserves the user's full intent; the on-screen render is
+// intentionally lossy on mixed line styles.
+function bordersViewStyle(borders: CellBorders | undefined): ViewStyle {
+    if (borders == null) return {}
+    const borderStyle = pickBorderStyle(borders)
+    return {
+        ...edgeViewStyle('Top', borders.top),
+        ...edgeViewStyle('Right', borders.right),
+        ...edgeViewStyle('Bottom', borders.bottom),
+        ...edgeViewStyle('Left', borders.left),
+        ...(borderStyle != null ? { borderStyle } : {}),
+    }
+}
+
+// edgeViewStyle returns the per-side border width + color for one
+// CellBorders edge. `false` and absent edges produce nothing; an object
+// edge yields a width derived from its style (medium=2,
+// thick/double=3, thin/dashed/dotted=1) and a color via normalizeColor
+// (defaulting to black when the edge has no color).
+function edgeViewStyle(
     side: 'Top' | 'Right' | 'Bottom' | 'Left',
     edge: CellBorderEdge | false | undefined
-): void {
-    if (edge == null || edge === false) return
-    const widthKey = `border${side}Width` as const
-    const colorKey = `border${side}Color` as const
-    viewStyle[widthKey] = widthForStyle(edge.style)
-    viewStyle[colorKey] = normalizeColor(edge.color ?? '#000000')
+): ViewStyle {
+    if (edge == null || edge === false) return {}
+    const width = widthForStyle(edge.style)
+    const color = normalizeColor(edge.color ?? '#000000')
+    switch (side) {
+        case 'Top':
+            return { borderTopWidth: width, borderTopColor: color }
+        case 'Right':
+            return { borderRightWidth: width, borderRightColor: color }
+        case 'Bottom':
+            return { borderBottomWidth: width, borderBottomColor: color }
+        case 'Left':
+            return { borderLeftWidth: width, borderLeftColor: color }
+    }
+}
+
+// Horizontal alignment lands on both layers: textAlign for the text
+// itself, and alignItems on the flex-column container.
+function horizontalAlignmentStyles(horizontal: CellAlignment['horizontal']): {
+    text: TextStyle
+    view: ViewStyle
+} {
+    switch (horizontal) {
+        case 'left':
+            return { text: { textAlign: 'left' }, view: { alignItems: 'flex-start' } }
+        case 'center':
+            return { text: { textAlign: 'center' }, view: { alignItems: 'center' } }
+        case 'right':
+            return { text: { textAlign: 'right' }, view: { alignItems: 'flex-end' } }
+        default:
+            return { text: {}, view: {} }
+    }
+}
+
+function verticalAlignmentStyle(vertical: CellAlignment['vertical']): ViewStyle {
+    switch (vertical) {
+        case 'top':
+            return { justifyContent: 'flex-start' }
+        case 'middle':
+            return { justifyContent: 'center' }
+        case 'bottom':
+            return { justifyContent: 'flex-end' }
+        default:
+            return {}
+    }
 }
 
 function widthForStyle(style: CellBorderLineStyle | undefined): number {

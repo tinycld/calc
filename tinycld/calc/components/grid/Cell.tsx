@@ -2,13 +2,13 @@ import { useDragGesture } from '@tinycld/core/lib/gestures'
 import { memo, useCallback, useRef } from 'react'
 import {
     type GestureResponderEvent,
-    type NativeSyntheticEvent,
     Platform,
     Pressable,
     Text,
     TextInput,
-    type TextInputSelectionChangeEventData,
-    type View,
+    type TextInputInstance,
+    type TextInputSelectionChangeEvent,
+    type ViewInstance,
 } from 'react-native'
 import { useCellMerge } from '../../hooks/use-cell-merge'
 import { useConditionalStyleForCell } from '../../hooks/use-conditional-style'
@@ -43,7 +43,7 @@ interface CellProps {
     width: number
     height: number
     readOnly: boolean
-    cellEditorInputRef: React.RefObject<TextInput | null>
+    cellEditorInputRef: React.RefObject<TextInputInstance | null>
     remoteEditor: RemotePresence | null
     colOffsets: Float64Array
     rowOffsets: Float64Array
@@ -159,7 +159,7 @@ export const Cell = memo(function Cell({
     // Ref forwarded to the Pressable's underlying View. Used to
     // measureInWindow on native drag-start since RN doesn't surface
     // the target's screen rect in the gesture event.
-    const pressableRef = useRef<View | null>(null)
+    const pressableRef = useRef<ViewInstance | null>(null)
     // Screen-space top-left of this cell, captured at drag-start.
     // onDragMove subtracts this from ctx.pointer (pageX/Y on native,
     // clientX/Y on web) to convert to a cell-local offset, then adds
@@ -518,7 +518,7 @@ export const Cell = memo(function Cell({
 })
 
 interface CellEditorProps {
-    inputRef: React.RefObject<TextInput | null>
+    inputRef: React.RefObject<TextInputInstance | null>
     left: number
     top: number
     width: number
@@ -552,7 +552,7 @@ function CellEditor({
         [store, row, col]
     )
     const onSelectionChange = useCallback(
-        (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+        (e: TextInputSelectionChangeEvent) => {
             const sel = e.nativeEvent.selection
             store.getState().setEditSelection(row, col, sel.start, sel.end)
         },

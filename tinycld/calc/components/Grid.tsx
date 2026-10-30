@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
-import { type LayoutChangeEvent, Platform, View } from 'react-native'
+import { type LayoutChangeEvent, Platform, View, type ViewInstance } from 'react-native'
 import { useFindActions } from '../hooks/find/use-find-actions'
 import { createFindStore } from '../hooks/find/use-find-store'
 import { FindStoreProvider, useFindStoreApi } from '../hooks/find/use-find-store-context'
@@ -292,13 +292,11 @@ function GridInner({
     // Focus sentinel: a zero-size focusable div (web only) that captures
     // keyboard events after editing ends. Without it, the TextInput unmounts
     // and DOM focus lands on the body — the next keystroke does nothing.
-    const sentinelRef = useRef<View>(null)
+    const sentinelRef = useRef<ViewInstance>(null)
     useEffect(() => {
         if (Platform.OS !== 'web') return
         instance.focusSentinelRef.current = () => {
-            // RN-Web renders View as a focusable div; RN's View type has no
-            // focus(), so narrow to the web-only method we call.
-            ;(sentinelRef.current as { focus?: () => void } | null)?.focus?.()
+            sentinelRef.current?.focus()
         }
     }, [instance.focusSentinelRef])
 
@@ -432,8 +430,8 @@ function GridInner({
     // body row (e.g. GridCanvasTheme's light-scope backing View) would
     // silently shift bodyTop and misplace the popover. Measuring against
     // the root keeps the invariant regardless of intermediate nesting.
-    const gridRootRef = useRef<View>(null)
-    const bodyRowRef = useRef<View>(null)
+    const gridRootRef = useRef<ViewInstance>(null)
+    const bodyRowRef = useRef<ViewInstance>(null)
     const setBodyTop = useGridStore(s => s.setBodyTop)
     const onBodyContainerLayout = useCallback(
         (_e: LayoutChangeEvent) => {

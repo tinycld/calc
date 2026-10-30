@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import type { TextInput } from 'react-native'
+import type { TextInputInstance } from 'react-native'
 import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
 import { subscribeAwarenessToStore } from '../../components/grid/subscribe-awareness'
@@ -25,8 +25,8 @@ import { setFrozenCols, setFrozenRows } from '../use-y-sheets'
 
 export interface GridStoreInstance {
     store: GridStoreApi
-    formulaBarInputRef: React.RefObject<TextInput | null>
-    cellEditorInputRef: React.RefObject<TextInput | null>
+    formulaBarInputRef: React.RefObject<TextInputInstance | null>
+    cellEditorInputRef: React.RefObject<TextInputInstance | null>
     // Set by GridInner after the viewport is ready; the store's
     // navigateSelection / commitAndNavigate actions call through this
     // to scroll the new cell into view.
@@ -59,8 +59,8 @@ export function useGridStoreInstance({
     sheetId,
     readOnly,
 }: UseGridStoreInstanceArgs): GridStoreInstance {
-    const formulaBarInputRef = useRef<TextInput>(null)
-    const cellEditorInputRef = useRef<TextInput>(null)
+    const formulaBarInputRef = useRef<TextInputInstance>(null)
+    const cellEditorInputRef = useRef<TextInputInstance>(null)
     const scrollToCellRef = useRef<((row: number, col: number) => void) | null>(null)
     const focusSentinelRef = useRef<(() => void) | null>(null)
 

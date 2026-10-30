@@ -3,9 +3,11 @@ import { FilterX } from 'lucide-react-native'
 import { useMemo, useRef } from 'react'
 import {
     type GestureResponderEvent,
+    type KeyDownEvent,
     Platform,
     Pressable,
     ScrollView,
+    type ScrollViewInstance,
     Text,
     View,
 } from 'react-native'
@@ -22,7 +24,7 @@ import { columnLabel } from '../../lib/workbook-types'
 import { ACTIVE_HEADER_INSET_STYLE, HEADER_HEIGHT, webCursor } from './constants'
 
 interface ColumnHeaderProps {
-    scrollRef: React.RefObject<ScrollView | null>
+    scrollRef: React.RefObject<ScrollViewInstance | null>
     contentWidth: number
     colOffsets: Float64Array
     firstCol: number
@@ -308,8 +310,9 @@ function appendHeaderCells(
                                   .getState()
                                   .openHeaderMenu('col', col, rowCount, e.clientX, e.clientY)
                           },
-                          onKeyDown: (e: { key: string; preventDefault: () => void }) => {
-                              if (e.key === 'Delete' || e.key === 'Backspace') {
+                          onKeyDown: (e: KeyDownEvent) => {
+                              const key = e.nativeEvent.key
+                              if (key === 'Delete' || key === 'Backspace') {
                                   e.preventDefault()
                                   filter.store.getState().clearSelection()
                               }

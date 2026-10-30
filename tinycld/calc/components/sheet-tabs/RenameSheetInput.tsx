@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { type NativeSyntheticEvent, TextInput, type TextInputKeyPressEventData } from 'react-native'
+import { TextInput, type TextInputInstance, type TextInputKeyPressEvent } from 'react-native'
 
 interface RenameSheetInputProps {
     initialValue: string
@@ -16,7 +16,7 @@ interface RenameSheetInputProps {
 // layer; the parent reports a rejected name to the user.
 export function RenameSheetInput({ initialValue, onCommit, onCancel }: RenameSheetInputProps) {
     const [value, setValue] = useState(initialValue)
-    const ref = useRef<TextInput | null>(null)
+    const ref = useRef<TextInputInstance | null>(null)
     const committedRef = useRef(false)
 
     // Focus + select-all once after mount. selectTextOnFocus does this on
@@ -36,7 +36,7 @@ export function RenameSheetInput({ initialValue, onCommit, onCancel }: RenameShe
         onCommit(trimmed)
     }
 
-    const handleKeyPress = (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
+    const handleKeyPress = (e: TextInputKeyPressEvent) => {
         if (e.nativeEvent.key === 'Escape') {
             committedRef.current = true
             onCancel()

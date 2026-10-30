@@ -116,34 +116,35 @@ function PopoverBody({ driveItemId, sheetId, row, col, threads, onClose }: Popov
         mode: 'onChange',
     })
 
-    const onSubmit = handleSubmit(values => {
-        if (activeThread == null) {
-            add.mutate(
-                { driveItemId, sheetId, row, col, body: values.body },
+    const onSubmit = () =>
+        void handleSubmit(values => {
+            if (activeThread == null) {
+                add.mutate(
+                    { driveItemId, sheetId, row, col, body: values.body },
+                    {
+                        onSuccess: () => {
+                            reset({ body: '' })
+                        },
+                    }
+                )
+                return
+            }
+            reply.mutate(
+                {
+                    driveItemId,
+                    sheetId,
+                    row,
+                    col,
+                    parentId: activeThread.root.id,
+                    body: values.body,
+                },
                 {
                     onSuccess: () => {
                         reset({ body: '' })
                     },
                 }
             )
-            return
-        }
-        reply.mutate(
-            {
-                driveItemId,
-                sheetId,
-                row,
-                col,
-                parentId: activeThread.root.id,
-                body: values.body,
-            },
-            {
-                onSuccess: () => {
-                    reset({ body: '' })
-                },
-            }
-        )
-    })
+        })()
 
     const onResolve = useCallback(() => {
         if (activeThread == null) return
@@ -289,10 +290,11 @@ function CommentLine({ comment, isOwn, onEdit, onDelete }: CommentLineProps) {
         mode: 'onChange',
     })
 
-    const onSave = handleSubmit(values => {
-        onEdit(comment.id, values.body)
-        setEditing(false)
-    })
+    const onSave = () =>
+        void handleSubmit(values => {
+            onEdit(comment.id, values.body)
+            setEditing(false)
+        })()
 
     const onCancel = useCallback(() => {
         reset({ body: comment.body })

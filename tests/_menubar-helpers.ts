@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 import { TEST_USER_PASSWORD, TEST_USER_USERNAME } from '../../tinycld/tests/e2e/helpers'
 
-export const PB_URL = 'http://127.0.0.1:7200'
+export const PB_URL = `http://127.0.0.1:${process.env.E2E_PORT ?? 7200}`
 
 let cachedAuthToken: string | null = null
 

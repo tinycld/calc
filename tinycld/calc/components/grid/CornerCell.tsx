@@ -1,4 +1,4 @@
-import { Platform, Pressable } from 'react-native'
+import { type KeyDownEvent, Platform, Pressable } from 'react-native'
 import type { GridStoreApi } from '../../hooks/grid-store'
 import { HEADER_HEIGHT, ROW_HEADER_WIDTH } from './constants'
 
@@ -12,8 +12,9 @@ export function CornerCell({ store, rowCount, colCount }: CornerCellProps) {
     const webProps =
         Platform.OS === 'web'
             ? {
-                  onKeyDown: (e: { key: string; preventDefault: () => void }) => {
-                      if (e.key === 'Delete' || e.key === 'Backspace') {
+                  onKeyDown: (e: KeyDownEvent) => {
+                      const key = e.nativeEvent.key
+                      if (key === 'Delete' || key === 'Backspace') {
                           e.preventDefault()
                           store.getState().clearSelection()
                       }

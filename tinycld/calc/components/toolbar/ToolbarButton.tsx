@@ -2,7 +2,7 @@ import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { useWebStyles } from '@tinycld/core/lib/use-web-styles'
 import type { ComponentType, ReactNode } from 'react'
 import { forwardRef } from 'react'
-import { Platform, Pressable, View } from 'react-native'
+import { Platform, Pressable, View, type ViewInstance } from 'react-native'
 
 export interface ToolbarButtonProps {
     icon?: ComponentType<{ size?: number; color?: string }>
@@ -57,7 +57,7 @@ const tooltipCSS = `
 // `forwardRef` is required so this can serve as a Menu / Popover
 // `trigger`: the surface clones it with the ref it measures and the
 // `onPress` that toggles it.
-export const ToolbarButton = forwardRef<View, ToolbarButtonProps>(function ToolbarButton(
+export const ToolbarButton = forwardRef<ViewInstance, ToolbarButtonProps>(function ToolbarButton(
     { icon: Icon, children, active = false, disabled = false, onPress, label, width = 28 },
     ref
 ) {
