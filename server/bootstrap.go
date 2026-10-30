@@ -256,6 +256,15 @@ func readWorksheet(sheet *xlsx.Sheet, rowCap, colCap int, date1904 bool) Workshe
 	if colCount < 1 {
 		colCount = 1
 	}
+	// A hidden row or column is size 0 in the doc, which the grid draws as
+	// hidden. The rows a filter hid keep their real heights in the filter
+	// view, so removing the filter shows them at those heights.
+	heights := readRowHeights(sheet)
+	hiddenRows := readHiddenRows(sheet)
+	filterView := readFilterView(sheet.AutoFilter)
+	if filterView != nil {
+		filterView.SavedHeights = filterSavedHeights(filterView.Range, heights, hiddenRows)
+	}
 	frozenRows, frozenCols := sheet.FrozenRows, sheet.FrozenCols
 	if frozenRows < 0 {
 		frozenRows = 0
@@ -273,14 +282,14 @@ func readWorksheet(sheet *xlsx.Sheet, rowCap, colCap int, date1904 bool) Workshe
 		Merges:             readMerges(sheet.Merges),
 		FrozenRows:         frozenRows,
 		FrozenCols:         frozenCols,
-		RowHeights:         readRowHeights(sheet),
-		ColWidths:          readColWidths(sheet, colCount),
+		RowHeights:         withHidden(heights, hiddenRows),
+		ColWidths:          withHidden(readColWidths(sheet, colCount), readHiddenCols(sheet, colCount)),
 		RowStyles:          readRowStyles(sheet),
 		ConditionalFormats: readConditionalFormats(sheet),
 		DefaultRowHeight:   excelPointsToPx(sheet.DefaultRowHeight),
 		DefaultColWidth:    excelCharWidthToPx(sheet.DefaultColWidth),
 		HideGridLines:      sheet.HideGridLines,
-		FilterView:         readFilterView(sheet.AutoFilter),
+		FilterView:         filterView,
 	}
 }
 
@@ -354,6 +363,88 @@ func isDefaultColWidth(w, sheetDefault float64) bool {
 		return true
 	}
 	return sheetDefault > 0 && w > sheetDefault-0.001 && w < sheetDefault+0.001
+}
+
+// minGridCols is the column count the grid always shows (MIN_COLS in
+// components/grid/constants.ts). A hidden column inside it must reach the
+// doc even when no cell does, or it shows.
+const minGridCols = 26
+
+// readHiddenRows lists the 1-based rows the sheet hides: rows with
+// hidden="1" (a filter's, a collapsed group's, or hidden by hand) and
+// rows of height 0, which Excel draws as hidden too.
+func readHiddenRows(sheet *xlsx.Sheet) map[int]bool {
+	out := map[int]bool{}
+	for row := range sheet.HiddenRows {
+		if row >= 0 {
+			out[row+1] = true
+		}
+	}
+	for row, pt := range sheet.RowHeights {
+		if row >= 0 && pt == 0 {
+			out[row+1] = true
+		}
+	}
+	return out
+}
+
+// readHiddenCols lists the 1-based columns the sheet hides (hidden="1" or
+// width 0) up to the grid's extent: colCount, or minGridCols when the
+// cells reach fewer. A file often hides every unused column to the end of
+// the sheet, and seeding those would bloat the doc for nothing on screen.
+func readHiddenCols(sheet *xlsx.Sheet, colCount int) map[int]bool {
+	bound := max(colCount, minGridCols)
+	out := map[int]bool{}
+	for col := range sheet.HiddenCols {
+		if col >= 0 && col < bound {
+			out[col+1] = true
+		}
+	}
+	for col, w := range sheet.ColWidths {
+		if col >= 0 && col < bound && w == 0 {
+			out[col+1] = true
+		}
+	}
+	return out
+}
+
+// withHidden sets each hidden row or column to size 0 in a sparse size
+// map, creating the map when needed.
+func withHidden(sizes map[int]int, hidden map[int]bool) map[int]int {
+	if len(hidden) == 0 {
+		return sizes
+	}
+	if sizes == nil {
+		sizes = map[int]int{}
+	}
+	for n := range hidden {
+		sizes[n] = 0
+	}
+	return sizes
+}
+
+// filterSavedHeights gives the filter view the heights its rows had
+// before the filter hid any (lib/filter.ts records the same on its first
+// apply): every custom height below the label row. It is nil when the
+// file's filter hides no row, so the client's first apply records them.
+func filterSavedHeights(rng FilterRange, heights map[int]int, hidden map[int]bool) map[int]int {
+	hidesAny := false
+	for row := rng.StartRow + 1; row <= rng.EndRow; row++ {
+		if hidden[row] {
+			hidesAny = true
+			break
+		}
+	}
+	if !hidesAny {
+		return nil
+	}
+	saved := map[int]int{}
+	for row, px := range heights {
+		if row > rng.StartRow && row <= rng.EndRow && px > 0 {
+			saved[row] = px
+		}
+	}
+	return saved
 }
 
 // readRowStyles converts the sheet's row-level styles (0-based keys)
@@ -826,7 +917,7 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 				heightsMap := ycrdt.NewYMap(nil)
 				wroteAny := false
 				for row, px := range sheet.RowHeights {
-					if row < 1 || px <= 0 {
+					if row < 1 || px < 0 {
 						continue
 					}
 					heightsMap.Set(strconv.Itoa(row), px)
@@ -840,7 +931,7 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 				widthsMap := ycrdt.NewYMap(nil)
 				wroteAny := false
 				for col, px := range sheet.ColWidths {
-					if col < 1 || px <= 0 {
+					if col < 1 || px < 0 {
 						continue
 					}
 					widthsMap.Set(strconv.Itoa(col), px)
@@ -926,7 +1017,8 @@ const (
 	// numberFromYRaw); y-crdt cannot store a bare float.
 	defaultFontKey = "defaultFont"
 	// sheetFactsSeededKey marks a doc whose bootstrap seeded the sheet
-	// facts — gridlines, filter views and hyperlinks — from the file.
+	// facts — gridlines, filter views, hyperlinks, and hidden rows and
+	// columns — from the file.
 	// Only such a doc is authoritative for them on save: a doc
 	// bootstrapped earlier has none of those keys, and treating that
 	// absence as "removed" would strip every link and filter from the

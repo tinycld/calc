@@ -1189,13 +1189,17 @@ func orderSheets(f *xlsx.File, metas []SheetMeta, sheetNameByID map[string]strin
 // (ClearRowHeight / ClearColWidth remove the attribute / <col> entry),
 // unlike the excelize-era writer which wrote the default value back.
 //
-// px==0 is a deliberate value (snap-to-hide), not an absence: the TS
-// side's HIDE_SNAP_THRESHOLD rounds small drag sizes to 0 so a
-// zero-height row / zero-width column reads as hidden. px<0 is an
+// px==0 is a deliberate value, not an absence: a hidden row or column
+// (snap-to-hide from a drag, a filter, or a hidden flag the import read).
+// It is written as hidden="1", and the size in the file stays, so the row
+// or column shows at that size again when unhidden. px<0 is an
 // out-of-band sentinel and is skipped.
 //
 // seeded is YDocSnapshot.SheetFactsSeeded: only a seeded doc owns the
-// gridlines, and only a seeded doc may remove the file's autoFilter.
+// gridlines and the file's hidden rows and columns, and only a seeded doc
+// may remove the file's autoFilter. A doc bootstrapped before the import
+// read hidden flags shows those rows, so unhiding them on save would
+// change the file behind the user's back.
 // Every write below is a no-op on the file when the doc state matches
 // it, so pushing them on every save keeps an unchanged sheet's bytes.
 func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet, seeded bool) error {
@@ -1230,9 +1234,25 @@ func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet, s
 				sh.ClearRowHeight(row)
 			}
 		}
+		if seeded && origSheet != nil {
+			for _, row := range sortedIntKeys(readHiddenRows(origSheet)) {
+				if px, ok := meta.RowHeights[row]; ok && px == 0 {
+					continue
+				}
+				if err := showRow(sh, row); err != nil {
+					return err
+				}
+			}
+		}
 		for _, row := range sortedIntKeys(meta.RowHeights) {
 			px := meta.RowHeights[row]
 			if row < 1 || px < 0 {
+				continue
+			}
+			if px == 0 {
+				if err := hideRow(sh, row, meta.FilterView); err != nil {
+					return err
+				}
 				continue
 			}
 			sh.SetRowHeight(row, pxToExcelPoints(px))
@@ -1240,17 +1260,17 @@ func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet, s
 	}
 
 	if meta.ColWidths != nil {
+		// Bound the existing-custom scan to the union of the snapshot's
+		// tracked extent and the on-disk <dimension> column extent,
+		// mirroring the excelize-era walk: blanket <col> ranges spanning
+		// thousands of trailing columns beyond the used range represent
+		// no real edit.
+		maxCol := meta.ColCount
+		if hasDim && existingDim.EndCol > maxCol {
+			maxCol = existingDim.EndCol
+		}
 		var existing map[int]int
 		if origSheet != nil {
-			// Bound the existing-custom scan to the union of the
-			// snapshot's tracked extent and the on-disk <dimension>
-			// column extent, mirroring the excelize-era walk: blanket
-			// <col> ranges spanning thousands of trailing columns
-			// beyond the used range represent no real edit.
-			maxCol := meta.ColCount
-			if hasDim && existingDim.EndCol > maxCol {
-				maxCol = existingDim.EndCol
-			}
 			existing = readColWidths(origSheet, maxCol)
 		}
 		for _, col := range sortedIntKeys(existing) {
@@ -1258,9 +1278,25 @@ func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet, s
 				sh.ClearColWidth(col)
 			}
 		}
+		if seeded && origSheet != nil {
+			for _, col := range sortedIntKeys(readHiddenCols(origSheet, maxCol)) {
+				if px, ok := meta.ColWidths[col]; ok && px == 0 {
+					continue
+				}
+				if err := showCol(sh, col); err != nil {
+					return err
+				}
+			}
+		}
 		for _, col := range sortedIntKeys(meta.ColWidths) {
 			px := meta.ColWidths[col]
 			if col < 1 || px < 0 {
+				continue
+			}
+			if px == 0 {
+				if err := hideCol(sh, col); err != nil {
+					return err
+				}
 				continue
 			}
 			sh.SetColWidth(col, pxToExcelCharWidth(px))
@@ -1538,6 +1574,55 @@ func sortedIntKeys[V any](m map[int]V) []int {
 	}
 	sort.Ints(keys)
 	return keys
+}
+
+// hideRow writes a row the doc hides (height 0) as hidden="1". The row
+// keeps the height it has in the file, so it shows at that height again
+// in Excel when unhidden. A row with no height in the file takes the one
+// the filter view saved for it, the height it had before the filter hid
+// it.
+// A row the file already hides with a zero height is left as it is.
+func hideRow(sh *xlsx.SheetEdit, row int, fv *FilterView) error {
+	pt, has := sh.RowHeight(row)
+	if has && pt == 0 {
+		return nil
+	}
+	if !has && fv != nil {
+		if px := fv.SavedHeights[row]; px > 0 {
+			sh.SetRowHeight(row, pxToExcelPoints(px))
+		}
+	}
+	return sh.SetRowHidden(row, true)
+}
+
+// hideCol writes a column the doc hides (width 0) as hidden="1". The
+// column keeps the width it has in the file, so it shows at that width
+// again in Excel when unhidden. A column the file already hides with a
+// zero width is left as it is.
+func hideCol(sh *xlsx.SheetEdit, col int) error {
+	if w, has := sh.ColWidth(col); has && w == 0 {
+		return nil
+	}
+	return sh.SetColHidden(col, true)
+}
+
+// showRow unhides a row the file hides and the doc shows. A zero height
+// (how calc saved a hidden row before it wrote hidden="1") is cleared
+// too, or the row would stay invisible. The doc's own height, when it
+// has one, is written after this.
+func showRow(sh *xlsx.SheetEdit, row int) error {
+	if pt, has := sh.RowHeight(row); has && pt == 0 {
+		sh.ClearRowHeight(row)
+	}
+	return sh.SetRowHidden(row, false)
+}
+
+// showCol is showRow for a column.
+func showCol(sh *xlsx.SheetEdit, col int) error {
+	if w, has := sh.ColWidth(col); has && w == 0 {
+		sh.ClearColWidth(col)
+	}
+	return sh.SetColHidden(col, false)
 }
 
 // pxToExcelPoints converts a CSS pixel value (the unit calc stores

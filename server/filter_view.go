@@ -15,14 +15,16 @@ import (
 // in tinycld/calc/lib/filter.ts).
 const filterViewKey = "filterView"
 
-// FilterView mirrors the client's FilterDefinition (lib/filter.ts) minus
-// savedHeights, which only the client reads. Range is 1-based; its
-// StartRow is the label (header) row the client never hides. Criteria
-// are keyed by absolute 1-based column number.
+// FilterView mirrors the client's FilterDefinition (lib/filter.ts). Range
+// is 1-based; its StartRow is the label (header) row the client never
+// hides. Criteria are keyed by absolute 1-based column number.
+// SavedHeights holds the pixel heights rows had before the filter hid any
+// (1-based keys), which removing the filter restores.
 type FilterView struct {
-	Mode     string                  `json:"mode"`
-	Range    FilterRange             `json:"range"`
-	Criteria map[int]FilterCriterion `json:"criteria,omitempty"`
+	Mode         string                  `json:"mode"`
+	Range        FilterRange             `json:"range"`
+	Criteria     map[int]FilterCriterion `json:"criteria,omitempty"`
+	SavedHeights map[int]int             `json:"savedHeights,omitempty"`
 }
 
 // FilterRange is the filter view's rectangle (the `range` Y.Map).
@@ -367,8 +369,9 @@ func autoFilterFromView(fv *FilterView, orig *xlsx.AutoFilter) *xlsx.AutoFilter 
 }
 
 // buildFilterViewYMap encodes a filter view in the Y shape lib/filter.ts
-// reads. savedHeights is left out: the import hides no rows, and an
-// absent map lets the client's first applyFilter record the real heights.
+// reads. savedHeights is written only when the file's filter hides rows;
+// otherwise it stays absent so the client's first applyFilter records the
+// real heights.
 func buildFilterViewYMap(fv *FilterView) *ycrdt.YMap {
 	view := ycrdt.NewYMap(nil)
 	view.Set("mode", fv.Mode)
@@ -383,6 +386,13 @@ func buildFilterViewYMap(fv *FilterView) *ycrdt.YMap {
 		criteria.Set(strconv.Itoa(col), buildCriterionYMap(fv.Criteria[col]))
 	}
 	view.Set("criteria", criteria)
+	if fv.SavedHeights != nil {
+		saved := ycrdt.NewYMap(nil)
+		for _, row := range sortedIntKeys(fv.SavedHeights) {
+			saved.Set(strconv.Itoa(row), fv.SavedHeights[row])
+		}
+		view.Set("savedHeights", saved)
+	}
 	return view
 }
 
@@ -440,6 +450,7 @@ func decodeFilterView(meta *ycrdt.YMap) *FilterView {
 	if view.Get("mode") == "header" {
 		fv.Mode = "header"
 	}
+	fv.SavedHeights = decodeSparseIntMap(view, "savedHeights")
 	if crit, ok := view.Get("criteria").(*ycrdt.YMap); ok {
 		crit.ForEach(func(key string, value any, _ *ycrdt.YMap) {
 			col, err := strconv.Atoi(key)

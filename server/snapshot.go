@@ -27,8 +27,9 @@ type YDocSnapshot struct {
 	Pivots []PivotDefinitionDTO
 
 	// SheetFactsSeeded reports the workbook map's sheetFactsSeeded
-	// marker: the doc's bootstrap seeded gridlines, filter views and
-	// hyperlinks from the file, so the doc is authoritative for them.
+	// marker: the doc's bootstrap seeded gridlines, filter views,
+	// hyperlinks, and hidden rows and columns from the file, so the doc is
+	// authoritative for them.
 	// When false (a doc bootstrapped before calc read them) the
 	// serializer keeps the file's own: it writes a filter view only when
 	// the doc has one, and keeps every file link no doc cell overrides.
