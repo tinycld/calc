@@ -26,7 +26,7 @@ Rows that don't match are hidden. Their data still exists and still participates
 
 A column that is filtering rows shows a filled filter button.
 
-A filter in an imported .xlsx file stays on, with its filter buttons and the rules calc can show. Rules that calc cannot show (for example, a filter by color) are kept in the file but do not hide rows in calc. The filter is saved back into the downloaded .xlsx file.
+A filter in an imported .xlsx file stays on, with its filter buttons and the rules calc can show. The rows it hid stay hidden. Removing the filter shows them again at their own heights. Rules that calc cannot show (for example, a filter by color) are kept in the file but do not hide rows in calc. The filter is saved back into the downloaded .xlsx file.
 
 ## Removing a filter
 
