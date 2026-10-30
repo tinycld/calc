@@ -404,3 +404,57 @@ func TestSerializerLegacyCellNoKind(t *testing.T) {
 func isNumericCellType(t excelize.CellType) bool {
 	return t == excelize.CellTypeUnset || t == excelize.CellTypeNumber
 }
+
+// After a save the handle holds the bytes it wrote, under the blob name
+// PocketBase stored them as, so the next save patches them without a
+// storage read; a record that names a different blob (an external write)
+// is a miss.
+func TestSaveRoomCachesItsOutputAsTheNextBase(t *testing.T) {
+	tinyXlsx, err := os.ReadFile(tinyXlsxPath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	app := setupPersistTestApp(t)
+	itemID := seedDriveItem(t, app, "tiny.xlsx", tinyXlsx)
+
+	rt := NewRuntime()
+	handle, err := rt.NewDoc(itemID)
+	if err != nil {
+		t.Fatalf("NewDoc: %v", err)
+	}
+	t.Cleanup(func() { _ = handle.Close() })
+	sh := handle.(*sheetsDocHandle)
+
+	if _, ok := sh.cachedSource("tiny.xlsx"); ok {
+		t.Fatal("a fresh handle must have no cached source")
+	}
+	if err := SaveRoom(t.Context(), app, handle, itemID, nil); err != nil {
+		t.Fatalf("SaveRoom: %v", err)
+	}
+
+	reloaded, err := app.FindRecordById(driveItemsCollection, itemID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	stored, err := readDriveItemBytes(app, reloaded)
+	if err != nil {
+		t.Fatalf("read stored: %v", err)
+	}
+	cached, ok := sh.cachedSource(reloaded.GetString("file"))
+	if !ok {
+		t.Fatal("the saved blob name must hit the cache")
+	}
+	if string(cached) != string(stored) {
+		t.Fatal("cached bytes differ from the stored blob")
+	}
+	if _, ok := sh.cachedSource("some_other_blob.xlsx"); ok {
+		t.Fatal("a blob this room did not write must miss the cache")
+	}
+
+	if err := handle.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, ok := sh.cachedSource(reloaded.GetString("file")); ok {
+		t.Fatal("Close must drop the cached source")
+	}
+}

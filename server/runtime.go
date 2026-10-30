@@ -112,6 +112,40 @@ type sheetsDocHandle struct {
 	mu     sync.Mutex
 	doc    *ycrdt.Doc // nil after Close
 	closed bool
+
+	// source is the stored xlsx the next save patches, kept for the life of
+	// the room so a save reads nothing from storage. SaveRoom fills it on a
+	// miss and replaces it with each save's output, under the blob name
+	// PocketBase gave that output; a name that no longer matches the record
+	// (an upload, a version restore) is a miss, so an external write is
+	// never patched from stale bytes. Guarded by mu.
+	source sourceBlob
+}
+
+// sourceBlob is a stored file's bytes together with the blob name they were
+// read from or written under.
+type sourceBlob struct {
+	name  string
+	bytes []byte
+}
+
+// cachedSource returns the cached source bytes when they belong to the blob
+// the record currently names, and ok=false otherwise.
+func (h *sheetsDocHandle) cachedSource(name string) (b []byte, ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if name == "" || h.source.name != name {
+		return nil, false
+	}
+	return h.source.bytes, true
+}
+
+// rememberSource records the bytes stored under name as the base of the next
+// save.
+func (h *sheetsDocHandle) rememberSource(name string, b []byte) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.source = sourceBlob{name: name, bytes: b}
 }
 
 // ApplyUpdate folds an inbound MsgDocUpdate payload into the server's
@@ -161,6 +195,7 @@ func (h *sheetsDocHandle) Close() error {
 	}
 	h.closed = true
 	h.doc = nil
+	h.source = sourceBlob{}
 	h.runtime.closeDoc(h.id)
 	return nil
 }
