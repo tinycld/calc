@@ -36,6 +36,7 @@ export function useGridRowResize({
     )
     return useRowResize({
         rowHeights: sheet?.rowHeights,
+        defaultRowHeight: sheet?.defaultRowHeight,
         readOnly,
         onCommit,
         onResetDefault,

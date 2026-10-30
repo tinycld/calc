@@ -57,15 +57,15 @@ func buildSourceSheet(t *testing.T, sheet string, headers []string, rows [][]any
 // TestPivotTableRange_SmallPivot: a Region×Year×Sum pivot over 3 distinct
 // regions and 2 distinct years, with row+col grand totals. Dimensions:
 //
-//	headerRowCount = len(Cols)=1
+//	headerRowCount = 1(caption row) + len(Cols)=1 -> 2
 //	headerColCount = len(Rows)=1
 //	renderRows     = 3 regions
 //	renderCols     = 2 years
 //	valueCount     = 1
-//	rows = 1 + 3 + 1(colGrandTotal) = 5
+//	rows = 2 + 3 + 1(colGrandTotal) = 6
 //	cols = 1 + 2*1 + 1(rowGrandTotal) = 4  -> D
 //
-// Range: A1:D5.
+// Range: A1:D6.
 func TestPivotTableRange_SmallPivot(t *testing.T) {
 	f := buildSourceSheet(t, "Sheet1",
 		[]string{"Region", "Year", "Sales"},
@@ -92,11 +92,11 @@ func TestPivotTableRange_SmallPivot(t *testing.T) {
 	if !ok {
 		t.Fatal("computePivotDimensions returned ok=false")
 	}
-	if rowCount != 5 || colCount != 4 {
-		t.Fatalf("dims = %dx%d, want 5x4", rowCount, colCount)
+	if rowCount != 6 || colCount != 4 {
+		t.Fatalf("dims = %dx%d, want 6x4", rowCount, colCount)
 	}
-	if got := pivotTableRange(f, p); got != "A1:D5" {
-		t.Fatalf("range = %q, want A1:D5", got)
+	if got := pivotTableRange(f, p); got != "A1:D6" {
+		t.Fatalf("range = %q, want A1:D6", got)
 	}
 }
 
@@ -118,9 +118,9 @@ func TestPivotTableRange_NoTotals(t *testing.T) {
 		Cols:            []PivotFieldDTO{{SourceColumn: "Year"}},
 		Values:          []PivotValueFieldDTO{{SourceColumn: "Sales", Aggregation: "sum"}},
 	}
-	// 3 regions, 2 years: rows = 1 + 3 = 4, cols = 1 + 2 = 3 -> C4
-	if got := pivotTableRange(f, p); got != "A1:C4" {
-		t.Fatalf("range = %q, want A1:C4", got)
+	// 3 regions, 2 years: rows = 2 header + 3 = 5, cols = 1 + 2 = 3 -> C5
+	if got := pivotTableRange(f, p); got != "A1:C5" {
+		t.Fatalf("range = %q, want A1:C5", got)
 	}
 }
 
@@ -153,9 +153,10 @@ func TestPivotTableRange_WidePivot(t *testing.T) {
 	if endName != "AE" {
 		t.Fatalf("end column letter = %q, want AE", endName)
 	}
+	// 2 header rows (caption + Bucket items) + 1 row group = 3.
 	got := pivotTableRange(f, p)
-	if got != "A1:AE2" {
-		t.Fatalf("range = %q, want A1:AE2 (past Z, not truncated)", got)
+	if got != "A1:AE3" {
+		t.Fatalf("range = %q, want A1:AE3 (past Z, not truncated)", got)
 	}
 }
 
@@ -208,15 +209,15 @@ func TestPivotTableRange_MultiValue(t *testing.T) {
 			{SourceColumn: "Units", Aggregation: "sum"},
 		},
 	}
-	// headerRowCount = 1(cols) + 1(multi-value label row) = 2
-	// renderRows = 2 regions -> rows = 2 + 2 = 4
+	// headerRowCount = 1(caption) + 1(cols) + 1(multi-value label row) = 3
+	// renderRows = 2 regions -> rows = 3 + 2 = 5
 	// renderCols = 2 quarters; valueCount = 2 -> cols = 1 + 2*2 = 5 -> E
 	rowCount, colCount, ok := computePivotDimensions(f, p)
 	if !ok {
 		t.Fatal("ok=false")
 	}
-	if rowCount != 4 || colCount != 5 {
-		t.Fatalf("dims = %dx%d, want 4x5", rowCount, colCount)
+	if rowCount != 5 || colCount != 5 {
+		t.Fatalf("dims = %dx%d, want 5x5", rowCount, colCount)
 	}
 }
 
@@ -326,5 +327,38 @@ func TestPivotTableRange_UnreadableSourceFallsBack(t *testing.T) {
 	}
 	if got := pivotTableRange(f, p); got != "A1:Z200" {
 		t.Fatalf("fallback range = %q, want A1:Z200", got)
+	}
+}
+
+// TestPivotTableRange_GrandTotalsNeedAxisFields: a grand-total column is
+// drawn only when there are column fields, and a grand-total row only
+// when there are row fields (lib/pivot/render.ts planLayout), so turning
+// both on for a rows-only pivot adds the row and not the column.
+func TestPivotTableRange_GrandTotalsNeedAxisFields(t *testing.T) {
+	f := buildSourceSheet(t, "Sheet1",
+		[]string{"Code", "Pay", "Hours"},
+		[][]any{
+			{"Asbestos", 10, 1},
+			{"Paint", 12, 2},
+		},
+	)
+	p := PivotDefinitionDTO{
+		SourceRange:     "Sheet1!A1:C3",
+		TargetSheetName: "Pivot",
+		Rows:            []PivotFieldDTO{{SourceColumn: "Code"}},
+		Values: []PivotValueFieldDTO{
+			{SourceColumn: "Pay", Aggregation: "sum"},
+			{SourceColumn: "Hours", Aggregation: "sum"},
+		},
+		RowGrandTotals: true,
+		ColGrandTotals: true,
+	}
+	// 1 value-caption row + 2 codes + grand-total row = 4; 1 + 2 values = 3.
+	rowCount, colCount, ok := computePivotDimensions(f, p)
+	if !ok {
+		t.Fatal("ok=false")
+	}
+	if rowCount != 4 || colCount != 3 {
+		t.Fatalf("dims = %dx%d, want 4x3", rowCount, colCount)
 	}
 }

@@ -32,6 +32,8 @@ Resizes are remembered per-sheet and synced across collaborators.
 
 Right-click a row or column and choose **Hide**. The row/column collapses to zero width but still participates in formulas. To unhide, select the rows/columns on either side of the hidden one and choose **Unhide** from the context menu.
 
+Rows and columns that an imported .xlsx file hides stay hidden in calc. Hidden rows and columns are saved as hidden in the downloaded .xlsx file. They keep their size, so they show at that size again when you unhide them in calc, Excel or Google Sheets.
+
 ## Fill handle for series
 
 When you drag the small square at the bottom-right of a selection, Calc detects patterns in the source cells and fills the target range:

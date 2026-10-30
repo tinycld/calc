@@ -3,7 +3,8 @@ import { inferCellInput } from '../tinycld/calc/lib/cell-input'
 
 // inferCellInput is the pure classifier the editor commit path runs
 // over the user's typed text. Rules apply in order: apostrophe-prefix,
-// equals-prefix, boolean, ISO date, number, otherwise string.
+// equals-prefix, boolean, ISO date, number, US-locale formatted value
+// (M/D/Y dates, currency, percent, thousands), otherwise string.
 
 describe('inferCellInput', () => {
     describe('empty input', () => {
@@ -120,9 +121,47 @@ describe('inferCellInput', () => {
             expect(result.kind).toBe('string')
         })
 
-        it('does NOT accept localized date formats (M/D/YYYY)', () => {
-            expect(inferCellInput('1/15/2024').kind).toBe('string')
+        it('reads M/D/YYYY as a US date and suggests its format', () => {
+            const result = inferCellInput('1/15/2024')
+            expect(result.kind).toBe('date')
+            expect(result.raw).toBe('2024-01-15')
+            expect(result.numFmt).toBe('m/d/yyyy')
+        })
+
+        it('reads a two-digit year as the current century', () => {
+            const result = inferCellInput('12/6/24')
+            expect(result.kind).toBe('date')
+            expect(result.raw).toBe('2024-12-06')
+        })
+
+        it('keeps the time of a US date-time', () => {
+            const result = inferCellInput('12/6/2024 3:00 PM')
+            expect(result.kind).toBe('date')
+            expect(result.raw).toBe('2024-12-06T15:00:00Z')
+        })
+
+        it('does not read day-first dates', () => {
             expect(inferCellInput('15.1.2024').kind).toBe('string')
+            expect(inferCellInput('31/12/2024').kind).toBe('string')
+        })
+    })
+
+    describe('formatted numbers', () => {
+        it.each([
+            ['$1,234.50', 1234.5, '$#,##0.00'],
+            ['-$5', -5, '$#,##0'],
+            ['45%', 0.45, '0%'],
+            ['1,234', 1234, '#,##0'],
+        ])('%s -> number %s with format %s', (text, expected, numFmt) => {
+            const result = inferCellInput(text)
+            expect(result.kind).toBe('number')
+            expect(result.raw).toBe(expected)
+            expect(result.numFmt).toBe(numFmt)
+        })
+
+        it('a plain number suggests no format', () => {
+            expect(inferCellInput('1e5').numFmt).toBeUndefined()
+            expect(inferCellInput('42').numFmt).toBeUndefined()
         })
     })
 
@@ -145,10 +184,6 @@ describe('inferCellInput', () => {
 
         it('trims whitespace before parsing', () => {
             expect(inferCellInput('  42  ').raw).toBe(42)
-        })
-
-        it('rejects thousands separators (locale-specific input)', () => {
-            expect(inferCellInput('1,234.56').kind).toBe('string')
         })
 
         it('rejects "12abc" garbage tail', () => {

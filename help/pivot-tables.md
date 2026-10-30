@@ -27,11 +27,15 @@ The pivot editor (a side panel) has four areas — drag column names from your s
 
 The pivot regenerates as soon as you change anything.
 
+Row and column items are sorted in ascending order: numbers first, then text (upper and lower case sort together), then blanks.
+
+If two source columns have the same header, the second one shows in the field list with a `2` added to its name, the third with a `3`, and so on. This is the same naming that Excel and Google Sheets use.
+
 ## Totals
 
 The editor exposes two toggles:
 
-- **Grand totals** — adds a row and column with overall totals.
+- **Grand totals** — adds a row and column with overall totals. The total column shows only when the pivot has a Columns field, and the total row shows only when it has a Rows field.
 - **Subtotals** — adds a subtotal row for each row-group break.
 
 ## When the source changes

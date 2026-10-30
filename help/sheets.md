@@ -1,7 +1,7 @@
 ---
 title: Sheets
-summary: Adding, renaming, coloring, hiding, and freezing sheets
-tags: [sheets, tabs, freeze, hidden]
+summary: Adding, renaming, coloring, hiding, freezing sheets, and showing gridlines
+tags: [sheets, tabs, freeze, hidden, gridlines]
 order: 60
 ---
 
@@ -39,6 +39,10 @@ Freeze panes keep the top rows or left columns visible while scrolling the rest 
 - **1 column** / **2 columns** — pin the left columns.
 - **Up to selection** — pin everything above and to the left of the current selection.
 - **Unfreeze** — clear all frozen panes.
+
+## Showing or hiding gridlines
+
+To hide the lines between cells on the current sheet, choose **View → Show → Gridlines**. Do the same again to show them. Each sheet keeps its own setting. A sheet imported from an .xlsx file with gridlines turned off opens with them hidden, and the setting is saved back into the downloaded .xlsx file. Borders that you add to cells still show when gridlines are hidden. Undo (⌘Z) reverses the change.
 
 ## See also
 

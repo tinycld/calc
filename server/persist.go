@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -350,6 +351,24 @@ func writePivots(f *xlsx.File, pivots []PivotDefinitionDTO) {
 			RowGrandTotals: p.RowGrandTotals,
 			ColGrandTotals: p.ColGrandTotals,
 			StyleName:      p.StyleName,
+
+			CacheFields:       p.CacheFields,
+			ValuesAxis:        p.ValuesAxis,
+			ValuesPosition:    p.ValuesPosition,
+			AxisSort:          p.AxisSort,
+			DataCaption:       p.DataCaption,
+			RowHeaderCaption:  p.RowHeaderCaption,
+			ColHeaderCaption:  p.ColHeaderCaption,
+			GrandTotalCaption: p.GrandTotalCaption,
+			MissingCaption:    p.MissingCaption,
+			HideMissing:       p.HideMissing,
+			ErrorCaption:      p.ErrorCaption,
+			ShowError:         p.ShowError,
+			// LocationInfo stays nil: the file's band offsets describe the
+			// layout it was read with, while calc writes the target sheet
+			// empty and sizes Location from its own render (see
+			// pivotTableRange), so nil (omnidoc's default single-header
+			// layout) is the only value that cannot contradict Location.
 		}
 		if err := f.AddPivotTable(pt); err != nil {
 			slog.Warn("calc: AddPivotTable failed; skipping pivot",
@@ -422,14 +441,20 @@ func computePivotDimensions(f *xlsx.File, p PivotDefinitionDTO) (rowCount, colCo
 	}
 	rows = filterPivotRows(rows, p)
 
+	// Mirrors planLayout in lib/pivot/render.ts, which draws the pivot:
+	// with column fields the header band holds a caption row plus one row
+	// per column field; several values add a caption row; the grand-total
+	// column needs column fields and the grand-total row needs row fields.
+	hasCols := len(p.Cols) > 0
 	valueCount := max(1, len(p.Values))
-	headerRowCount := len(p.Cols)
+	headerRowCount := 0
+	if hasCols {
+		headerRowCount = 1 + len(p.Cols)
+	}
 	if len(p.Values) > 1 {
 		headerRowCount++
 	}
-	if headerRowCount < 1 {
-		headerRowCount = 1
-	}
+	headerRowCount = max(1, headerRowCount)
 	headerColCount := len(p.Rows)
 
 	rowTuples := distinctTuples(rows, p.Rows)
@@ -445,13 +470,14 @@ func computePivotDimensions(f *xlsx.File, p PivotDefinitionDTO) (rowCount, colCo
 	}
 
 	rowCount = headerRowCount + renderRows
-	if p.ColGrandTotals {
+	if p.ColGrandTotals && len(p.Rows) > 0 {
 		rowCount++
 	}
 	colCount = headerColCount + renderCols*valueCount
-	if p.RowGrandTotals {
+	if p.RowGrandTotals && hasCols {
 		colCount += valueCount
 	}
+	colCount = max(colCount, headerColCount+len(p.Cols))
 	return rowCount, colCount, true
 }
 
@@ -608,9 +634,8 @@ func sourceColumnNames(in []PivotFieldDTO) []string {
 // toPivotValueFields maps value-field DTOs onto xlsx.PivotValueField.
 // Calc's aggregation names ("sum", "average", "countNums", "stdDevp",
 // …) are already the OOXML dataField subtotal vocabulary, so they pass
-// through verbatim. NumFmt intentionally does NOT round-trip: the
-// dataField numFmt slot is a built-in numFmt ID and only accepts that
-// catalog — see docs/pivot.md "Per-value numFmt round-trip".
+// through verbatim. NumFmt is a format pattern; omnidoc maps it to a
+// builtin numFmtId or adds a custom format record.
 func toPivotValueFields(in []PivotValueFieldDTO) []xlsx.PivotValueField {
 	out := make([]xlsx.PivotValueField, 0, len(in))
 	for _, v := range in {
@@ -618,6 +643,7 @@ func toPivotValueFields(in []PivotValueFieldDTO) []xlsx.PivotValueField {
 			Field:       v.SourceColumn,
 			Aggregation: v.Aggregation,
 			DisplayName: v.DisplayName,
+			NumFmt:      v.NumFmt,
 		})
 	}
 	return out
@@ -719,9 +745,10 @@ func writeModelCell(sh *xlsx.SheetEdit, row, col int, v CellValueDTO) error {
 //     the end (re-adding without removing would duplicate caches).
 //   - Sheets are ordered by SheetMeta.Position (the snapshot producer
 //     pre-sorts; we use slice index as the position in the output).
-//     Sheets present in the snapshot but not in the original workbook
-//     are appended; existing sheets with a different snapshot name are
-//     renamed positionally.
+//     Snapshot sheets pair with on-disk sheets by name, then the rest
+//     pair in order as renames (matchSnapshotSheets); sheets with no
+//     on-disk counterpart are added, and the tab order is then set to
+//     the snapshot's.
 //   - Per-sheet metadata applies after rename/create and before cells:
 //     RowCount/ColCount widen the workbook's <dimension> to the union
 //     of snapshot and existing extents (never shrink); RowHeights and
@@ -786,17 +813,20 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 	}
 
 	// existingSheets is the workbook's sheets in their on-disk order;
-	// we line them up positionally with the snapshot's sorted slice.
+	// matchSnapshotSheets pairs each snapshot sheet with the on-disk
+	// sheet it continues (by index into existingSheets / orig.Sheets).
 	existingSheets := f.SheetNames()
+	diskIndexByID := matchSnapshotSheets(snap.Sheets, existingSheets)
 
 	// Map snapshot sheet id → resolved sheet name. New sheets take
 	// SheetMeta.Name verbatim; renamed existing sheets take the updated
 	// name as well.
 	sheetNameByID := make(map[string]string, len(snap.Sheets))
-	for i, meta := range snap.Sheets {
+	for _, meta := range snap.Sheets {
+		diskIndex, onDisk := diskIndexByID[meta.ID]
 		switch {
-		case i < len(existingSheets):
-			oldName := existingSheets[i]
+		case onDisk:
+			oldName := existingSheets[diskIndex]
 			if meta.Name != "" && meta.Name != oldName {
 				sh, err := f.Sheet(oldName)
 				if err != nil {
@@ -823,10 +853,11 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 
 	// Second pass: now that every sheet has its final name, apply the
 	// per-sheet metadata (dimension, sizes, styles, merges, freeze, tab
-	// color). The orig read model at the same position supplies the
-	// existing-customization sets the authoritative clears diff against;
-	// appended sheets have no orig counterpart and nothing to clear.
-	for i, meta := range snap.Sheets {
+	// color). The orig read model of the matched on-disk sheet supplies
+	// the existing-customization sets the authoritative clears diff
+	// against; appended sheets have no orig counterpart and nothing to
+	// clear.
+	for _, meta := range snap.Sheets {
 		name, ok := sheetNameByID[meta.ID]
 		if !ok {
 			continue
@@ -836,10 +867,10 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 			return nil, fmt.Errorf("sheet %q: %w", name, err)
 		}
 		var origSheet *xlsx.Sheet
-		if i < len(orig.Sheets) {
+		if i, ok := diskIndexByID[meta.ID]; ok && i < len(orig.Sheets) {
 			origSheet = &orig.Sheets[i]
 		}
-		if err := applySheetMeta(sh, meta, origSheet); err != nil {
+		if err := applySheetMeta(sh, meta, origSheet, snap.SheetFactsSeeded); err != nil {
 			return nil, fmt.Errorf("apply sheet meta on %s: %w", name, err)
 		}
 	}
@@ -895,6 +926,10 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 		}
 	}
 
+	if err := orderSheets(f, snap.Sheets, sheetNameByID); err != nil {
+		return nil, fmt.Errorf("order sheets: %w", err)
+	}
+
 	// Build the per-sheet set of (row, col) keys the snapshot carries
 	// so we can clear any source-workbook cell the snapshot has dropped.
 	// Encoding row/col as int64 (row << 32 | col) keeps the key cheap
@@ -922,11 +957,12 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 	// keeps the cell's style — a formula-only cell with no cached value
 	// is populated too (the excelize-era GetRows walk missed those; the
 	// typed grid does not).
-	for i := range orig.Sheets {
-		if i >= len(snap.Sheets) {
-			break // disk sheets past the snapshot were deleted above
+	for _, meta := range snap.Sheets {
+		i, onDisk := diskIndexByID[meta.ID]
+		if !onDisk || i >= len(orig.Sheets) {
+			continue // appended sheets have nothing on disk to clear
 		}
-		name, ok := sheetNameByID[snap.Sheets[i].ID]
+		name, ok := sheetNameByID[meta.ID]
 		if !ok {
 			continue
 		}
@@ -955,6 +991,7 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 	// per cell.
 	var curSheetName string
 	var curSheet *xlsx.SheetEdit
+	date1904 := f.Date1904()
 	for _, cell := range snap.Cells {
 		sheetName, ok := sheetNameByID[cell.SheetID]
 		if !ok {
@@ -979,7 +1016,7 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 			// selects the cell type (KindEmpty writes no cache). Go
 			// still never evaluates — cached values come from
 			// HyperFormula via the snapshot.
-			if err := sh.SetFormula(cell.Row, cell.Col, cell.Formula, formulaCachedValue(cell)); err != nil {
+			if err := sh.SetFormula(cell.Row, cell.Col, cell.Formula, formulaCacheForFile(cell, date1904)); err != nil {
 				return nil, fmt.Errorf("set formula at %s!%s: %w", sheetName, xlsx.CellRef(cell.Row, cell.Col), err)
 			}
 		} else if err := writeSnapshotCellValue(sh, cell); err != nil {
@@ -990,6 +1027,10 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 				return nil, fmt.Errorf("apply style at %s!%s: %w", sheetName, xlsx.CellRef(cell.Row, cell.Col), err)
 			}
 		}
+	}
+
+	if err := writeHyperlinks(f, snap, sheetNameByID, diskIndexByID, orig); err != nil {
+		return nil, err
 	}
 
 	if len(comments) > 0 {
@@ -1030,6 +1071,106 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 	return out, nil
 }
 
+// writeHyperlinks replaces each snapshot sheet's hyperlinks with the
+// ones its cells carry, merged with the file's own (see sheetHyperlinks
+// for what is kept verbatim). A sheet whose links already match is left
+// byte-identical by SetHyperlinks. A list the file refuses (a URL past
+// Excel's length limit) is logged and the sheet keeps its old links.
+func writeHyperlinks(f *xlsx.File, snap YDocSnapshot, sheetNameByID map[string]string, diskIndexByID map[string]int, orig *xlsx.Workbook) error {
+	linksBySheet := make(map[string]map[cellPos]string, len(snap.Sheets))
+	for _, cell := range snap.Cells {
+		if cell.Row <= 0 || cell.Col <= 0 {
+			continue
+		}
+		links, ok := linksBySheet[cell.SheetID]
+		if !ok {
+			links = map[cellPos]string{}
+			linksBySheet[cell.SheetID] = links
+		}
+		links[cellPos{cell.Row, cell.Col}] = cell.Link
+	}
+	for _, meta := range snap.Sheets {
+		name, ok := sheetNameByID[meta.ID]
+		if !ok {
+			continue
+		}
+		var fileLinks []xlsx.Hyperlink
+		if i, ok := diskIndexByID[meta.ID]; ok && i < len(orig.Sheets) {
+			fileLinks = orig.Sheets[i].Hyperlinks
+		}
+		sh, err := f.Sheet(name)
+		if err != nil {
+			return fmt.Errorf("sheet %q: %w", name, err)
+		}
+		if err := sh.SetHyperlinks(sheetHyperlinks(linksBySheet[meta.ID], fileLinks, snap.SheetFactsSeeded)); err != nil {
+			slog.Warn("calc: cannot save hyperlinks; leaving the sheet's links as they were",
+				"sheet", name, "err", err)
+		}
+	}
+	return nil
+}
+
+// matchSnapshotSheets pairs snapshot sheets with the on-disk sheets they
+// continue, returning sheet id → index into disk. A sheet whose name is
+// on disk keeps that sheet, so a sheet inserted or reordered in the doc
+// (e.g. an imported pivot's own output sheet) does not take over its
+// neighbor's part, with the drawings, validations and other XML calc
+// does not model. The remaining snapshot sheets are renames: they take
+// the unclaimed on-disk sheets in order. Snapshot sheets left over are
+// new; on-disk sheets left over are deleted by the caller.
+func matchSnapshotSheets(metas []SheetMeta, disk []string) map[string]int {
+	diskIndex := make(map[string]int, len(disk))
+	for i, name := range disk {
+		diskIndex[name] = i
+	}
+	claimed := make([]bool, len(disk))
+	out := make(map[string]int, len(metas))
+	for _, meta := range metas {
+		if i, ok := diskIndex[meta.Name]; ok && !claimed[i] {
+			out[meta.ID] = i
+			claimed[i] = true
+		}
+	}
+	next := 0
+	for _, meta := range metas {
+		if _, ok := out[meta.ID]; ok {
+			continue
+		}
+		for next < len(disk) && claimed[next] {
+			next++
+		}
+		if next == len(disk) {
+			break
+		}
+		out[meta.ID] = next
+		claimed[next] = true
+	}
+	return out
+}
+
+// orderSheets puts the workbook's tabs in snapshot order. Sheets added
+// by this save are appended at the end and name-matched sheets keep
+// their on-disk slot, so the doc's order has to be applied explicitly.
+// An already-ordered workbook is left untouched so a no-op save does
+// not rewrite workbook.xml.
+func orderSheets(f *xlsx.File, metas []SheetMeta, sheetNameByID map[string]string) error {
+	want := make([]string, 0, len(metas))
+	for _, meta := range metas {
+		if name, ok := sheetNameByID[meta.ID]; ok {
+			want = append(want, name)
+		}
+	}
+	if slices.Equal(f.SheetNames(), want) {
+		return nil
+	}
+	for i, name := range want {
+		if err := f.MoveSheet(name, i); err != nil {
+			return fmt.Errorf("move sheet %q to %d: %w", name, i, err)
+		}
+	}
+	return nil
+}
+
 // applySheetMeta writes one sheet's snapshot metadata onto its editor
 // handle. origSheet is the same sheet's read model from the original
 // bytes (nil for sheets appended by this save) — it supplies the
@@ -1048,11 +1189,20 @@ func serializeSnapshotToXLSX(ctx context.Context, originalBytes []byte, snap YDo
 // (ClearRowHeight / ClearColWidth remove the attribute / <col> entry),
 // unlike the excelize-era writer which wrote the default value back.
 //
-// px==0 is a deliberate value (snap-to-hide), not an absence: the TS
-// side's HIDE_SNAP_THRESHOLD rounds small drag sizes to 0 so a
-// zero-height row / zero-width column reads as hidden. px<0 is an
+// px==0 is a deliberate value, not an absence: a hidden row or column
+// (snap-to-hide from a drag, a filter, or a hidden flag the import read).
+// It is written as hidden="1", and the size in the file stays, so the row
+// or column shows at that size again when unhidden. px<0 is an
 // out-of-band sentinel and is skipped.
-func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet) error {
+//
+// seeded is YDocSnapshot.SheetFactsSeeded: only a seeded doc owns the
+// gridlines and the file's hidden rows and columns, and only a seeded doc
+// may remove the file's autoFilter. A doc bootstrapped before the import
+// read hidden flags shows those rows, so unhiding them on save would
+// change the file behind the user's back.
+// Every write below is a no-op on the file when the doc state matches
+// it, so pushing them on every save keeps an unchanged sheet's bytes.
+func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet, seeded bool) error {
 	existingDim, hasDim := sh.Dimension()
 
 	if meta.RowCount > 0 && meta.ColCount > 0 {
@@ -1084,9 +1234,25 @@ func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet) e
 				sh.ClearRowHeight(row)
 			}
 		}
+		if seeded && origSheet != nil {
+			for _, row := range sortedIntKeys(readHiddenRows(origSheet)) {
+				if px, ok := meta.RowHeights[row]; ok && px == 0 {
+					continue
+				}
+				if err := showRow(sh, row); err != nil {
+					return err
+				}
+			}
+		}
 		for _, row := range sortedIntKeys(meta.RowHeights) {
 			px := meta.RowHeights[row]
 			if row < 1 || px < 0 {
+				continue
+			}
+			if px == 0 {
+				if err := hideRow(sh, row, meta.FilterView); err != nil {
+					return err
+				}
 				continue
 			}
 			sh.SetRowHeight(row, pxToExcelPoints(px))
@@ -1094,17 +1260,17 @@ func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet) e
 	}
 
 	if meta.ColWidths != nil {
+		// Bound the existing-custom scan to the union of the snapshot's
+		// tracked extent and the on-disk <dimension> column extent,
+		// mirroring the excelize-era walk: blanket <col> ranges spanning
+		// thousands of trailing columns beyond the used range represent
+		// no real edit.
+		maxCol := meta.ColCount
+		if hasDim && existingDim.EndCol > maxCol {
+			maxCol = existingDim.EndCol
+		}
 		var existing map[int]int
 		if origSheet != nil {
-			// Bound the existing-custom scan to the union of the
-			// snapshot's tracked extent and the on-disk <dimension>
-			// column extent, mirroring the excelize-era walk: blanket
-			// <col> ranges spanning thousands of trailing columns
-			// beyond the used range represent no real edit.
-			maxCol := meta.ColCount
-			if hasDim && existingDim.EndCol > maxCol {
-				maxCol = existingDim.EndCol
-			}
 			existing = readColWidths(origSheet, maxCol)
 		}
 		for _, col := range sortedIntKeys(existing) {
@@ -1112,9 +1278,25 @@ func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet) e
 				sh.ClearColWidth(col)
 			}
 		}
+		if seeded && origSheet != nil {
+			for _, col := range sortedIntKeys(readHiddenCols(origSheet, maxCol)) {
+				if px, ok := meta.ColWidths[col]; ok && px == 0 {
+					continue
+				}
+				if err := showCol(sh, col); err != nil {
+					return err
+				}
+			}
+		}
 		for _, col := range sortedIntKeys(meta.ColWidths) {
 			px := meta.ColWidths[col]
 			if col < 1 || px < 0 {
+				continue
+			}
+			if px == 0 {
+				if err := hideCol(sh, col); err != nil {
+					return err
+				}
 				continue
 			}
 			sh.SetColWidth(col, pxToExcelCharWidth(px))
@@ -1184,7 +1366,46 @@ func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet) e
 	// tab color into the doc). Empty Color ⇒ clear any prior tab color
 	// so a user-side unset round-trips; non-empty ⇒ stamp the bare RGB.
 	sh.SetTabColor(strings.TrimPrefix(meta.Color, "#"))
+
+	applyDefaultSizes(sh, meta)
+
+	if seeded {
+		sh.SetShowGridLines(!meta.HideGridLines)
+	}
+
+	if seeded || meta.FilterView != nil {
+		var orig *xlsx.AutoFilter
+		if origSheet != nil {
+			orig = origSheet.AutoFilter
+		}
+		if err := sh.SetAutoFilter(autoFilterFromView(meta.FilterView, orig)); err != nil {
+			// A filter the file cannot hold must not block every later
+			// save of the doc; the rest of the sheet still saves.
+			slog.Warn("calc: cannot save filter view; leaving the sheet's filter as it was",
+				"sheet", sh.Name(), "err", err)
+		}
+	}
 	return nil
+}
+
+// applyDefaultSizes writes the sheet meta's default row height / column
+// width to sheetFormatPr. A size is written only when the doc carries
+// one and it differs, in whole pixels, from the file's current value:
+// px is a rounded unit, so writing an unchanged default back would turn
+// the file's 12.63 chars into 12.571 and rewrite the part for nothing.
+// A size Excel cannot hold is logged and skipped rather than failing
+// the save.
+func applyDefaultSizes(sh *xlsx.SheetEdit, meta SheetMeta) {
+	if px := meta.DefaultRowHeight; px > 0 && excelPointsToPx(sh.DefaultRowHeight()) != px {
+		if err := sh.SetDefaultRowHeight(pxToExcelPoints(px)); err != nil {
+			slog.Warn("calc: cannot save default row height", "sheet", sh.Name(), "px", px, "err", err)
+		}
+	}
+	if px := meta.DefaultColWidth; px > 0 && excelCharWidthToPx(sh.DefaultColWidth()) != px {
+		if err := sh.SetDefaultColWidth(pxToExcelCharWidth(px)); err != nil {
+			slog.Warn("calc: cannot save default column width", "sheet", sh.Name(), "px", px, "err", err)
+		}
+	}
 }
 
 // writeSnapshotCellValue writes a non-formula snapshot cell through the
@@ -1194,7 +1415,16 @@ func applySheetMeta(sh *xlsx.SheetEdit, meta SheetMeta, origSheet *xlsx.Sheet) e
 // Empty Kind (legacy doc with no kind tag written) falls back to the
 // previous "try int → float → string" coercion of RawString, so
 // already-saved workbooks continue to round-trip as they did before.
+//
+// A text cell with no text is a style carrier (the import seeds empty
+// bordered / filled cells that way): it is written as a cell with no
+// value, so the file holds no empty-string values and the caller's
+// style patch lands on a blank cell.
 func writeSnapshotCellValue(sh *xlsx.SheetEdit, c CellEntry) error {
+	if isEmptyTextCell(c) {
+		sh.ClearCell(c.Row, c.Col)
+		return nil
+	}
 	switch c.Kind {
 	case "number":
 		if c.RawNumber != nil {
@@ -1231,6 +1461,15 @@ func writeSnapshotCellValue(sh *xlsx.SheetEdit, c CellEntry) error {
 		// all land as text.
 		return sh.SetString(c.Row, c.Col, c.RawString)
 	}
+}
+
+// isEmptyTextCell reports whether a non-formula snapshot cell is a text
+// (or legacy untyped) cell carrying no text at all.
+func isEmptyTextCell(c CellEntry) bool {
+	if c.Kind != "string" && c.Kind != "" {
+		return false
+	}
+	return c.RawString == "" && c.RawNumber == nil && c.RawBool == nil && c.Display == ""
 }
 
 // writeCoercedString runs the legacy int → float → string coercion and
@@ -1281,6 +1520,18 @@ func formulaCachedValue(c CellEntry) xlsx.Value {
 	return xlsx.Value{}
 }
 
+// formulaCacheForFile is the cached value to write for a formula cell.
+// The doc holds date results as 1900-system serials (the formula engine
+// counts from 1900, and the import converts a 1904 workbook's caches),
+// so a date-formatted number goes back into the workbook's own system.
+func formulaCacheForFile(c CellEntry, date1904 bool) xlsx.Value {
+	v := formulaCachedValue(c)
+	if date1904 && v.Kind == xlsx.KindNumber && c.Style != nil && c.Style.NumFmt != nil && isDateNumFmt(*c.Style.NumFmt) {
+		v.F = xlsx.SerialFrom1900(v.F, true)
+	}
+	return v
+}
+
 // coercedCachedValue classifies a string-carried cached scalar: Excel
 // error literals become KindError, numeric-looking strings KindNumber,
 // everything else KindString.
@@ -1323,6 +1574,55 @@ func sortedIntKeys[V any](m map[int]V) []int {
 	}
 	sort.Ints(keys)
 	return keys
+}
+
+// hideRow writes a row the doc hides (height 0) as hidden="1". The row
+// keeps the height it has in the file, so it shows at that height again
+// in Excel when unhidden. A row with no height in the file takes the one
+// the filter view saved for it, the height it had before the filter hid
+// it.
+// A row the file already hides with a zero height is left as it is.
+func hideRow(sh *xlsx.SheetEdit, row int, fv *FilterView) error {
+	pt, has := sh.RowHeight(row)
+	if has && pt == 0 {
+		return nil
+	}
+	if !has && fv != nil {
+		if px := fv.SavedHeights[row]; px > 0 {
+			sh.SetRowHeight(row, pxToExcelPoints(px))
+		}
+	}
+	return sh.SetRowHidden(row, true)
+}
+
+// hideCol writes a column the doc hides (width 0) as hidden="1". The
+// column keeps the width it has in the file, so it shows at that width
+// again in Excel when unhidden. A column the file already hides with a
+// zero width is left as it is.
+func hideCol(sh *xlsx.SheetEdit, col int) error {
+	if w, has := sh.ColWidth(col); has && w == 0 {
+		return nil
+	}
+	return sh.SetColHidden(col, true)
+}
+
+// showRow unhides a row the file hides and the doc shows. A zero height
+// (how calc saved a hidden row before it wrote hidden="1") is cleared
+// too, or the row would stay invisible. The doc's own height, when it
+// has one, is written after this.
+func showRow(sh *xlsx.SheetEdit, row int) error {
+	if pt, has := sh.RowHeight(row); has && pt == 0 {
+		sh.ClearRowHeight(row)
+	}
+	return sh.SetRowHidden(row, false)
+}
+
+// showCol is showRow for a column.
+func showCol(sh *xlsx.SheetEdit, col int) error {
+	if w, has := sh.ColWidth(col); has && w == 0 {
+		sh.ClearColWidth(col)
+	}
+	return sh.SetColHidden(col, false)
 }
 
 // pxToExcelPoints converts a CSS pixel value (the unit calc stores

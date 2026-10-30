@@ -32,16 +32,26 @@ On save:
   grid from the definition + source data on open.
 - The pivot's source data and definition are the only authoritative state
   in the resulting `.xlsx`.
+- Facts calc does not edit come back from the file: the cache field
+  names (`cacheFields`, so a re-add keeps Google's names for repeated
+  blank headers), the "Values" placeholder position, axis sort order, and
+  the data / header / grand-total / empty / error captions. A pivot edit
+  in calc rewrites the whole pivot entry, which keeps the cache field
+  names (until the source range changes) and drops the rest; Excel's
+  defaults then apply. The `<location>` band offsets are never kept:
+  calc sizes the pivot's range itself, and the file's offsets would not
+  match it.
 
 ## Known divergences from Excel
 
 | Area | Excel | Calc |
 |---|---|---|
-| Label sort order | Excel uses locale-aware compare. | Calc uses JS string compare (`<` / `>`). |
+| Label sort order | Excel uses locale-aware compare. | Calc sorts numbers by value, then text case-insensitively (code-unit order, not locale-aware), then blanks. |
 | `(blank)` label | Excel renders the literal string `(blank)`. | Calc renders an empty cell. |
 | Multi-value column header text | Excel uses `"Values"` as a row header. | Calc renders the per-value labels directly without a "Values" header row. |
+| Repeated / blank source headers | The pivot cache names later copies `<name>2`, `<name>3`, … | Same naming, so imported fields resolve. A field that names no header is a `missing-field` error. |
 | In-sheet anchored pivots | Excel allows pivots anywhere on any sheet. | Calc v1 only supports **dedicated** pivot sheets. |
-| Per-value `numFmt` round-trip | Pivot value fields carry a built-in numFmt ID (`<dataField numFmtId="…">`). | Calc stores a free-form numFmt **string** (e.g. `'#,##0.00'`) used by the live engine; this field is **not written to xlsx** and is **not read back from xlsx**. Custom formats survive within calc (and across `.xlsx` save/load via the Y.Doc state once realtime is wired) but do **not** propagate to Excel-side rendering. |
+| Per-value `numFmt` | Each value field carries a number format (`<dataField numFmtId="…">`, else its `<pivotField numFmtId="…">`). | Calc reads that format on import (so a sum over a text column still shows `$0.00`), stores it as a format string (e.g. `'"$"#,##0.00'`), and writes it back to the dataField on save, as a built-in ID or a new custom format. |
 | Calculated fields | Supported. | Not in v1. |
 | Date grouping (month/quarter/year) | Supported. | Not in v1. |
 | Drill-down to source rows | Supported (double-click a value). | Not in v1. |

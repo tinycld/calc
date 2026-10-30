@@ -36,6 +36,7 @@ export function useFilterView(doc: Y.Doc | null, sheetId: string): FilterDefinit
 function sameFilter(a: FilterDefinition | null, b: FilterDefinition | null): boolean {
     if (a === b) return true
     if (a == null || b == null) return false
+    if (a.mode !== b.mode) return false
     if (
         a.range.startRow !== b.range.startRow ||
         a.range.endRow !== b.range.endRow ||

@@ -237,4 +237,9 @@ export interface PivotDefinition {
     rowSubtotals: boolean
     colSubtotals: boolean
     styleName?: string
+    // Field names of the imported xlsx pivot cache, in cache order. The
+    // server writes them back on save so the names Google Sheets or
+    // Excel gave the fields survive a round trip. Only valid for the
+    // source they were read from; changing sourceRange drops them.
+    cacheFields?: string[]
 }

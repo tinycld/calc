@@ -120,10 +120,15 @@ function dateRawToSerial(raw: CellRaw | Date): number | undefined {
         const d = Number(dateOnly[3])
         return nullToUndefined(dateToSerial([y, m, d]))
     }
-    // Has a time component — go through Date so the time portion
-    // round-trips. Timezone shifting is acceptable here (the input
-    // explicitly carries a time, so the user already chose an
-    // instant-in-time interpretation).
+    // A date-time is a wall-clock value: spreadsheets have no time
+    // zones, and the xlsx import writes the file's clock time with a
+    // "Z" suffix. Read the clock fields directly so the viewer's own
+    // time zone never shifts the shown time.
+    const dateTime = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(raw)
+    if (dateTime != null) {
+        const parts = dateTime.slice(1).map(p => Number(p ?? 0))
+        return nullToUndefined(dateToSerial(parts))
+    }
     const parsed = new Date(raw)
     if (Number.isNaN(parsed.getTime())) return undefined
     return nullToUndefined(dateToSerial(parsed))

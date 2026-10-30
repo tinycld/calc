@@ -16,7 +16,7 @@
 //   - isPivotDefinitionEmpty matches the spec: empty iff rows AND cols
 //     AND values are all empty arrays.
 //   - buildPivotGridCellMatrix lays cells out in row-major order with
-//     header banding driven by headerRowCount / headerColCount.
+//     header banding driven by headerRowCount.
 //
 // We exercise the helper against real engine output too: seed a tiny
 // source table, run computePivot, and verify the view state lands on
@@ -26,10 +26,14 @@ import { describe, expect, it } from 'vitest'
 import {
     buildPivotGridCellMatrix,
     isPivotDefinitionEmpty,
+    PIVOT_MAX_COL_WIDTH,
+    type PivotGridCellMeta,
+    pivotColumnWidths,
     selectPivotGridViewState,
     selectPivotPanelOpen,
 } from '../tinycld/calc/components/pivot/pivot-grid-view-state'
 import type { RenderedPivotResult } from '../tinycld/calc/hooks/use-rendered-pivot'
+import { DEFAULT_COL_WIDTH } from '../tinycld/calc/lib/dimensions'
 import { computePivot, type PivotError, type RenderedPivot } from '../tinycld/calc/lib/pivot'
 import type { CellValue, PivotDefinition } from '../tinycld/calc/lib/workbook-types'
 
@@ -66,6 +70,8 @@ function makeRendered(): RenderedPivot {
         cells: new Map(),
         headerRowCount: 1,
         headerColCount: 0,
+        fieldLabelCells: new Set(),
+        grandTotalRow: null,
     }
 }
 
@@ -161,6 +167,8 @@ describe('buildPivotGridCellMatrix', () => {
             cols: 2,
             headerRowCount: 1,
             headerColCount: 1,
+            fieldLabelCells: new Set(),
+            grandTotalRow: null,
             cells: new Map<string, CellValue>([
                 ['1:1', { kind: 'string', raw: '', display: '' }],
                 ['1:2', { kind: 'string', raw: 'A', display: 'A' }],
@@ -178,21 +186,48 @@ describe('buildPivotGridCellMatrix', () => {
         expect(m[1][1].display).toBe('7')
     })
 
-    it('flags cells inside the header band (top headerRowCount rows or left headerColCount cols)', () => {
-        // headerRowCount=1, headerColCount=1 -> top row is header,
-        // leftmost column is header. Bottom-right (2,2) is data.
+    it('flags only the top headerRowCount rows as the header band', () => {
+        // Sheets shades the header rows; the row-label column below
+        // them stays plain.
         const rendered: RenderedPivot = {
             rows: 2,
             cols: 2,
             headerRowCount: 1,
             headerColCount: 1,
+            fieldLabelCells: new Set(),
+            grandTotalRow: null,
             cells: new Map(),
         }
         const m = buildPivotGridCellMatrix(rendered)
-        expect(m[0][0].isHeader).toBe(true) // top-left corner
-        expect(m[0][1].isHeader).toBe(true) // top row
-        expect(m[1][0].isHeader).toBe(true) // left column
-        expect(m[1][1].isHeader).toBe(false) // data
+        expect(m[0][0].isHeader).toBe(true)
+        expect(m[0][1].isHeader).toBe(true)
+        expect(m[1][0].isHeader).toBe(false)
+        expect(m[1][1].isHeader).toBe(false)
+    })
+
+    it('marks field captions, grand-total cells and numeric cells', () => {
+        const rendered: RenderedPivot = {
+            rows: 3,
+            cols: 2,
+            headerRowCount: 1,
+            headerColCount: 1,
+            fieldLabelCells: new Set(['1:1']),
+            grandTotalRow: 3,
+            cells: new Map<string, CellValue>([
+                ['1:1', { kind: 'string', raw: 'Region', display: 'Region' }],
+                ['1:2', { kind: 'string', raw: 'Sum', display: 'Sum' }],
+                ['2:2', { kind: 'number', raw: 7, display: '7' }],
+                ['3:1', { kind: 'string', raw: 'Grand Total', display: 'Grand Total' }],
+                ['3:2', { kind: 'number', raw: 7, display: '7' }],
+            ]),
+        }
+        const m = buildPivotGridCellMatrix(rendered)
+        expect(m[0][0].isFieldLabel).toBe(true)
+        expect(m[0][1].isFieldLabel).toBe(false)
+        expect(m[1][1].isNumber).toBe(true)
+        expect(m[1][0].isNumber).toBe(false)
+        expect(m[2].map(c => c.isGrandTotal)).toEqual([true, true])
+        expect(m[1].map(c => c.isGrandTotal)).toEqual([false, false])
     })
 
     it('falls back to empty display string when a cell entry is missing', () => {
@@ -201,6 +236,8 @@ describe('buildPivotGridCellMatrix', () => {
             cols: 2,
             headerRowCount: 1,
             headerColCount: 0,
+            fieldLabelCells: new Set(),
+            grandTotalRow: null,
             cells: new Map<string, CellValue>([
                 ['1:1', { kind: 'string', raw: 'hi', display: 'hi' }],
                 // 1:2 omitted
@@ -209,6 +246,46 @@ describe('buildPivotGridCellMatrix', () => {
         const m = buildPivotGridCellMatrix(rendered)
         expect(m[0][0].display).toBe('hi')
         expect(m[0][1].display).toBe('')
+    })
+})
+
+describe('pivotColumnWidths', () => {
+    function cell(display: string): PivotGridCellMeta {
+        return {
+            row: 1,
+            col: 1,
+            display,
+            isHeader: false,
+            isFieldLabel: false,
+            isGrandTotal: false,
+            isNumber: false,
+        }
+    }
+
+    it('gives every row the same width per column so cells line up', () => {
+        const widths = pivotColumnWidths([
+            [cell('a'), cell('a much longer caption than the default width')],
+            [cell('a much longer row label than the default'), cell('1')],
+        ])
+        expect(widths).toHaveLength(2)
+        expect(widths[0]).toBeGreaterThan(DEFAULT_COL_WIDTH)
+        expect(widths[1]).toBeGreaterThan(DEFAULT_COL_WIDTH)
+    })
+
+    it('never goes below the sheet default width', () => {
+        expect(pivotColumnWidths([[cell(''), cell('x')]])).toEqual([
+            DEFAULT_COL_WIDTH,
+            DEFAULT_COL_WIDTH,
+        ])
+    })
+
+    it('caps very long text', () => {
+        const [w] = pivotColumnWidths([[cell('x'.repeat(500))]])
+        expect(w).toBe(PIVOT_MAX_COL_WIDTH)
+    })
+
+    it('returns no widths for an empty matrix', () => {
+        expect(pivotColumnWidths([])).toEqual([])
     })
 })
 

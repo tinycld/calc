@@ -48,6 +48,8 @@ const DOUBLE_CLICK_MS = 300
 
 export interface ColumnResizeOptions {
     colWidths: ColWidths | undefined
+    // Width of a column with no stored width (the sheet's default).
+    defaultColWidth: number | undefined
     readOnly: boolean
     // Called once per gesture, on release, with the final clamped width.
     // The Grid wires this through to setYColWidth — keeping the hook
@@ -82,6 +84,7 @@ export interface ColumnResizeHandlers {
 
 export function useColumnResize({
     colWidths,
+    defaultColWidth,
     readOnly,
     onCommit,
     onAutosize,
@@ -99,6 +102,8 @@ export function useColumnResize({
 
     const colWidthsRef = useRef(colWidths)
     colWidthsRef.current = colWidths
+    const defaultColWidthRef = useRef(defaultColWidth)
+    defaultColWidthRef.current = defaultColWidth
 
     // Per-handle last-click timestamp for web double-click detection.
     // Map keyed by column so independent handles don't trigger each
@@ -108,7 +113,7 @@ export function useColumnResize({
     const beginDrag = useCallback(
         (col: number) => {
             if (readOnly) return
-            const startWidth = readColWidth(colWidthsRef.current, col)
+            const startWidth = readColWidth(colWidthsRef.current, col, defaultColWidthRef.current)
             const next: DragState = { col, startWidth, currentWidth: startWidth }
             dragRef.current = next
             setDragState(next)

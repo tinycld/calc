@@ -68,6 +68,8 @@ describe('pivot engine-internal types', () => {
             ]),
             headerRowCount: 1,
             headerColCount: 1,
+            fieldLabelCells: new Set(['1:1']),
+            grandTotalRow: null,
         }
         expect(rendered.cells.get('1:1')).toBeDefined()
         expect(rendered.headerRowCount).toBe(1)
@@ -84,7 +86,7 @@ describe('pivot engine-internal types', () => {
         const codes: PivotErrorCode[] = [
             'missing-source-sheet',
             'malformed-range',
-            'duplicate-headers',
+            'missing-field',
             'zero-data-rows',
             'no-values',
         ]

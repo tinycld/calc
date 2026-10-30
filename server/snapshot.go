@@ -25,6 +25,15 @@ type YDocSnapshot struct {
 	// (see persist.go), matching the model-only path in
 	// serializeWorkbook.
 	Pivots []PivotDefinitionDTO
+
+	// SheetFactsSeeded reports the workbook map's sheetFactsSeeded
+	// marker: the doc's bootstrap seeded gridlines, filter views,
+	// hyperlinks, and hidden rows and columns from the file, so the doc is
+	// authoritative for them.
+	// When false (a doc bootstrapped before calc read them) the
+	// serializer keeps the file's own: it writes a filter view only when
+	// the doc has one, and keeps every file link no doc cell overrides.
+	SheetFactsSeeded bool
 }
 
 // SheetMeta describes a single worksheet in the doc, ordered (by the
@@ -96,6 +105,21 @@ type SheetMeta struct {
 	// Empty/nil when the sheet has no rules. Read via omnidoc
 	// (readConditionalFormats); written back on save.
 	ConditionalFormats []ConditionalFormatRule
+
+	// DefaultRowHeight / DefaultColWidth mirror the sheet meta's
+	// defaultRowHeight / defaultColWidth keys (CSS pixels, zero when
+	// absent). The serializer writes a present one to sheetFormatPr only
+	// when it differs from the file's own value in pixels, so the
+	// px rounding of an unchanged default never rewrites the file.
+	DefaultRowHeight int
+	DefaultColWidth  int
+
+	// HideGridLines mirrors the sheet meta's hideGridLines key.
+	HideGridLines bool
+
+	// FilterView is the sheet meta's filterView, or nil when the sheet
+	// has none. Saved as the sheet's autoFilter (autoFilterFromView).
+	FilterView *FilterView
 }
 
 // ConditionalFormatRule mirrors the doc-side CFRule (see
@@ -168,6 +192,9 @@ type CellEntry struct {
 	Display   string
 	Formula   string
 	Style     *CellStyle
+	// Link is the cell's hyperlink target ("" for none); see
+	// hyperlinkTarget for the form.
+	Link string
 }
 
 // CellStyle is the partial-style shape that mirrors the TS CellStyle

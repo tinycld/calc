@@ -23,6 +23,8 @@ export interface MenuBarProps extends ToolbarProps {
     allSheets: ReadonlyArray<{ id: string; name: string; hidden?: boolean }>
     onShowSheet: (sheetId: string) => void
     onShowComments: () => void
+    showGridLines: boolean
+    onToggleGridLines: () => void
     /** Read-only viewers (anon share links) see the menu bar as a row of
      *  greyed-out triggers — the menus exist for context but do not open.
      *  Forwarded to CoreMenuBar's allMenusDisabled, which propagates via

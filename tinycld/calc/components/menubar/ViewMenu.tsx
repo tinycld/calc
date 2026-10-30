@@ -27,6 +27,13 @@ export function ViewMenu(props: MenuBarProps) {
                 <Menu.Separator />
                 <Menu.Item label="Unfreeze" onSelect={props.onUnfreeze} />
             </Menu.Sub>
+            <Menu.Sub label="Show">
+                <Menu.CheckboxItem
+                    label="Gridlines"
+                    isChecked={props.showGridLines}
+                    onToggle={props.onToggleGridLines}
+                />
+            </Menu.Sub>
             <Menu.Item label="Show comments" onSelect={props.onShowComments} />
             <Menu.Sub label="Hidden sheets">
                 <HiddenSheetItems sheets={hiddenSheets} onShow={props.onShowSheet} />

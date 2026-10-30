@@ -70,8 +70,6 @@ test.describe('Calc pivot tables', () => {
         await expect(grid(page).getByText('Grand Total').first()).toBeVisible()
 
         // Sum aggregation: East=10, West=20, Grand Total=30.
-        // 30 appears twice (column-total row + row-totals column intersect),
-        // so just confirm at least one appears.
         await expect(grid(page).getByText('30', { exact: true }).first()).toBeVisible()
 
         // Close the pivot panel — its modal backdrop covers the sheet-tab
@@ -86,8 +84,7 @@ test.describe('Calc pivot tables', () => {
         await typeIntoCell(page, formulaBar, 'B2', '99')
 
         // Switch back to the pivot sheet — recompute should have run.
-        // East=99, West=20, Grand Total=119. (119 appears twice — at the
-        // row-totals column intersect and the column-total row.)
+        // East=99, West=20, Grand Total=119.
         await page.getByLabel('Sheet Summary').first().click()
         await expect(grid(page).getByText('119', { exact: true }).first()).toBeVisible()
     })

@@ -27,6 +27,25 @@ test.describe('Calc View menu', () => {
         await expect(page.getByRole('menuitem', { name: /no hidden sheets/i })).toBeVisible()
     })
 
+    test('Show > Gridlines hides and shows the cell gridlines', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+        const cell = page.getByLabel('Cell A1', { exact: true })
+        await expect(cell).toHaveCSS('border-bottom-width', '1px')
+
+        await page.getByRole('button', { name: 'View', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Show', exact: true }).hover()
+        const gridlines = page.getByRole('menuitemcheckbox', { name: 'Gridlines' })
+        await expect(gridlines).toHaveAttribute('aria-checked', 'true')
+        await gridlines.click()
+        await expect(gridlines).toHaveAttribute('aria-checked', 'false')
+        await expect(cell).toHaveCSS('border-bottom-width', '0px')
+
+        await gridlines.click()
+        await expect(gridlines).toHaveAttribute('aria-checked', 'true')
+        await expect(cell).toHaveCSS('border-bottom-width', '1px')
+    })
+
     test('Show comments opens the comments drawer with empty state', async ({ page }) => {
         await navigateToPackage(page, 'calc')
         await openNewSpreadsheet(page)
