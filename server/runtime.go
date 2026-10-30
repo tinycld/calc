@@ -200,6 +200,9 @@ func (h *sheetsDocHandle) Snapshot() (YDocSnapshot, error) {
 	if pivotsMap != nil {
 		snap.Pivots = collectPivots(pivotsMap)
 	}
+	if workbookMap, ok := h.doc.GetMap(workbookMapName).(*ycrdt.YMap); ok {
+		snap.SheetFactsSeeded = boolFromAny(workbookMap.Get(sheetFactsSeededKey))
+	}
 	return snap, nil
 }
 
@@ -233,6 +236,7 @@ func collectSheets(sheetsMap *ycrdt.YMap) ([]SheetMeta, error) {
 		}
 		color, _ := meta.Get("color").(string)
 		hidden, _ := meta.Get("hidden").(bool)
+		hideGridLines, _ := meta.Get(hideGridLinesKey).(bool)
 		cfRules, err := decodeConditionalFormats(meta, "conditionalFormats")
 		if err != nil {
 			collectErr = err
@@ -253,6 +257,10 @@ func collectSheets(sheetsMap *ycrdt.YMap) ([]SheetMeta, error) {
 			FrozenRows:         numberFromAny(meta.Get("frozenRows")),
 			FrozenCols:         numberFromAny(meta.Get("frozenCols")),
 			ConditionalFormats: cfRules,
+			DefaultRowHeight:   numberFromAny(meta.Get("defaultRowHeight")),
+			DefaultColWidth:    numberFromAny(meta.Get("defaultColWidth")),
+			HideGridLines:      hideGridLines,
+			FilterView:         decodeFilterView(meta),
 		})
 	})
 	if collectErr != nil {
@@ -312,6 +320,9 @@ func collectCells(cellsMap *ycrdt.YMap) ([]CellEntry, error) {
 		if f, ok := cellMap.Get("formula").(string); ok {
 			entry.Formula = f
 		}
+		if link, ok := cellMap.Get(linkKey).(string); ok {
+			entry.Link = link
+		}
 		if styleVal := cellMap.Get("style"); styleVal != nil {
 			if styleMap, ok := styleVal.(*ycrdt.YMap); ok {
 				cs, err := decodeCellStyle(styleMap)
@@ -366,6 +377,19 @@ func collectPivots(pivotsMap *ycrdt.YMap) []PivotDefinitionDTO {
 			RowSubtotals:     boolFromAny(entry.Get("rowSubtotals")),
 			ColSubtotals:     boolFromAny(entry.Get("colSubtotals")),
 			StyleName:        stringFromAny(entry.Get("styleName")),
+
+			CacheFields:       decodeStringArrayKeepEmpty(entry, "cacheFields"),
+			ValuesAxis:        stringFromAny(entry.Get("valuesAxis")),
+			ValuesPosition:    numberFromAny(entry.Get("valuesPosition")),
+			AxisSort:          decodeStringMap(entry, "axisSort"),
+			DataCaption:       stringFromAny(entry.Get("dataCaption")),
+			RowHeaderCaption:  stringFromAny(entry.Get("rowHeaderCaption")),
+			ColHeaderCaption:  stringFromAny(entry.Get("colHeaderCaption")),
+			GrandTotalCaption: stringFromAny(entry.Get("grandTotalCaption")),
+			MissingCaption:    stringFromAny(entry.Get("missingCaption")),
+			HideMissing:       boolFromAny(entry.Get("hideMissing")),
+			ErrorCaption:      stringFromAny(entry.Get("errorCaption")),
+			ShowError:         boolFromAny(entry.Get("showError")),
 		}
 		out = append(out, dto)
 	})
@@ -810,6 +834,45 @@ func decodeStringArray(parent *ycrdt.YMap, key string) []string {
 	arr.ForEach(func(item any, _ ycrdt.Number, _ ycrdt.IAbstractType) {
 		if s, ok := item.(string); ok && s != "" {
 			out = append(out, s)
+		}
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// decodeStringArrayKeepEmpty is decodeStringArray for arrays whose empty
+// strings carry meaning (a filter's "(blanks)" value, a blank cache
+// field name). Returns nil for an absent or empty array.
+func decodeStringArrayKeepEmpty(parent *ycrdt.YMap, key string) []string {
+	arr, ok := parent.Get(key).(*ycrdt.YArray)
+	if !ok || arr.GetLength() == 0 {
+		return nil
+	}
+	out := make([]string, 0, arr.GetLength())
+	arr.ForEach(func(item any, _ ycrdt.Number, _ ycrdt.IAbstractType) {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// decodeStringMap reads a nested Y.Map of string values. Returns nil for
+// an absent or empty map.
+func decodeStringMap(parent *ycrdt.YMap, key string) map[string]string {
+	nested, ok := parent.Get(key).(*ycrdt.YMap)
+	if !ok {
+		return nil
+	}
+	out := map[string]string{}
+	nested.ForEach(func(k string, v any, _ *ycrdt.YMap) {
+		if s, ok := v.(string); ok {
+			out[k] = s
 		}
 	})
 	if len(out) == 0 {

@@ -1,4 +1,5 @@
 import { useDragGesture } from '@tinycld/core/lib/gestures'
+import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import { memo, useCallback, useRef } from 'react'
 import {
     type GestureResponderEvent,
@@ -8,6 +9,8 @@ import {
     TextInput,
     type TextInputInstance,
     type TextInputSelectionChangeEvent,
+    type TextStyle,
+    View,
     type ViewInstance,
 } from 'react-native'
 import { useCellMerge } from '../../hooks/use-cell-merge'
@@ -16,9 +19,15 @@ import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
 import type { RemotePresence } from '../../hooks/use-presence'
 import { useWorkbook } from '../../hooks/use-workbook-context'
 import { useYCell } from '../../hooks/use-y-cell'
+import { caretFromPress } from '../../lib/caret-from-press'
+import { cellEditText } from '../../lib/cell-edit-text'
 import type { ArrowDirection } from '../../lib/cell-key-action'
 import { type CellKeyEvent, classifyCellKey } from '../../lib/cell-key-action'
-import { cellStyleToRenderProps, mergeCellStyles } from '../../lib/cell-style-render'
+import {
+    type CellRenderStyle,
+    cellStyleToRenderProps,
+    mergeCellStyles,
+} from '../../lib/cell-style-render'
 import { SELECTION_GREEN, SELECTION_GREEN_TINT } from '../../lib/grid-colors'
 import {
     computeShiftArrowTarget,
@@ -29,6 +38,7 @@ import {
 import { columnLabel, formatCell } from '../../lib/workbook-types'
 import type { FormulaSpecialKey } from '../FormulaBar'
 import { CommentIndicator } from './CommentIndicator'
+import { FILTER_BUTTON_SPACE, FilterButton, type FilterButtonState } from './FilterButton'
 import { applyFormatPainterToDest, locateCellAtGridCoord } from './style-helpers'
 
 interface CellProps {
@@ -48,6 +58,18 @@ interface CellProps {
     colOffsets: Float64Array
     rowOffsets: Float64Array
     onSpecialKey: (key: FormulaSpecialKey) => boolean
+    // Width of the empty cells to the right that left-aligned text may
+    // run on into (0 when the next cell is filled).
+    overflowRight: number
+    // The filter button this cell shows, when it heads a filtered column.
+    filterButton: FilterButtonState
+    // False when the sheet hides its gridlines. Borders set on the
+    // cell's style still draw.
+    showGridLines: boolean
+    // The workbook's default font, for a cell with no font name or size
+    // of its own. Passed as primitives so the memo compare stays cheap.
+    baseFontName: string | undefined
+    baseFontSize: number | undefined
 }
 
 export const Cell = memo(function Cell({
@@ -64,10 +86,16 @@ export const Cell = memo(function Cell({
     colOffsets,
     rowOffsets,
     onSpecialKey,
+    overflowRight,
+    showGridLines,
+    baseFontName,
+    baseFontSize,
+    filterButton,
 }: CellProps) {
     const { doc } = useWorkbook()
     const store = useGridStoreApi()
     const cellValue = useYCell(doc, sheetId, row, col)
+    const linkColor = useThemeColor('link')
     // Conditional formatting: rules attached to this sheet produce an
     // overlay CellStyle when they match this cell. The overlay wins
     // per attribute over the cell's explicit style — see
@@ -133,12 +161,12 @@ export const Cell = memo(function Cell({
         cellValue == null
             ? ''
             : formatCell(cellValue.kind, cellValue.raw, cellValue.formula, cellValue.style?.numFmt)
-    // Editing a formula cell should preload the formula expression
-    // (e.g. "=SUM(A1:A2)"), not its computed result. This matches how
-    // the formula bar surfaces formula text and lets users round-trip
-    // a formula edit without losing the expression.
-    const editDraft =
-        cellValue?.kind === 'formula' && cellValue.formula ? cellValue.formula : display
+    const editDraft = cellValue == null ? '' : cellEditText(cellValue)
+    const renderStyle = cellStyleToRenderProps(
+        mergeCellStyles(cellValue?.style, conditionalStyle),
+        cellValue ?? undefined,
+        { name: baseFontName, size: baseFontSize }
+    )
 
     const remoteDraft = remoteEditor?.editing?.draft
 
@@ -273,6 +301,7 @@ export const Cell = memo(function Cell({
                 maxRow={rowOffsets.length - 1}
                 maxCol={colOffsets.length - 1}
                 onSpecialKey={onSpecialKey}
+                renderStyle={renderStyle}
             />
         )
     }
@@ -282,7 +311,7 @@ export const Cell = memo(function Cell({
     // cellRefTap returns false (no-op) when the cursor isn't in a
     // ref-acceptable position, falling through to the normal select/
     // edit gesture.
-    const onPress = () => {
+    const onPress = (e?: GestureResponderEvent) => {
         // Suppress the click that fires after one of: a drag just
         // ended, a down-time modifier action ran (shift / ctrl /
         // ref-tap), or onPress was explicitly told to skip. The flag
@@ -319,8 +348,15 @@ export const Cell = memo(function Cell({
             state.clearFormatPainter()
             return
         }
-        if (isSelected) {
-            state.editCell({ row, col }, editDraft)
+        if (isSelected && !state.isSelectionImplicit) {
+            const clientX = (e?.nativeEvent as { clientX?: number } | undefined)?.clientX
+            const { textAlign } = renderStyle.textStyle
+            const align = textAlign === 'right' || textAlign === 'center' ? textAlign : 'left'
+            state.editCell(
+                { row, col },
+                editDraft,
+                caretFromPress(pressableRef.current, clientX, editDraft, align)
+            )
         } else {
             state.selectCell({ row, col })
         }
@@ -377,8 +413,14 @@ export const Cell = memo(function Cell({
                       ctrlKey?: boolean
                       metaKey?: boolean
                       button?: number
+                      detail?: number
                   }) => {
                       if (e.button != null && e.button !== 0) return
+                      // The second press of a double-click opens the
+                      // editor; the browser would also select the word
+                      // under the pointer, and that selection lands in
+                      // the new input. Keep the caret at the end.
+                      if (e.detail != null && e.detail > 1) e.preventDefault()
                       const isCtrl = e.ctrlKey || e.metaKey
                       if (isAnyEditing) {
                           // Two jobs: swallow focus shift (so the
@@ -461,7 +503,6 @@ export const Cell = memo(function Cell({
     }
 
     const showRemoteDraft = remoteDraft != null
-    const renderStyle = cellStyleToRenderProps(mergeCellStyles(cellValue?.style, conditionalStyle))
     // Remote-draft display layers a peer's color + italic on top of
     // the cell's own style. Spread the style-derived textStyle first
     // so the remote-draft color and italic override (matching the
@@ -472,7 +513,7 @@ export const Cell = memo(function Cell({
               color: remoteEditor?.user.color,
               fontStyle: 'italic' as const,
           }
-        : renderStyle.textStyle
+        : withLinkStyle(renderStyle.textStyle, cellValue?.link != null, linkColor)
 
     // Cells inside a multi-cell range get a translucent tint so the
     // user can see the full extent of the selection. The anchor cell
@@ -483,10 +524,35 @@ export const Cell = memo(function Cell({
     const rangeTintStyle =
         isInRange && !isSelected ? { backgroundColor: SELECTION_GREEN_TINT } : null
 
+    // Sheets and Excel cut a long value off at the cell edge without an
+    // ellipsis. RN-web draws an ellipsis for any numberOfLines and
+    // ignores ellipsizeMode, so on web a one-line cell uses nowrap and
+    // the cell's overflow clip instead.
+    const textLines = Platform.OS === 'web' ? undefined : renderStyle.numberOfLines
+
+    // One-line left-aligned text longer than the cell runs on over the
+    // empty cells to its right, as in Sheets and Excel. The cell draws
+    // above its neighbors so their background does not hide the text.
+    const overflow =
+        overflowRight > 0 &&
+        renderStyle.numberOfLines === 1 &&
+        textStyle.textAlign === 'left' &&
+        display !== ''
+            ? {
+                  width: renderWidth + overflowRight - 2 * CELL_PADDING,
+                  // The run-on text lies over the neighbor cells, which
+                  // must still get their own clicks.
+                  pointerEvents: 'none' as const,
+              }
+            : null
+
     // onKeyDown is a DOM-only event RN-Web forwards but RN's Pressable
     // type doesn't declare; keep it in a web-only props object (native
     // never fires key events) so the spread stays `any`-free.
     const webKeyDownProp = Platform.OS === 'web' ? { onKeyDown: onCellKeyDown } : {}
+
+    const gridLineClass = showGridLines ? 'border-r border-b border-border' : ''
+    const overflowClass = overflow == null ? 'overflow-hidden' : 'overflow-visible'
 
     return (
         <Pressable
@@ -502,20 +568,41 @@ export const Cell = memo(function Cell({
                 height: renderHeight,
                 ...rangeTintStyle,
                 ...renderStyle.viewStyle,
+                ...(overflow == null ? null : { zIndex: 1 }),
+                ...(filterButton == null ? null : { paddingRight: FILTER_BUTTON_SPACE }),
             }}
-            className="border-r border-b border-border bg-background justify-center px-1 web:outline-none"
+            className={`${gridLineClass} bg-background px-1 web:outline-none ${overflowClass}`}
             {...webKeyDownProp}
             {...webContextMenuProp}
             {...webMouseDownProp}
             {...drag.handlers}
         >
-            <Text className="text-xs" numberOfLines={renderStyle.numberOfLines} style={textStyle}>
+            <Text
+                numberOfLines={textLines}
+                ellipsizeMode="clip"
+                className={renderStyle.numberOfLines === 1 ? 'web:whitespace-nowrap' : undefined}
+                style={
+                    overflow == null ? textStyle : { ...textStyle, ...overflow, overflow: 'hidden' }
+                }
+            >
                 {showRemoteDraft ? remoteDraft : display}
             </Text>
             <CommentIndicator sheetId={sheetId} row={row} col={col} />
+            <FilterButton state={filterButton} col={col} />
         </Pressable>
     )
 })
+
+// withLinkStyle draws a linked cell's text as a link — underlined, in
+// the link color unless the cell sets its own text color.
+function withLinkStyle(textStyle: TextStyle, isLink: boolean, linkColor: string): TextStyle {
+    if (!isLink) return textStyle
+    return {
+        ...textStyle,
+        color: textStyle.color ?? linkColor,
+        textDecorationLine: 'underline',
+    }
+}
 
 interface CellEditorProps {
     inputRef: React.RefObject<TextInputInstance | null>
@@ -528,6 +615,9 @@ interface CellEditorProps {
     maxRow: number
     maxCol: number
     onSpecialKey: (key: FormulaSpecialKey) => boolean
+    // The cell's own look, so the text keeps its font, size, color and
+    // position when the editor opens instead of jumping to defaults.
+    renderStyle: CellRenderStyle
 }
 
 function CellEditor({
@@ -541,6 +631,7 @@ function CellEditor({
     maxRow,
     maxCol,
     onSpecialKey,
+    renderStyle,
 }: CellEditorProps) {
     const store = useGridStoreApi()
     const draft = useGridStore(s => s.editSession?.draft ?? '')
@@ -568,7 +659,12 @@ function CellEditor({
         if (session == null) return
         store.getState().commitEdit(row, col, session.draft)
     }, [store, row, col])
-    const onFocus = useCallback(() => store.getState().setActiveSurface('cell'), [store])
+    // When the editor opened, for the double-click guard below.
+    const openedAtRef = useRef(0)
+    const onFocus = useCallback(() => {
+        openedAtRef.current = Date.now()
+        store.getState().setActiveSurface('cell')
+    }, [store])
     const onKeyPress = useCallback(
         (e: { nativeEvent: { key?: string }; preventDefault?: () => void }) => {
             const key = e.nativeEvent.key
@@ -611,7 +707,7 @@ function CellEditor({
                 e.preventDefault?.()
                 const session = store.getState().editSession
                 if (session == null) return
-                store.getState().commitAndNavigate(row, col, session.draft, 'right', maxRow, maxCol)
+                store.getState().commitAndTab(row, col, session.draft, maxRow, maxCol)
                 return
             }
             if (key === 'Enter') {
@@ -622,38 +718,79 @@ function CellEditor({
                 e.preventDefault?.()
                 const session = store.getState().editSession
                 if (session == null) return
-                store.getState().commitAndNavigate(row, col, session.draft, 'down', maxRow, maxCol)
+                store.getState().commitAndEnter(row, col, session.draft, maxRow, maxCol)
             }
         },
         [store, onSpecialKey, row, col, maxRow, maxCol]
     )
 
+    // The border sits inside the cell's box; the text keeps the cell's
+    // 4px inset by taking 2px of padding inside the 2px border.
+    const { viewStyle, textStyle } = renderStyle
+    // The input is one text line tall, and no taller than the cell:
+    // left to its own line height the browser makes it taller than the
+    // row and draws the text above where the cell drew it.
+    const innerHeight = Math.max(0, height - 2 * EDITOR_BORDER)
+    const fontSize = typeof textStyle.fontSize === 'number' ? textStyle.fontSize : 13
+    const lineHeight = Math.min(innerHeight, Math.round(fontSize * LINE_HEIGHT_RATIO))
+    // Opening the editor takes the first press of a double-click on a
+    // selected cell; the second press lands in the new input, where the
+    // browser would select the word under the pointer. Keep the caret at
+    // the end instead. A double-click made later, while editing, still
+    // selects a word.
+    const webMouseDownProp =
+        Platform.OS === 'web'
+            ? {
+                  onMouseDown: (e: { detail?: number; preventDefault: () => void }) => {
+                      const justOpened = Date.now() - openedAtRef.current < DOUBLE_CLICK_MS
+                      if (e.detail != null && e.detail > 1 && justOpened) e.preventDefault()
+                  },
+              }
+            : {}
     return (
-        <TextInput
-            ref={inputRef}
-            autoFocus={autoFocus}
-            value={draft}
-            selection={selection}
-            onChangeText={onChangeText}
-            onSelectionChange={onSelectionChange}
-            onBlur={onSubmit}
-            onFocus={onFocus}
-            onKeyPress={onKeyPress}
+        <View
+            {...webMouseDownProp}
             style={{
                 position: 'absolute',
                 left,
                 top,
                 width,
                 height,
-                paddingHorizontal: 4,
-                fontSize: 12,
-                borderWidth: 2,
+                borderWidth: EDITOR_BORDER,
                 borderColor: SELECTION_GREEN,
-                // Suppress browser default focus ring — the green border
-                // is the only visual cue needed.
-                ...(Platform.OS === 'web' ? ({ outline: 'none' } as object) : null),
+                justifyContent: viewStyle.justifyContent,
+                backgroundColor: viewStyle.backgroundColor,
             }}
-            className="bg-background text-foreground"
-        />
+            className="bg-background"
+        >
+            <TextInput
+                ref={inputRef}
+                autoFocus={autoFocus}
+                value={draft}
+                selection={selection}
+                onChangeText={onChangeText}
+                onSelectionChange={onSelectionChange}
+                onBlur={onSubmit}
+                onFocus={onFocus}
+                onKeyPress={onKeyPress}
+                style={{
+                    ...textStyle,
+                    paddingHorizontal: CELL_PADDING - EDITOR_BORDER,
+                    paddingVertical: 0,
+                    height: lineHeight,
+                    lineHeight,
+                    // Suppress browser default focus ring — the green border
+                    // is the only visual cue needed.
+                    ...(Platform.OS === 'web' ? ({ outline: 'none' } as object) : null),
+                }}
+                className="text-foreground"
+            />
+        </View>
     )
 }
+
+const CELL_PADDING = 4
+const EDITOR_BORDER = 2
+// The normal line height of the sheet fonts, as a multiple of the size.
+const LINE_HEIGHT_RATIO = 1.25
+const DOUBLE_CLICK_MS = 600

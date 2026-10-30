@@ -3,9 +3,9 @@ import { Menu } from '@tinycld/core/ui/menu'
 import { Minus, Plus } from 'lucide-react-native'
 import { useCallback, useRef, useState } from 'react'
 import { Platform, TextInput, View } from 'react-native'
+import { DEFAULT_FONT_SIZE_PT } from '../../lib/cell-style-render'
 import { ToolbarButton } from './ToolbarButton'
 
-const DEFAULT_SIZE = 10
 const MIN_SIZE = 6
 const MAX_SIZE = 96
 
@@ -22,7 +22,7 @@ interface FontSizeStepperProps {
 export function FontSizeStepper({ size, disabled, onSetSize }: FontSizeStepperProps) {
     const fg = useThemeColor('foreground')
     const border = useThemeColor('border')
-    const effective = size ?? DEFAULT_SIZE
+    const effective = size ?? DEFAULT_FONT_SIZE_PT
     const [draft, setDraft] = useState(String(effective))
 
     // When the selection changes (which changes the incoming `size`),
@@ -112,7 +112,7 @@ export function FontSizeStepper({ size, disabled, onSetSize }: FontSizeStepperPr
 
 /** Step rows for the toolbar's More submenu, once the stepper folds. */
 export function FontSizeRows({ size, onSetSize }: Omit<FontSizeStepperProps, 'disabled'>) {
-    const effective = size ?? DEFAULT_SIZE
+    const effective = size ?? DEFAULT_FONT_SIZE_PT
     return (
         <>
             <Menu.Item

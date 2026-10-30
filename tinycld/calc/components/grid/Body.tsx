@@ -38,7 +38,7 @@
 // quadrant is a follow-up.
 
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import {
     type LayoutChangeEvent,
     type NativeScrollEvent,
@@ -48,13 +48,22 @@ import {
     type TextInputInstance,
     View,
 } from 'react-native'
+import type * as Y from 'yjs'
 import type { DragState } from '../../hooks/use-column-resize'
+import { useFilledCells } from '../../hooks/use-filled-cells'
+import { useFilterView } from '../../hooks/use-filter-view'
 import type { RemotePresence } from '../../hooks/use-presence'
 import type { RowDragState } from '../../hooks/use-row-resize'
+import { useWorkbook } from '../../hooks/use-workbook-context'
+import { useWorkbookDefaultFont } from '../../hooks/use-workbook-default-font'
 import type { SheetWithId } from '../../hooks/use-y-sheets'
+import { overflowRoom } from '../../lib/text-overflow'
+import type { WorkbookFont } from '../../lib/workbook-default-font'
 import type { FormulaSpecialKey } from '../FormulaBar'
+import { LinkChipOverlay } from '../link/LinkChipOverlay'
 import { Cell } from './Cell'
 import { CutMarchingAntsOverlay } from './CutMarchingAntsOverlay'
+import type { FilterButtonState } from './FilterButton'
 import { FindMatchOverlay } from './FindMatchOverlay'
 import { FormatPainterOverlay } from './FormatPainterOverlay'
 import {
@@ -90,6 +99,11 @@ interface BodyProps {
     onLayout: (e: LayoutChangeEvent) => void
     onHorizontalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
     onVerticalScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
+    // The free pane's scroll offset, for drawing over the split grid.
+    scrollX: number
+    scrollY: number
+    // Switches sheets, for a link to a cell on another sheet.
+    onActivateSheet: (sheetId: string) => void
 }
 
 export function Body(props: BodyProps) {
@@ -118,11 +132,17 @@ function SingleQuadrantBody({
     onLayout,
     onHorizontalScroll,
     onVerticalScroll,
+    onActivateSheet,
 }: BodyProps) {
     const sheetId = sheet?.id ?? ''
     const remoteEditingByCell = useRemoteEditingMap(presenceOnSheet)
+    const { doc } = useWorkbook()
+    const filled = useFilledCells(doc, sheetId)
+    const filterButtonFor = useFilterButtons(doc, sheetId)
+    const baseFont = useWorkbookDefaultFont(doc)
     const cells = renderQuadrantCells({
         sheet,
+        baseFont,
         sheetId,
         firstRow: Math.max(visible.firstRow, 1),
         lastRow: visible.lastRow,
@@ -136,6 +156,8 @@ function SingleQuadrantBody({
         cellEditorInputRef,
         remoteEditingByCell,
         onSpecialKey,
+        isFilled: filled.isFilled,
+        filterButtonFor,
     })
     return (
         <View style={{ flex: 1, overflow: 'hidden' }} onLayout={onLayout}>
@@ -170,6 +192,13 @@ function SingleQuadrantBody({
                         sheetId={sheetId}
                         colOffsets={colOffsets}
                         rowOffsets={rowOffsets}
+                    />
+                    <LinkChipOverlay
+                        sheetId={sheetId}
+                        colOffsets={colOffsets}
+                        rowOffsets={rowOffsets}
+                        readOnly={readOnly}
+                        onActivateSheet={onActivateSheet}
                     />
                     <CutMarchingAntsOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
                     <FormatPainterOverlay colOffsets={colOffsets} rowOffsets={rowOffsets} />
@@ -224,10 +253,17 @@ function SplitBody({
     onLayout,
     onHorizontalScroll,
     onVerticalScroll,
+    scrollX,
+    scrollY,
+    onActivateSheet,
 }: BodyProps) {
     const sheetId = sheet?.id ?? ''
     const remoteEditingByCell = useRemoteEditingMap(presenceOnSheet)
-    const borderColor = useThemeColor('border')
+    const { doc } = useWorkbook()
+    const filled = useFilledCells(doc, sheetId)
+    const filterButtonFor = useFilterButtons(doc, sheetId)
+    const baseFont = useWorkbookDefaultFont(doc)
+    const dividerColor = useThemeColor('muted-foreground')
 
     // Clamp frozen counts so a stale value past the actual sheet extent
     // doesn't blow out the offset math. The freeze quadrants degenerate
@@ -248,6 +284,7 @@ function SplitBody({
         fRows > 0 && fCols > 0
             ? renderQuadrantCells({
                   sheet,
+                  baseFont,
                   sheetId,
                   firstRow: 1,
                   lastRow: fRows,
@@ -261,6 +298,8 @@ function SplitBody({
                   cellEditorInputRef,
                   remoteEditingByCell,
                   onSpecialKey,
+                  isFilled: filled.isFilled,
+                  filterButtonFor,
               })
             : null
 
@@ -268,6 +307,7 @@ function SplitBody({
         fRows > 0
             ? renderQuadrantCells({
                   sheet,
+                  baseFont,
                   sheetId,
                   firstRow: 1,
                   lastRow: fRows,
@@ -281,6 +321,8 @@ function SplitBody({
                   cellEditorInputRef,
                   remoteEditingByCell,
                   onSpecialKey,
+                  isFilled: filled.isFilled,
+                  filterButtonFor,
               })
             : null
 
@@ -288,6 +330,7 @@ function SplitBody({
         fCols > 0
             ? renderQuadrantCells({
                   sheet,
+                  baseFont,
                   sheetId,
                   firstRow: freeFirstRow,
                   lastRow: visible.lastRow,
@@ -301,11 +344,14 @@ function SplitBody({
                   cellEditorInputRef,
                   remoteEditingByCell,
                   onSpecialKey,
+                  isFilled: filled.isFilled,
+                  filterButtonFor,
               })
             : null
 
     const brCells = renderQuadrantCells({
         sheet,
+        baseFont,
         sheetId,
         firstRow: freeFirstRow,
         lastRow: visible.lastRow,
@@ -319,6 +365,8 @@ function SplitBody({
         cellEditorInputRef,
         remoteEditingByCell,
         onSpecialKey,
+        isFilled: filled.isFilled,
+        filterButtonFor,
     })
 
     // Memoize the shifted offset arrays once per render. The overlays
@@ -336,11 +384,6 @@ function SplitBody({
                     style={{
                         flexDirection: 'row',
                         height: frozenH,
-                        // Visual divider line marking the bottom of the
-                        // frozen rows. 2px so it reads as deliberate
-                        // freeze affordance, not a normal cell border.
-                        borderBottomWidth: 2,
-                        borderBottomColor: borderColor,
                     }}
                 >
                     {fCols > 0 && (
@@ -349,11 +392,14 @@ function SplitBody({
                                 width: frozenW,
                                 height: frozenH,
                                 overflow: 'hidden',
-                                borderRightWidth: 2,
-                                borderRightColor: borderColor,
                             }}
                         >
                             {tlCells}
+                            <LocalSelectionOverlay
+                                sheetId={sheetId}
+                                colOffsets={colOffsets}
+                                rowOffsets={rowOffsets}
+                            />
                         </View>
                     )}
                     <ScrollView
@@ -365,6 +411,11 @@ function SplitBody({
                         contentContainerStyle={{ width: freeContentWidth, height: frozenH }}
                     >
                         {trCells}
+                        <LocalSelectionOverlay
+                            sheetId={sheetId}
+                            colOffsets={brColOffsets}
+                            rowOffsets={rowOffsets}
+                        />
                     </ScrollView>
                 </View>
             )}
@@ -374,8 +425,6 @@ function SplitBody({
                         style={{
                             width: frozenW,
                             overflow: 'hidden',
-                            borderRightWidth: 2,
-                            borderRightColor: borderColor,
                         }}
                     >
                         <ScrollView
@@ -385,6 +434,11 @@ function SplitBody({
                             contentContainerStyle={{ width: frozenW, height: freeContentHeight }}
                         >
                             {blCells}
+                            <LocalSelectionOverlay
+                                sheetId={sheetId}
+                                colOffsets={colOffsets}
+                                rowOffsets={brRowOffsets}
+                            />
                         </ScrollView>
                     </View>
                 )}
@@ -457,7 +511,60 @@ function SplitBody({
                     </ScrollView>
                 </View>
             </View>
+            <FreezeDivider isVisible={fRows > 0} top={frozenH} color={dividerColor} />
+            <LinkChipOverlay
+                sheetId={sheetId}
+                colOffsets={colOffsets}
+                rowOffsets={rowOffsets}
+                readOnly={readOnly}
+                split={{ scrollX, scrollY, frozenRows: fRows, frozenCols: fCols }}
+                onActivateSheet={onActivateSheet}
+            />
+            <FreezeDivider isVisible={fCols > 0} left={frozenW} color={dividerColor} />
         </View>
+    )
+}
+
+const FREEZE_DIVIDER_WIDTH = 4
+
+interface FreezeDividerProps {
+    isVisible: boolean
+    color: string
+    top?: number
+    left?: number
+}
+
+// FreezeDivider is the bar along the edge of the frozen rows or
+// columns. It is drawn over the grid, centred on the edge, rather than
+// as a border on the frozen pane, which would cover the pane's last
+// pixels of cell content. It is thicker and darker than a gridline so
+// the freeze reads as a deliberate split, as in Sheets.
+function FreezeDivider({ isVisible, color, top, left }: FreezeDividerProps) {
+    if (!isVisible) return null
+    const half = FREEZE_DIVIDER_WIDTH / 2
+    const position =
+        top != null
+            ? { top: top - half, left: 0, right: 0, height: FREEZE_DIVIDER_WIDTH }
+            : { left: (left ?? 0) - half, top: 0, bottom: 0, width: FREEZE_DIVIDER_WIDTH }
+    return (
+        <View
+            pointerEvents="none"
+            style={{ position: 'absolute', ...position, backgroundColor: color, opacity: 0.35 }}
+        />
+    )
+}
+
+// useFilterButtons answers which header cells of the sheet's filter
+// carry a filter button, and whether that column is filtering.
+function useFilterButtons(doc: Y.Doc | null, sheetId: string) {
+    const view = useFilterView(doc, sheetId)
+    return useCallback(
+        (row: number, col: number): FilterButtonState => {
+            if (view == null || row !== view.range.startRow) return null
+            if (col < view.range.startCol || col > view.range.endCol) return null
+            return view.criteria[col] != null ? 'active' : 'idle'
+        },
+        [view]
     )
 }
 
@@ -478,6 +585,7 @@ function useRemoteEditingMap(presenceOnSheet: RemotePresence[]) {
 
 interface RenderQuadrantCellsArgs {
     sheet: SheetWithId | null
+    baseFont: WorkbookFont
     sheetId: string
     firstRow: number
     lastRow: number
@@ -495,10 +603,13 @@ interface RenderQuadrantCellsArgs {
     cellEditorInputRef: React.RefObject<TextInputInstance | null>
     remoteEditingByCell: Map<string, RemotePresence>
     onSpecialKey: (key: FormulaSpecialKey) => boolean
+    isFilled: (row: number, col: number) => boolean
+    filterButtonFor: (row: number, col: number) => FilterButtonState
 }
 
 function renderQuadrantCells({
     sheet,
+    baseFont,
     sheetId,
     firstRow,
     lastRow,
@@ -512,8 +623,11 @@ function renderQuadrantCells({
     cellEditorInputRef,
     remoteEditingByCell,
     onSpecialKey,
+    isFilled,
+    filterButtonFor,
 }: RenderQuadrantCellsArgs): React.ReactNode[] {
     if (sheet == null) return []
+    const showGridLines = sheet.hideGridLines !== true
     const cells: React.ReactNode[] = []
     for (let row = firstRow; row <= lastRow; row++) {
         const absTop = rowOffsets[row - 1]
@@ -526,6 +640,11 @@ function renderQuadrantCells({
             if (width <= 0) continue
             const left = absLeft - colOffset
             const remoteEditor = remoteEditingByCell.get(`${row}:${col}`) ?? null
+            // Text may run on only within this pane: a frozen pane's edge
+            // cuts it off, as in Sheets.
+            const overflowRight = isFilled(row, col)
+                ? overflowRoom(row, col, colOffsets, lastCol, isFilled)
+                : 0
             cells.push(
                 <Cell
                     key={`${row}:${col}`}
@@ -542,6 +661,11 @@ function renderQuadrantCells({
                     onSpecialKey={onSpecialKey}
                     colOffsets={colOffsets}
                     rowOffsets={rowOffsets}
+                    overflowRight={overflowRight}
+                    showGridLines={showGridLines}
+                    baseFontName={baseFont.name}
+                    baseFontSize={baseFont.size}
+                    filterButton={filterButtonFor(row, col)}
                 />
             )
         }

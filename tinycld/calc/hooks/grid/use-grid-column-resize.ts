@@ -32,6 +32,7 @@ export function useGridColumnResize({
     )
     return useColumnResize({
         colWidths: sheet?.colWidths,
+        defaultColWidth: sheet?.defaultColWidth,
         readOnly,
         onCommit,
         onAutosize,

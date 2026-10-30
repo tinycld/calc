@@ -114,4 +114,50 @@ describe('computePivot — errors', () => {
         expect(out.ok).toBe(false)
         if (!out.ok) expect(out.code).toBe('no-values')
     })
+
+    it('surfaces missing-field when a field names no header in the source', () => {
+        const cells = makeCells('s1', [
+            [str('Region'), str('Sales')],
+            [str('East'), num(1)],
+        ])
+        const out = computePivot(
+            defOf({
+                sourceRange: 'Sheet1!A1:B2',
+                rows: [{ sourceColumn: 'Country' }],
+                values: [{ sourceColumn: 'Sales', aggregation: 'sum' }],
+            }),
+            cells,
+            { Sheet1: 's1' }
+        )
+        expect(out.ok).toBe(false)
+        if (!out.ok) {
+            expect(out.code).toBe('missing-field')
+            expect(out.message).toContain('Country')
+        }
+    })
+})
+
+describe('computePivot — repeated source headers', () => {
+    it('renders a pivot whose source has a run of blank-looking headers', () => {
+        // Google Sheets exports pad the header row with " " cells; the
+        // pivot must still render from the named columns beside them.
+        const cells = makeCells('s1', [
+            [str('Code'), str('Total'), str(' '), str(' ')],
+            [str('B'), num(2), str(''), str('')],
+            [str('A'), num(1), str(''), str('')],
+        ])
+        const out = computePivot(
+            defOf({
+                sourceRange: 'Sheet1!A1:D3',
+                rows: [{ sourceColumn: 'Code' }],
+                values: [{ sourceColumn: 'Total', aggregation: 'sum' }],
+            }),
+            cells,
+            { Sheet1: 's1' }
+        )
+        expect(out.ok).toBe(true)
+        if (!out.ok) return
+        expect(out.value.cells.get('2:1')?.display).toBe('A')
+        expect(out.value.cells.get('3:1')?.display).toBe('B')
+    })
 })

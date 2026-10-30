@@ -2,6 +2,7 @@ import { ResponsiveToolbar, type ToolbarItem } from '@tinycld/core/components/Re
 import { useThemeColor } from '@tinycld/core/lib/use-app-theme'
 import {
     AlignLeft,
+    AlignVerticalJustifyEnd,
     ArrowLeft,
     ArrowRight,
     Baseline,
@@ -10,20 +11,23 @@ import {
     Grid3x3,
     Hash,
     Italic,
+    Link,
     type LucideIcon,
+    MessageSquarePlus,
     PaintBucket,
     Paintbrush,
     Percent,
     Redo,
     Search,
     Strikethrough,
+    Type,
     Underline,
     Undo,
 } from 'lucide-react-native'
 import { memo } from 'react'
 import { Text, View } from 'react-native'
 import type * as Y from 'yjs'
-import type { HorizontalAlign } from '../hooks/grid/use-grid-format-controls'
+import type { HorizontalAlign, VerticalAlign } from '../hooks/grid/use-grid-format-controls'
 import type { BorderPresetId } from '../lib/border-presets'
 import { findPresetByNumFmt } from '../lib/number-format/presets'
 import type { CellBorders } from '../lib/workbook-types'
@@ -32,11 +36,13 @@ import { usePivotInsert } from './pivot/PivotInsertButton'
 import { BordersMenu, BordersRows } from './toolbar/BordersMenu'
 import { ColorPickerRows } from './toolbar/ColorPickerMenu'
 import { FillColorMenu } from './toolbar/FillColorMenu'
+import { FontFamilyMenu, FontFamilyRows } from './toolbar/FontFamilyMenu'
 import { FontSizeRows, FontSizeStepper } from './toolbar/FontSizeStepper'
 import { HorizontalAlignMenu, HorizontalAlignRows } from './toolbar/HorizontalAlignMenu'
 import { NumberFormatMenu, NumberFormatRows } from './toolbar/NumberFormatMenu'
 import { TextColorMenu } from './toolbar/TextColorMenu'
 import { ToolbarButton } from './toolbar/ToolbarButton'
+import { VerticalAlignMenu, VerticalAlignRows } from './toolbar/VerticalAlignMenu'
 
 export interface ToolbarProps {
     // Selection-based disable for the formatting buttons. Undo/Redo
@@ -64,6 +70,9 @@ export interface ToolbarProps {
     onDecreaseDecimal: () => void
     onIncreaseDecimal: () => void
 
+    fontFamily: string | undefined
+    onSetFontFamily: (family: string) => void
+
     fontSize: number | undefined
     onSetFontSize: (size: number) => void
 
@@ -78,6 +87,12 @@ export interface ToolbarProps {
 
     horizontalAlign: HorizontalAlign | undefined
     onSetHorizontalAlign: (align: HorizontalAlign) => void
+
+    verticalAlign: VerticalAlign | undefined
+    onSetVerticalAlign: (align: VerticalAlign) => void
+
+    onInsertLink: () => void
+    onInsertComment: () => void
 
     isFormatPainterActive: boolean
     onActivateFormatPainter: () => void
@@ -187,6 +202,8 @@ function useToolbarItems(
         onApplyPercent,
         onDecreaseDecimal,
         onIncreaseDecimal,
+        fontFamily,
+        onSetFontFamily,
         fontSize,
         onSetFontSize,
         fontColor,
@@ -197,6 +214,10 @@ function useToolbarItems(
         onSetBorders,
         horizontalAlign,
         onSetHorizontalAlign,
+        verticalAlign,
+        onSetVerticalAlign,
+        onInsertLink,
+        onInsertComment,
         isFormatPainterActive,
         onActivateFormatPainter,
         onOpenFind,
@@ -301,6 +322,24 @@ function useToolbarItems(
         SEPARATOR,
         {
             type: 'custom',
+            key: 'font-family',
+            element: (
+                <FontFamilyMenu
+                    family={fontFamily}
+                    disabled={disabled}
+                    onSetFamily={onSetFontFamily}
+                />
+            ),
+            overflow: {
+                label: 'Font',
+                icon: Type,
+                isDisabled: disabled,
+                children: <FontFamilyRows family={fontFamily} onSetFamily={onSetFontFamily} />,
+            },
+        },
+        SEPARATOR,
+        {
+            type: 'custom',
             key: 'font-size',
             element: (
                 <FontSizeStepper size={fontSize} disabled={disabled} onSetSize={onSetFontSize} />
@@ -387,6 +426,30 @@ function useToolbarItems(
                 ),
             },
         },
+        {
+            type: 'custom',
+            key: 'vertical-align',
+            element: (
+                <VerticalAlignMenu
+                    align={verticalAlign}
+                    disabled={disabled}
+                    onSetAlign={onSetVerticalAlign}
+                />
+            ),
+            overflow: {
+                label: 'Vertical align',
+                icon: AlignVerticalJustifyEnd,
+                isDisabled: disabled,
+                children: (
+                    <VerticalAlignRows align={verticalAlign} onSetAlign={onSetVerticalAlign} />
+                ),
+            },
+        },
+        SEPARATOR,
+        button('link', Link, 'Insert link', onInsertLink, { isDisabled: disabled }),
+        button('comment', MessageSquarePlus, 'Insert comment', onInsertComment, {
+            isDisabled: disabled,
+        }),
         SEPARATOR,
         button('find', Search, 'Find and replace', onOpenFind),
         SEPARATOR,

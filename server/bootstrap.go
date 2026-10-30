@@ -20,6 +20,16 @@ import (
 type WorkbookModel struct {
 	Sheets []WorksheetModel     `json:"sheets"`
 	Pivots []PivotDefinitionDTO `json:"pivots,omitempty"`
+	// DefaultFont is the workbook's Normal-style font: the font a cell
+	// with no font name or size of its own draws in. Nil when the file
+	// has no styles part.
+	DefaultFont *WorkbookFontDTO `json:"defaultFont,omitempty"`
+}
+
+// WorkbookFontDTO is the workbook default font (Size in points).
+type WorkbookFontDTO struct {
+	Name string  `json:"name,omitempty"`
+	Size float64 `json:"size,omitempty"`
 }
 
 type WorksheetModel struct {
@@ -61,6 +71,20 @@ type WorksheetModel struct {
 	// doc-side authoring UI sees them on first open. Empty/nil when
 	// the source has no rules.
 	ConditionalFormats []ConditionalFormatRule `json:"conditionalFormats,omitempty"`
+	// DefaultRowHeight / DefaultColWidth are the sheet's own
+	// sheetFormatPr defaults in CSS pixels, converted with the same
+	// Excel point / character-width rules as RowHeights / ColWidths.
+	// DefaultRowHeight is zero when the sheet declares none, so the
+	// client keeps its own built-in default. DefaultColWidth is never
+	// zero: a sheet that declares none has the width Excel derives from
+	// baseColWidth and the default font (69 px for Calibri 11).
+	DefaultRowHeight int `json:"defaultRowHeight,omitempty"`
+	DefaultColWidth  int `json:"defaultColWidth,omitempty"`
+	// HideGridLines mirrors the sheet view's showGridLines="0".
+	HideGridLines bool `json:"hideGridLines,omitempty"`
+	// FilterView is the sheet's autoFilter as calc's filter view (see
+	// readFilterView), or nil when the sheet has none.
+	FilterView *FilterView `json:"filterView,omitempty"`
 }
 
 // MergeRangeDTO mirrors the TS MergeRangeModel: a merged cell anchor
@@ -82,6 +106,8 @@ type CellValueDTO struct {
 	Display string     `json:"display"`
 	Formula string     `json:"formula,omitempty"`
 	Style   *CellStyle `json:"style,omitempty"`
+	// Link is the cell's hyperlink target (see hyperlinkTarget).
+	Link string `json:"link,omitempty"`
 }
 
 // ReadWorkbookFromXLSX parses xlsx bytes into a WorkbookModel suitable
@@ -105,8 +131,11 @@ func ReadWorkbookFromXLSX(ctx context.Context, xlsxBytes []byte, rowCap, colCap 
 	resolveWorkbookIndexedColors(wb, indexedPaletteFromStyles(xlsxBytes))
 
 	out := WorkbookModel{Sheets: make([]WorksheetModel, 0, len(wb.Sheets))}
+	if wb.DefaultFont.Name != "" || wb.DefaultFont.Size > 0 {
+		out.DefaultFont = &WorkbookFontDTO{Name: wb.DefaultFont.Name, Size: wb.DefaultFont.Size}
+	}
 	for i := range wb.Sheets {
-		out.Sheets = append(out.Sheets, readWorksheet(&wb.Sheets[i], rowCap, colCap))
+		out.Sheets = append(out.Sheets, readWorksheet(&wb.Sheets[i], rowCap, colCap, wb.Date1904))
 	}
 	pivots, err := readPivots(ctx, xlsxBytes)
 	if err != nil {
@@ -131,6 +160,10 @@ func ReadWorkbookFromXLSX(ctx context.Context, xlsxBytes []byte, rowCap, colCap 
 // followed by AddPivotTable into PivotSheet!A1) stays put — the
 // pivot can paint freely without clobbering anything. Only when the
 // target already has data do we relocate.
+//
+// The relocated name is a sheet the workbook does not have yet; the
+// Y.Doc bootstrap creates it (after the original, recorded in
+// RelocatedFrom) and the save path writes it out.
 func ensureDistinctTargets(pivots []PivotDefinitionDTO, sheets []WorksheetModel) []PivotDefinitionDTO {
 	taken := make(map[string]bool, len(sheets))
 	cellCount := make(map[string]int, len(sheets))
@@ -140,13 +173,11 @@ func ensureDistinctTargets(pivots []PivotDefinitionDTO, sheets []WorksheetModel)
 	}
 	for i, p := range pivots {
 		if cellCount[p.TargetSheetName] > 0 {
-			n := 2
-			base := fmt.Sprintf("%s pivot", strings.TrimSpace(p.TargetSheetName))
-			candidate := base
-			for taken[candidate] {
-				candidate = fmt.Sprintf("%s (%d)", base, n)
-				n++
+			candidate := relocatedPivotSheetName(p.TargetSheetName, 1)
+			for n := 2; taken[candidate]; n++ {
+				candidate = relocatedPivotSheetName(p.TargetSheetName, n)
 			}
+			pivots[i].RelocatedFrom = p.TargetSheetName
 			pivots[i].TargetSheetName = candidate
 			taken[candidate] = true
 		}
@@ -154,12 +185,32 @@ func ensureDistinctTargets(pivots []PivotDefinitionDTO, sheets []WorksheetModel)
 	return pivots
 }
 
+// maxSheetNameLen is Excel's sheet-name limit; a longer name makes the
+// saved file fail to open.
+const maxSheetNameLen = 31
+
+// relocatedPivotSheetName builds the n-th candidate name for a pivot
+// moved off sheet: "<sheet> pivot", then "<sheet> pivot (n)". The sheet
+// part is shortened so the whole name fits maxSheetNameLen.
+func relocatedPivotSheetName(sheet string, n int) string {
+	suffix := " pivot"
+	if n > 1 {
+		suffix = fmt.Sprintf(" pivot (%d)", n)
+	}
+	base := []rune(strings.TrimSpace(sheet))
+	if room := maxSheetNameLen - len([]rune(suffix)); len(base) > room {
+		base = []rune(strings.TrimSpace(string(base[:room])))
+	}
+	return string(base) + suffix
+}
+
 // readWorksheet converts one parsed omnidoc sheet into the
 // WorksheetModel wire shape. The omnidoc grid is dense over the
 // used range and 0-BASED; every index converts to calc's 1-based
 // convention immediately inside this function so no 0-based index
-// escapes the seam.
-func readWorksheet(sheet *xlsx.Sheet, rowCap, colCap int) WorksheetModel {
+// escapes the seam. date1904 is the workbook's date system (see
+// classifyScalar).
+func readWorksheet(sheet *xlsx.Sheet, rowCap, colCap int, date1904 bool) WorksheetModel {
 	tabColor := ""
 	if sheet.TabColorRGB != "" {
 		tabColor = "#" + sheet.TabColorRGB
@@ -167,22 +218,21 @@ func readWorksheet(sheet *xlsx.Sheet, rowCap, colCap int) WorksheetModel {
 	cells := make(map[string]CellValueDTO)
 	maxRow, maxCol := 0, 0
 
-	// maxRow/maxCol track CONTRIBUTING cells only. The dense grid also
-	// covers style-only cells (a border on an otherwise-empty cell
-	// widens the used range), but the model's row/col counts follow the
-	// excelize-era semantics: the extent of cells carrying a value or
-	// formula.
+	// maxRow/maxCol track CONTRIBUTING cells only: cells carrying a
+	// value, a formula, or a visible decoration (see readWorkbookCell).
+	// The dense grid also pads with empties that contribute nothing.
 	for r := range sheet.Cells {
 		rowNumber := r + 1
 		if rowCap > 0 && rowNumber > rowCap {
 			break
 		}
+		rowStyle := sheet.RowStyles[r]
 		for c := range sheet.Cells[r] {
 			colNumber := c + 1
 			if colCap > 0 && colNumber > colCap {
 				break
 			}
-			cell, ok := readWorkbookCell(&sheet.Cells[r][c])
+			cell, ok := readWorkbookCell(&sheet.Cells[r][c], rowStyle, date1904)
 			if !ok {
 				continue
 			}
@@ -196,12 +246,24 @@ func readWorksheet(sheet *xlsx.Sheet, rowCap, colCap int) WorksheetModel {
 		}
 	}
 
+	linkRow, linkCol := applyHyperlinks(cells, sheet.Hyperlinks, rowCap, colCap)
+	maxRow, maxCol = max(maxRow, linkRow), max(maxCol, linkCol)
+
 	rowCount, colCount := maxRow, maxCol
 	if rowCount < 1 {
 		rowCount = 1
 	}
 	if colCount < 1 {
 		colCount = 1
+	}
+	// A hidden row or column is size 0 in the doc, which the grid draws as
+	// hidden. The rows a filter hid keep their real heights in the filter
+	// view, so removing the filter shows them at those heights.
+	heights := readRowHeights(sheet)
+	hiddenRows := readHiddenRows(sheet)
+	filterView := readFilterView(sheet.AutoFilter)
+	if filterView != nil {
+		filterView.SavedHeights = filterSavedHeights(filterView.Range, heights, hiddenRows)
 	}
 	frozenRows, frozenCols := sheet.FrozenRows, sheet.FrozenCols
 	if frozenRows < 0 {
@@ -220,10 +282,14 @@ func readWorksheet(sheet *xlsx.Sheet, rowCap, colCap int) WorksheetModel {
 		Merges:             readMerges(sheet.Merges),
 		FrozenRows:         frozenRows,
 		FrozenCols:         frozenCols,
-		RowHeights:         readRowHeights(sheet),
-		ColWidths:          readColWidths(sheet, colCount),
+		RowHeights:         withHidden(heights, hiddenRows),
+		ColWidths:          withHidden(readColWidths(sheet, colCount), readHiddenCols(sheet, colCount)),
 		RowStyles:          readRowStyles(sheet),
 		ConditionalFormats: readConditionalFormats(sheet),
+		DefaultRowHeight:   excelPointsToPx(sheet.DefaultRowHeight),
+		DefaultColWidth:    excelCharWidthToPx(sheet.DefaultColWidth),
+		HideGridLines:      sheet.HideGridLines,
+		FilterView:         filterView,
 	}
 }
 
@@ -297,6 +363,88 @@ func isDefaultColWidth(w, sheetDefault float64) bool {
 		return true
 	}
 	return sheetDefault > 0 && w > sheetDefault-0.001 && w < sheetDefault+0.001
+}
+
+// minGridCols is the column count the grid always shows (MIN_COLS in
+// components/grid/constants.ts). A hidden column inside it must reach the
+// doc even when no cell does, or it shows.
+const minGridCols = 26
+
+// readHiddenRows lists the 1-based rows the sheet hides: rows with
+// hidden="1" (a filter's, a collapsed group's, or hidden by hand) and
+// rows of height 0, which Excel draws as hidden too.
+func readHiddenRows(sheet *xlsx.Sheet) map[int]bool {
+	out := map[int]bool{}
+	for row := range sheet.HiddenRows {
+		if row >= 0 {
+			out[row+1] = true
+		}
+	}
+	for row, pt := range sheet.RowHeights {
+		if row >= 0 && pt == 0 {
+			out[row+1] = true
+		}
+	}
+	return out
+}
+
+// readHiddenCols lists the 1-based columns the sheet hides (hidden="1" or
+// width 0) up to the grid's extent: colCount, or minGridCols when the
+// cells reach fewer. A file often hides every unused column to the end of
+// the sheet, and seeding those would bloat the doc for nothing on screen.
+func readHiddenCols(sheet *xlsx.Sheet, colCount int) map[int]bool {
+	bound := max(colCount, minGridCols)
+	out := map[int]bool{}
+	for col := range sheet.HiddenCols {
+		if col >= 0 && col < bound {
+			out[col+1] = true
+		}
+	}
+	for col, w := range sheet.ColWidths {
+		if col >= 0 && col < bound && w == 0 {
+			out[col+1] = true
+		}
+	}
+	return out
+}
+
+// withHidden sets each hidden row or column to size 0 in a sparse size
+// map, creating the map when needed.
+func withHidden(sizes map[int]int, hidden map[int]bool) map[int]int {
+	if len(hidden) == 0 {
+		return sizes
+	}
+	if sizes == nil {
+		sizes = map[int]int{}
+	}
+	for n := range hidden {
+		sizes[n] = 0
+	}
+	return sizes
+}
+
+// filterSavedHeights gives the filter view the heights its rows had
+// before the filter hid any (lib/filter.ts records the same on its first
+// apply): every custom height below the label row. It is nil when the
+// file's filter hides no row, so the client's first apply records them.
+func filterSavedHeights(rng FilterRange, heights map[int]int, hidden map[int]bool) map[int]int {
+	hidesAny := false
+	for row := rng.StartRow + 1; row <= rng.EndRow; row++ {
+		if hidden[row] {
+			hidesAny = true
+			break
+		}
+	}
+	if !hidesAny {
+		return nil
+	}
+	saved := map[int]int{}
+	for row, px := range heights {
+		if row > rng.StartRow && row <= rng.EndRow && px > 0 {
+			saved[row] = px
+		}
+	}
+	return saved
 }
 
 // readRowStyles converts the sheet's row-level styles (0-based keys)
@@ -379,19 +527,20 @@ func readMerges(merges []xlsx.Merge) []MergeRangeDTO {
 }
 
 // readWorkbookCell extracts a single cell into the typed CellValueDTO shape.
-// Returns ok=false for cells that don't contribute — no formula and no
-// typed value (an empty-string value counts as no value) — so the
-// caller can skip them, keeping the on-wire JSON small and matching
-// the TS parser which skips includeEmpty=false cells. Style-only cells
-// are therefore invisible to the doc, same as the excelize era.
+// Returns ok=false for cells that don't contribute — no formula, no
+// typed value (an empty-string value counts as no value) and no visible
+// decoration — so the caller can skip them, keeping the on-wire JSON
+// small and matching the TS parser which skips includeEmpty=false cells.
 //
 // Classification comes straight off the typed cached value; formulas
 // arrive without the leading "=" and with shared formulas already
 // expanded per member cell.
-func readWorkbookCell(cell *xlsx.Cell) (CellValueDTO, bool) {
-	if cell.Formula == "" && !cellHasValue(cell.Value) {
-		return CellValueDTO{}, false
-	}
+//
+// rowStyle is the cell's row style (nil when the row has none). omnidoc
+// gives a padding cell (no <c> element) its row's style, else its
+// column's; an empty cell sharing its row's style is such padding, and
+// the row style already draws it through rowStyles, so it stays out.
+func readWorkbookCell(cell *xlsx.Cell, rowStyle *xlsx.Style, date1904 bool) (CellValueDTO, bool) {
 	// Cells on the DEFAULT xf (StyleID 0) are untracked, matching the
 	// excelize-era reader. omnidoc resolves xf 0 like any other, so
 	// without this guard every unstyled cell would seed the workbook's
@@ -403,14 +552,35 @@ func readWorkbookCell(cell *xlsx.Cell) (CellValueDTO, bool) {
 		style = styleToCellStyle(cell.Style)
 	}
 
+	if cell.Formula == "" && !cellHasValue(cell.Value) {
+		// An empty cell that draws something (a box border, a fill) is
+		// kept as an empty string cell so the decoration renders. Font,
+		// alignment and number-format-only empties show nothing and stay
+		// out of the doc.
+		if style == nil || cell.Style == rowStyle || !hasVisibleDecoration(cell.Style) {
+			return CellValueDTO{}, false
+		}
+		return CellValueDTO{Kind: "string", Raw: "", Display: "", Style: style}, true
+	}
+
 	if cell.Formula != "" {
-		raw := classifyScalar(cell.Value)
-		display := formatDisplay("formula", raw, cell.Formula)
+		// The client's formula engine only evaluates input that starts
+		// with "=", and omnidoc strips it; the writer (SetFormula)
+		// strips it again on save.
+		formula := "=" + cell.Formula
+		raw := classifyScalar(cell.Value, date1904)
+		display := formatDisplay("formula", raw, formula)
+		if cell.Value.Kind == xlsx.KindDate {
+			// The raw is a serial for the engine; the cached display
+			// stays a readable date for renderers that don't apply the
+			// cell's numFmt.
+			display = dateRawString(cell.Value.T)
+		}
 		return CellValueDTO{
 			Kind:    "formula",
 			Raw:     raw,
 			Display: display,
-			Formula: cell.Formula,
+			Formula: formula,
 			Style:   style,
 		}, true
 	}
@@ -423,6 +593,20 @@ func readWorkbookCell(cell *xlsx.Cell) (CellValueDTO, bool) {
 		Display: display,
 		Style:   style,
 	}, true
+}
+
+// hasVisibleDecoration reports whether a style paints something on an
+// otherwise-empty cell: a declared fill pattern or a styled edge on one
+// of the four sides the doc models.
+func hasVisibleDecoration(st *xlsx.Style) bool {
+	if st == nil {
+		return false
+	}
+	if fillDeclared(st.Fill) {
+		return true
+	}
+	b := st.Border
+	return b.Top.Style != "" || b.Right.Style != "" || b.Bottom.Style != "" || b.Left.Style != ""
 }
 
 // cellHasValue reports whether a typed value contributes to the doc.
@@ -464,14 +648,20 @@ func dateRawString(t time.Time) string {
 // classifyScalar is the formula-cached-value variant — we know the
 // cell IS a formula (handled separately) and only need to coerce the
 // cached scalar into raw form. An empty cache reads as nil.
-func classifyScalar(v xlsx.Value) any {
+//
+// A date-typed cache becomes its serial number, because the formula
+// engine produces serials for date formulas and the display path
+// formats numbers through the cell's numFmt. v.F is the serial as
+// stored, in the workbook's own date system; the engine counts from
+// 1900, so a 1904 workbook's serial is converted (date1904).
+func classifyScalar(v xlsx.Value, date1904 bool) any {
 	switch v.Kind {
+	case xlsx.KindDate:
+		return xlsx.Serial1900(v.F, date1904)
 	case xlsx.KindNumber:
 		return v.F
 	case xlsx.KindBool:
 		return v.B
-	case xlsx.KindDate:
-		return dateRawString(v.T)
 	case xlsx.KindEmpty:
 		return nil
 	default: // KindString, KindError
@@ -544,6 +734,72 @@ func scalarToString(v any) string {
 	}
 }
 
+// bootstrapSheet is one entry of the bootstrapped doc's tab order: an
+// imported sheet, or the empty output sheet created for a pivot whose
+// target sheet the workbook does not have.
+type bootstrapSheet struct {
+	id      string
+	sheet   WorksheetModel
+	pivotID string
+}
+
+// planBootstrapSheets lays out the doc's sheets in tab order. Imported
+// sheets keep the `sheet${i+1}` ids. A pivot target missing from the
+// workbook (ensureDistinctTargets moved the pivot off a sheet that
+// holds data) becomes a new empty sheet placed right after the sheet it
+// was moved off, or at the end when that is unknown; new sheets take
+// the ids after the imported ones. Each pivot's target sheet records
+// the pivot ID under pivotSheetKey; when several pivots share a target
+// the last one wins, as in the TS writeBootstrapPivots.
+func planBootstrapSheets(model WorkbookModel) []bootstrapSheet {
+	imported := make(map[string]bool, len(model.Sheets))
+	for _, s := range model.Sheets {
+		imported[s.Name] = true
+	}
+	following := map[string][]string{}
+	var trailing []string
+	created := map[string]bool{}
+	for _, p := range model.Pivots {
+		name := p.TargetSheetName
+		if name == "" || imported[name] || created[name] {
+			continue
+		}
+		created[name] = true
+		if imported[p.RelocatedFrom] {
+			following[p.RelocatedFrom] = append(following[p.RelocatedFrom], name)
+		} else {
+			trailing = append(trailing, name)
+		}
+	}
+
+	out := make([]bootstrapSheet, 0, len(model.Sheets)+len(created))
+	nextID := len(model.Sheets)
+	addPivotSheet := func(name string) {
+		nextID++
+		out = append(out, bootstrapSheet{id: fmt.Sprintf("sheet%d", nextID), sheet: WorksheetModel{Name: name}})
+	}
+	for i, s := range model.Sheets {
+		out = append(out, bootstrapSheet{id: fmt.Sprintf("sheet%d", i+1), sheet: s})
+		for _, name := range following[s.Name] {
+			addPivotSheet(name)
+		}
+	}
+	for _, name := range trailing {
+		addPivotSheet(name)
+	}
+
+	indexByName := make(map[string]int, len(out))
+	for i := range out {
+		indexByName[out[i].sheet.Name] = i
+	}
+	for _, p := range model.Pivots {
+		if i, ok := indexByName[p.TargetSheetName]; ok {
+			out[i].pivotID = p.ID
+		}
+	}
+	return out
+}
+
 // BootstrapYDocFromWorkbook seeds an empty server-side Y.Doc from a
 // WorkbookModel. Mirrors bootstrapYDocFromWorkbook (TS) so the wire
 // shape clients see in their first SyncReply is identical to what the
@@ -551,7 +807,10 @@ func scalarToString(v any) string {
 //
 // Sheet IDs follow the same `sheet${i+1}` convention as the TS
 // version. Each cell is its own nested YMap; styles land under the
-// cell's `style` key as a YMap of group YMaps + flat scalars.
+// cell's `style` key as a YMap of group YMaps + flat scalars. Pivots
+// land in the top-level `pivots` map (see buildPivotYMap) and mark
+// their target sheet; see planBootstrapSheets for pivot sheets the
+// workbook does not have.
 func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 	sheetsAny := doc.GetMap("sheets")
 	cellsAny := doc.GetMap("cells")
@@ -564,7 +823,15 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 	// (e.g. a late-joiner's SyncReply, or the same client tearing
 	// down and re-creating its doc on a route change) misses the
 	// pivot in the encoded delta.
-	doc.GetMap("pivots")
+	pivotsMap, ok := doc.GetMap("pivots").(*ycrdt.YMap)
+	if !ok {
+		return fmt.Errorf("calc: bootstrap: pivots map is not a YMap")
+	}
+	// Registered for the same reason as pivots.
+	workbookMap, ok := doc.GetMap(workbookMapName).(*ycrdt.YMap)
+	if !ok {
+		return fmt.Errorf("calc: bootstrap: workbook map is not a YMap")
+	}
 	sheetsMap, ok := sheetsAny.(*ycrdt.YMap)
 	if !ok {
 		return fmt.Errorf("calc: bootstrap: sheets map is not a YMap")
@@ -575,8 +842,8 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 	}
 
 	doc.Transact(func(_ *ycrdt.Transaction) {
-		for i, sheet := range model.Sheets {
-			sheetID := fmt.Sprintf("sheet%d", i+1)
+		for i, entry := range planBootstrapSheets(model) {
+			sheetID, sheet := entry.id, entry.sheet
 			meta := ycrdt.NewYMap(nil)
 			meta.Set("name", sheet.Name)
 			meta.Set("position", i)
@@ -593,6 +860,21 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 			}
 			if sheet.FrozenCols > 0 {
 				meta.Set("frozenCols", sheet.FrozenCols)
+			}
+			if sheet.DefaultRowHeight > 0 {
+				meta.Set("defaultRowHeight", sheet.DefaultRowHeight)
+			}
+			if sheet.DefaultColWidth > 0 {
+				meta.Set("defaultColWidth", sheet.DefaultColWidth)
+			}
+			if entry.pivotID != "" {
+				meta.Set(pivotSheetKey, entry.pivotID)
+			}
+			if sheet.HideGridLines {
+				meta.Set(hideGridLinesKey, true)
+			}
+			if sheet.FilterView != nil {
+				meta.Set(filterViewKey, buildFilterViewYMap(sheet.FilterView))
 			}
 			sheetsMap.Set(sheetID, meta)
 
@@ -635,7 +917,7 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 				heightsMap := ycrdt.NewYMap(nil)
 				wroteAny := false
 				for row, px := range sheet.RowHeights {
-					if row < 1 || px <= 0 {
+					if row < 1 || px < 0 {
 						continue
 					}
 					heightsMap.Set(strconv.Itoa(row), px)
@@ -649,7 +931,7 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 				widthsMap := ycrdt.NewYMap(nil)
 				wroteAny := false
 				for col, px := range sheet.ColWidths {
-					if col < 1 || px <= 0 {
+					if col < 1 || px < 0 {
 						continue
 					}
 					widthsMap.Set(strconv.Itoa(col), px)
@@ -695,6 +977,9 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 				if value.Formula != "" {
 					cell.Set("formula", value.Formula)
 				}
+				if value.Link != "" {
+					cell.Set(linkKey, value.Link)
+				}
 				if value.Style != nil {
 					if styleMap := buildStyleYMapFromStyle(value.Style); styleMap != nil {
 						cell.Set("style", styleMap)
@@ -703,9 +988,44 @@ func BootstrapYDocFromWorkbook(doc *ycrdt.Doc, model WorkbookModel) error {
 				cellsMap.Set(fmt.Sprintf("%s:%d:%d", sheetID, row, col), cell)
 			}
 		}
+		for _, p := range model.Pivots {
+			pivotsMap.Set(p.ID, buildPivotYMap(p))
+		}
+		if model.DefaultFont != nil {
+			font := ycrdt.NewYMap(nil)
+			if model.DefaultFont.Name != "" {
+				font.Set("name", model.DefaultFont.Name)
+			}
+			if model.DefaultFont.Size > 0 {
+				font.Set("size", normalizeCellRawForY(model.DefaultFont.Size))
+			}
+			workbookMap.Set(defaultFontKey, font)
+		}
+		workbookMap.Set(sheetFactsSeededKey, true)
 	}, nil)
 	return nil
 }
+
+// Keys of the top-level workbook map (WORKBOOK_MAP in
+// tinycld/calc/lib/workbook-default-font.ts) and the sheet meta keys the
+// sheet facts use.
+const (
+	workbookMapName = "workbook"
+	// defaultFontKey holds the workbook default font: a Y.Map {name,
+	// size} with size in points. A fractional size is the single-element
+	// array wrapper normalizeCellRawForY writes (read it with
+	// numberFromYRaw); y-crdt cannot store a bare float.
+	defaultFontKey = "defaultFont"
+	// sheetFactsSeededKey marks a doc whose bootstrap seeded the sheet
+	// facts — gridlines, filter views, hyperlinks, and hidden rows and
+	// columns — from the file.
+	// Only such a doc is authoritative for them on save: a doc
+	// bootstrapped earlier has none of those keys, and treating that
+	// absence as "removed" would strip every link and filter from the
+	// file on its first save.
+	sheetFactsSeededKey = "sheetFactsSeeded"
+	hideGridLinesKey    = "hideGridLines"
+)
 
 // parseLocalCellKey splits "row:col" (the TS local key, scoped to one
 // sheet) into its two integers. Returns ok=false on malformed input;
@@ -919,22 +1239,21 @@ func buildConditionalFormatsYArray(rules []ConditionalFormatRule) *ycrdt.YArray 
 	if len(rules) == 0 {
 		return nil
 	}
-	arr := ycrdt.NewYArray()
-	wroteAny := false
+	items := ycrdt.ArrayAny{}
 	for _, rule := range rules {
 		if rule.ID == "" {
 			continue
 		}
 		m := ycrdt.NewYMap(nil)
 		m.Set("id", rule.ID)
-		rangesArr := ycrdt.NewYArray()
+		ranges := ycrdt.ArrayAny{}
 		for _, r := range rule.Ranges {
 			if r == "" {
 				continue
 			}
-			rangesArr.Push(ycrdt.ArrayAny{r})
+			ranges = append(ranges, r)
 		}
-		m.Set("ranges", rangesArr)
+		m.Set("ranges", newYArrayOf(ranges))
 		condMap := ycrdt.NewYMap(nil)
 		condMap.Set("type", rule.Condition.Type)
 		if rule.Condition.Value1 != nil {
@@ -959,11 +1278,22 @@ func buildConditionalFormatsYArray(rules []ConditionalFormatRule) *ycrdt.YArray 
 				m.Set("style", styleMap)
 			}
 		}
-		arr.Push(ycrdt.ArrayAny{m})
-		wroteAny = true
+		items = append(items, m)
 	}
-	if !wroteAny {
+	if len(items) == 0 {
 		return nil
+	}
+	return newYArrayOf(items)
+}
+
+// newYArrayOf returns a detached Y.Array holding items in order. y-crdt
+// inserts a Push on a detached array at its integrated length, which is
+// always 0 before the array joins a doc, so pushing items one at a time
+// stores them reversed. A single push keeps the order.
+func newYArrayOf(items ycrdt.ArrayAny) *ycrdt.YArray {
+	arr := ycrdt.NewYArray()
+	if len(items) > 0 {
+		arr.Push(items)
 	}
 	return arr
 }

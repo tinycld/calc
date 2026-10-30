@@ -101,11 +101,9 @@ describe('applyNumFmt — Date / Time / Datetime / Duration', () => {
     })
 
     it('Datetime preset renders both portions', () => {
-        // ISO with explicit time goes through Date — emit a full
-        // datetime string. The exact h:mm rendering depends on TZ, so
-        // we assert the date portion is preserved.
+        // The time is a wall-clock value, so no time zone shifts it.
         const out = applyNumFmt('date', '2008-09-26T15:59:00.000Z', 'm/d/yyyy h:mm:ss')
-        expect(out.startsWith('9/26/2008')).toBe(true)
+        expect(out).toBe('9/26/2008 15:59:00')
     })
 
     it('Duration preset renders elapsed time from a numeric raw', () => {

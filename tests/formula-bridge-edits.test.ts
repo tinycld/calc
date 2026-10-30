@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { setYCellTyped } from '../tinycld/calc/hooks/use-y-cell'
 import { FormulaBridge } from '../tinycld/calc/lib/formula/bridge'
-import { HYPERFORMULA_LICENSE_KEY } from '../tinycld/calc/lib/formula/hyperformula-license'
+import { HYPERFORMULA_CONFIG } from '../tinycld/calc/lib/formula/hyperformula-config'
 import type { WorkbookModel } from '../tinycld/calc/lib/workbook-types'
 import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
 import { bootstrapYDocFromWorkbook, CELLS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
@@ -22,7 +22,7 @@ function readRaw(doc: Y.Doc, sheetId: string, row: number, col: number): unknown
 }
 
 function startBridge(doc: Y.Doc): FormulaBridge {
-    const hf = HyperFormula.buildEmpty({ licenseKey: HYPERFORMULA_LICENSE_KEY })
+    const hf = HyperFormula.buildEmpty(HYPERFORMULA_CONFIG)
     const bridge = new FormulaBridge(doc, hf)
     bridge.start()
     return bridge

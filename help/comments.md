@@ -7,7 +7,7 @@ order: 120
 
 ## To add a comment
 
-Right-click a cell (long-press on iPad) and choose **Comment**, or use the **Insert → Comment** option from the context menu. A small popover opens — type your message and press **Comment** to post.
+Select a cell and click **Insert comment** in the toolbar, or right-click a cell (long-press on iPad) and choose **Comment**. A small popover opens — type your message and press **Comment** to post.
 
 Cells with comments are marked with a small triangle in the top-right corner.
 

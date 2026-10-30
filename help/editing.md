@@ -7,16 +7,20 @@ order: 20
 
 ## To enter a value
 
-Click a cell and start typing. Press **Enter** to commit and move down, **Tab** to commit and move right, or **Esc** to discard.
+Click a cell and start typing. Press **Enter** to commit and move down, **Tab** to commit and move right, or **Esc** to discard. To fill a table row by row, press **Tab** between the cells of a row and **Enter** at its end: the selection moves to the next row, back at the column where you started.
 
-To replace what's already there, just start typing — the existing content is overwritten. To edit in place without overwriting, double-click the cell (or press **F2** on web).
+To replace what's already there, just start typing — the existing content is overwritten. To edit in place without overwriting, double-click the cell (or press **F2** on web). On web, the cursor goes where you clicked in the text.
 
 Calc figures out the cell's type from what you type:
 
-- Numbers, percentages, and currency are stored as numbers.
+- Numbers, percentages (`45%`), currency (`$1,234.50`), and numbers with thousands separators are stored as numbers.
 - Anything starting with `=` is a formula.
-- Recognizable dates (e.g. `2026-05-16`, `5/16/2026`) are stored as dates.
-- Anything else is text.
+- Recognizable dates (e.g. `2026-05-16`, `5/16/2026`, `5/16/26`) are stored as dates. Dates are read month first.
+- Anything else is text. To keep a value as text, start it with an apostrophe (`'5/16`).
+
+When a cell has no number format yet, the format you type is kept: `$1,234.50` shows as currency, `5/16/2026` as a date.
+
+When you edit a cell, the editor shows its value without the display format — `639.09` for a cell that shows `$639.09` — so you can press **Enter** without changing anything.
 
 ## To select cells
 

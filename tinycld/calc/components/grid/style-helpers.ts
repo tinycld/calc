@@ -2,19 +2,16 @@ import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import type * as Y from 'yjs'
 import type { CellRange } from '../../hooks/grid-store'
 import { setYCellStyle, type useYCell } from '../../hooks/use-y-cell'
+import { cellEditText } from '../../lib/cell-edit-text'
 import { firstColAtOffset, firstRowAtOffset } from '../../lib/dimensions'
 import { forEachCellInRange } from '../../lib/selection-range'
 import type { CellStyle } from '../../lib/workbook-types'
-import { formatCell } from '../../lib/workbook-types'
 import { yCellKey } from '../../lib/y-cell-key'
 import { CELLS_MAP, readStyleFromYMap } from '../../lib/y-doc-bootstrap'
 
-// computeFormulaBarValue picks the right text to display in the
-// formula bar:
-//   - while editing, show the in-progress draft
-//   - for formula cells, show the formula expression (so editing
-//     round-trips the formula text rather than its cached result)
-//   - otherwise, show the same string the cell renders
+// computeFormulaBarValue picks the text the formula bar shows: the
+// in-progress draft while editing, otherwise the same editable text
+// the cell editor would start from (formula text, unformatted value).
 export function computeFormulaBarValue(
     editSession: { draft: string } | null,
     cell: ReturnType<typeof useYCell>,
@@ -22,10 +19,7 @@ export function computeFormulaBarValue(
 ): string {
     if (editSession != null) return editSession.draft
     if (!hasSelection || cell == null) return ''
-    if (cell.kind === 'formula' && cell.formula) {
-        return cell.formula
-    }
-    return formatCell(cell.kind, cell.raw, cell.formula, cell.style?.numFmt)
+    return cellEditText(cell)
 }
 
 // readCellStyle is a one-shot read of a cell's style from the Y.Doc.

@@ -40,7 +40,7 @@ describe('PivotBanner / bannerLinesFor', () => {
         const codes: PivotErrorCode[] = [
             'missing-source-sheet',
             'malformed-range',
-            'duplicate-headers',
+            'missing-field',
             'zero-data-rows',
             'no-values',
         ]

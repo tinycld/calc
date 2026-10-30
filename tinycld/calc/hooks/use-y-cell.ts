@@ -9,6 +9,7 @@ import { yCellKey } from '../lib/y-cell-key'
 import {
     buildStyleYMap,
     CELLS_MAP,
+    LINK_KEY,
     readYCell,
     STYLE_KEY,
     type YCellValue,
@@ -99,6 +100,7 @@ export function useYCell(
             prev.raw === next.raw &&
             prev.display === next.display &&
             prev.formula === next.formula &&
+            prev.link === next.link &&
             sameStyle(prev.style, next.style)
         ) {
             return prev
@@ -114,6 +116,17 @@ export function useYCell(
 // style Y.Map without going through readStyleFromYMap (which would
 // allocate a CellStyle for one field). Returns undefined when the cell
 // has no style entry or no numFmt key.
+function writeNumFmt(cell: Y.Map<unknown>, numFmt: string): void {
+    const existing = cell.get(STYLE_KEY)
+    if (existing instanceof Y.Map) {
+        existing.set('numFmt', numFmt)
+        return
+    }
+    const style = new Y.Map<unknown>()
+    style.set('numFmt', numFmt)
+    cell.set(STYLE_KEY, style)
+}
+
 function readNumFmtFromCell(cell: Y.Map<unknown>): string | undefined {
     const style = cell.get('style')
     if (!(style instanceof Y.Map)) return undefined
@@ -210,11 +223,16 @@ export function setYCellTyped(
         } else if (cell.has('formula')) {
             cell.delete('formula')
         }
+        if (input.numFmt != null && readNumFmtFromCell(cell) == null) {
+            setYCellStyle(doc, sheetId, row, col, { numFmt: input.numFmt })
+        }
     }, LOCAL_ORIGIN)
 }
 
 // setYCellFormulaResult writes the engine-computed result of a formula
-// cell back into the Y.Doc, leaving kind, formula, and style untouched.
+// cell back into the Y.Doc, leaving kind and formula untouched. The
+// style is touched only to give an unformatted cell the format its
+// result implies (`impliedNumFmt`, e.g. a date for "=A1+1" on a date).
 //
 // Tagged with FORMULA_ORIGIN so:
 //   - the realtime undo manager (which allowlists LOCAL_ORIGIN) does
@@ -236,14 +254,16 @@ export function setYCellFormulaResult(
     sheetId: string,
     row: number,
     col: number,
-    raw: CellRaw
+    raw: CellRaw,
+    impliedNumFmt?: string
 ): void {
     const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
     const key = yCellKey(sheetId, row, col)
     const cell = cellsMap.get(key)
     if (cell == null) return
     if (cell.get('kind') !== 'formula') return
-    if (cell.get('raw') === raw) return
+    const addFormat = impliedNumFmt != null && readNumFmtFromCell(cell) == null
+    if (cell.get('raw') === raw && !addFormat) return
     const formula = cell.get('formula')
     const formulaText = typeof formula === 'string' ? formula : undefined
     // Read the cell's numFmt (if any) so the cached display string
@@ -251,11 +271,12 @@ export function setYCellFormulaResult(
     // live render path recomputes display from raw + style anyway, so
     // a missing numFmt here just means the cache shows the unformatted
     // baseline — it can't drift the live UI.
-    const numFmt = readNumFmtFromCell(cell)
+    const numFmt = addFormat ? impliedNumFmt : readNumFmtFromCell(cell)
     const display = formatCell('formula', raw, formulaText, numFmt)
     doc.transact(() => {
         cell.set('raw', raw)
         cell.set('display', display)
+        if (addFormat) writeNumFmt(cell, impliedNumFmt)
     }, FORMULA_ORIGIN)
 }
 
@@ -288,6 +309,38 @@ export function clearYCellContent(doc: Y.Doc, sheetId: string, row: number, col:
         cell.delete('raw')
         cell.delete('display')
         cell.delete('formula')
+        cell.delete(LINK_KEY)
+    }, LOCAL_ORIGIN)
+}
+
+// setYCellLink links a cell's text to `url`, or removes the link when
+// `url` is null. A link added to an empty cell shows the URL as the
+// cell's text, as in Sheets.
+export function setYCellLink(
+    doc: Y.Doc,
+    sheetId: string,
+    row: number,
+    col: number,
+    url: string | null
+): void {
+    const cellsMap = doc.getMap<Y.Map<unknown>>(CELLS_MAP)
+    const key = yCellKey(sheetId, row, col)
+    doc.transact(() => {
+        let cell = cellsMap.get(key)
+        if (url == null) {
+            cell?.delete(LINK_KEY)
+            return
+        }
+        if (cell == null) {
+            cell = new Y.Map<unknown>()
+            cellsMap.set(key, cell)
+        }
+        if (!cell.has('kind')) {
+            cell.set('kind', 'string')
+            cell.set('raw', url)
+            cell.set('display', url)
+        }
+        cell.set(LINK_KEY, url)
     }, LOCAL_ORIGIN)
 }
 

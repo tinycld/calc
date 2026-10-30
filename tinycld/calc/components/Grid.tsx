@@ -9,6 +9,7 @@ import { useGridFilterControls } from '../hooks/grid/use-grid-filter-controls'
 import { useGridFormatControls } from '../hooks/grid/use-grid-format-controls'
 import { useGridFormulaBar } from '../hooks/grid/use-grid-formula-bar'
 import { useGridFreezeControls } from '../hooks/grid/use-grid-freeze-controls'
+import { useGridLinesToggle } from '../hooks/grid/use-grid-lines-toggle'
 import { useGridPrintDialog } from '../hooks/grid/use-grid-print-dialog'
 import { useGridRowResize } from '../hooks/grid/use-grid-row-resize'
 import { type GridStoreInstance, useGridStoreInstance } from '../hooks/grid/use-grid-store-instance'
@@ -20,7 +21,7 @@ import { useRefDragExtender } from '../hooks/grid/use-ref-drag-extender'
 import { useCalcShortcuts } from '../hooks/use-calc-shortcuts'
 import { useClearFormatting } from '../hooks/use-clear-formatting'
 import { useClipboard } from '../hooks/use-clipboard'
-import { useCommentShortcut } from '../hooks/use-comment-shortcut'
+import { openCommentOnSelection, useCommentShortcut } from '../hooks/use-comment-shortcut'
 import { GridStoreProvider, useGridStore } from '../hooks/use-grid-store'
 import { usePivotForSheet } from '../hooks/use-pivot-for-sheet'
 import { usePresence } from '../hooks/use-presence'
@@ -65,6 +66,7 @@ import { RowHeader } from './grid/RowHeader'
 import { autosizeCol, commitColWidth, commitRowHeight } from './grid/resize-actions'
 import { SortDialog } from './grid/SortDialog'
 import { applyFormatPainterToDest, readCellStyle } from './grid/style-helpers'
+import { LinkDialog } from './link/LinkDialog'
 import { MenuBar } from './menubar/MenuBar'
 import { NameBox } from './NameBox'
 import { NamedRangesDialog } from './named-ranges/NamedRangesDialog'
@@ -225,12 +227,12 @@ function GridInner({
     // identity changes (which happens exactly when a peer or the
     // local user resizes — see useYSheets snapshot equality).
     const colOffsets = useMemo(
-        () => buildColOffsets(cols, sheet?.colWidths),
-        [cols, sheet?.colWidths]
+        () => buildColOffsets(cols, sheet?.colWidths, sheet?.defaultColWidth),
+        [cols, sheet?.colWidths, sheet?.defaultColWidth]
     )
     const rowOffsets = useMemo(
-        () => buildRowOffsets(rows, sheet?.rowHeights),
-        [rows, sheet?.rowHeights]
+        () => buildRowOffsets(rows, sheet?.rowHeights, sheet?.defaultRowHeight),
+        [rows, sheet?.rowHeights, sheet?.defaultRowHeight]
     )
     const contentWidth = colOffsets[cols]
     const contentHeight = rowOffsets[rows]
@@ -448,6 +450,14 @@ function GridInner({
     )
     useRefDragExtender()
     useCommentShortcut(instance.store, readOnly)
+    const onInsertLink = useCallback(
+        () => instance.store.getState().openLinkDialog(),
+        [instance.store]
+    )
+    const onInsertComment = useCallback(
+        () => openCommentOnSelection(instance.store),
+        [instance.store]
+    )
     // Cmd+C / Cmd+X / Cmd+V plus paste-special variants. Wired here so
     // the shortcuts live for the lifetime of the Grid mount. The
     // clipboard hook owns the actual copy/paste plumbing.
@@ -536,6 +546,7 @@ function GridInner({
     useReactiveFilter(doc, sheetId, sheet?.frozenRows ?? 0)
     const printDialog = useGridPrintDialog(sheetId)
     const freeze = useGridFreezeControls(instance.store)
+    const gridLines = useGridLinesToggle({ doc, sheetId, sheet, readOnly })
     const sheetActions = useSheetActions(doc)
 
     const allSheets = useAllYSheets(doc)
@@ -608,6 +619,12 @@ function GridInner({
         onSetBorders: format.setBorders,
         horizontalAlign: format.horizontalAlign,
         onSetHorizontalAlign: format.setHorizontalAlign,
+        verticalAlign: format.verticalAlign,
+        onSetVerticalAlign: format.setVerticalAlign,
+        fontFamily: format.fontFamily,
+        onSetFontFamily: format.setFontFamily,
+        onInsertLink,
+        onInsertComment,
         isFormatPainterActive,
         onActivateFormatPainter: activateFormatPainter,
         onOpenFind: onOpenFind,
@@ -675,6 +692,8 @@ function GridInner({
                 allSheets={allSheets}
                 onShowSheet={id => sheetActions.showSheet(id)}
                 onShowComments={onShowComments}
+                showGridLines={gridLines.showGridLines}
+                onToggleGridLines={gridLines.toggleGridLines}
                 isReadOnly={readOnly}
             />
             <Toolbar {...toolbarPropsBundle} />
@@ -741,6 +760,9 @@ function GridInner({
                         colDragState={colResize.dragState}
                         rowDragState={rowResize.dragState}
                         visible={viewport.visible}
+                        scrollX={viewport.scrollX}
+                        scrollY={viewport.scrollY}
+                        onActivateSheet={onActivateSheet}
                         sheet={sheet}
                         cellEditorInputRef={instance.cellEditorInputRef}
                         presenceOnSheet={presenceOnSheet}
@@ -758,6 +780,7 @@ function GridInner({
             </GridCanvasTheme>
             <CellContextMenu doc={doc} sheetId={sheetId} />
             <CommentPopover driveItemId={driveItemId} sheetId={sheetId} />
+            <LinkDialog doc={doc} sheetId={sheetId} />
             <CalcCommentDrawer
                 driveItemId={driveItemId}
                 sheets={allSheets}

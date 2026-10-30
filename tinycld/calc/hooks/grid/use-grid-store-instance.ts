@@ -159,10 +159,15 @@ export function useGridStoreInstance({
     // Sheet1 → Sheet2 lands here on the new sheet's first effect pass.
     // consume() is a no-op when the staged selection targets a different
     // sheet (e.g. left over from a stale request).
+    // With nothing staged, a sheet opens with A1 selected, as in Sheets
+    // and Excel, so the toolbar and formula bar describe a cell at once.
     useEffect(() => {
         const pending = usePendingSheetSelectionStore.getState().consume(sheetId)
-        if (pending == null) return
         const api = store.getState()
+        if (pending == null) {
+            if (api.selection == null) api.selectInitialCell({ row: 1, col: 1 })
+            return
+        }
         api.selectCell(pending.cell)
         if (pending.range != null) {
             api.extendActiveRangeTo({
@@ -170,6 +175,7 @@ export function useGridStoreInstance({
                 col: pending.range.endCol,
             })
         }
+        api.revealCell(pending.cell.row, pending.cell.col)
     }, [store, sheetId])
 
     return { store, formulaBarInputRef, cellEditorInputRef, scrollToCellRef, focusSentinelRef }

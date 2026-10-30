@@ -27,18 +27,12 @@ export function readSourceTable(
         )
     }
 
-    const headers: string[] = []
+    const rawHeaders: string[] = []
     for (let c = parsed.startCol; c <= parsed.endCol; c++) {
         const cell = cells.get(yCellKey(sheetId, parsed.startRow, c))
-        headers.push(cell != null ? String(cell.raw ?? cell.display ?? '') : '')
+        rawHeaders.push(cell != null ? String(cell.raw ?? cell.display ?? '') : '')
     }
-    const duplicate = findDuplicateNonEmpty(headers)
-    if (duplicate != null) {
-        return pivotError(
-            'duplicate-headers',
-            `Header "${duplicate}" appears more than once in the first row of ${a1}.`
-        )
-    }
+    const headers = uniqueFieldNames(rawHeaders)
 
     const rows: Record<string, CellValue>[] = []
     for (let r = parsed.startRow + 1; r <= parsed.endRow; r++) {
@@ -60,12 +54,23 @@ export function readSourceTable(
     return ok({ headers, rows })
 }
 
-function findDuplicateNonEmpty(headers: string[]): string | null {
+// Excel and Google Sheets accept a repeated header and give each later
+// copy a numeric suffix in the pivot cache (" ", " 2", " 3", …). Imported
+// pivots reference fields by those cache names, so naming them the same
+// way here lets every field resolve.
+function uniqueFieldNames(headers: readonly string[]): string[] {
+    const taken = new Set(headers)
     const seen = new Set<string>()
-    for (const h of headers) {
-        if (h === '') continue
-        if (seen.has(h)) return h
-        seen.add(h)
-    }
-    return null
+    return headers.map(header => {
+        if (!seen.has(header)) {
+            seen.add(header)
+            return header
+        }
+        let n = 2
+        while (taken.has(`${header}${n}`)) n++
+        const name = `${header}${n}`
+        taken.add(name)
+        seen.add(name)
+        return name
+    })
 }

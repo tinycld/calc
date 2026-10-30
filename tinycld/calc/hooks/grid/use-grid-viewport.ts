@@ -5,6 +5,7 @@ import type {
     NativeSyntheticEvent,
     ScrollViewInstance,
 } from 'react-native'
+import { scrollIntoView } from '../../lib/scroll-into-view'
 
 export interface ViewportSnapshot {
     scrollX: number
@@ -117,13 +118,20 @@ export function useGridViewport({
         handleRef,
         () => ({
             scrollToCell: (row: number, col: number) => {
-                const x = colOffsets[Math.max(0, col - 1)] ?? 0
-                const y = rowOffsets[Math.max(0, row - 1)] ?? 0
-                horizontalRef.current?.scrollTo({ x, animated: true })
-                verticalRef.current?.scrollTo({ y, animated: true })
+                const target = scrollIntoView(
+                    { row, col },
+                    colOffsets,
+                    rowOffsets,
+                    snapshotRef.current,
+                    frozenRows,
+                    frozenCols
+                )
+                if (target.x != null)
+                    horizontalRef.current?.scrollTo({ x: target.x, animated: true })
+                if (target.y != null) verticalRef.current?.scrollTo({ y: target.y, animated: true })
             },
         }),
-        [colOffsets, rowOffsets]
+        [colOffsets, rowOffsets, frozenRows, frozenCols]
     )
 
     const visible = useMemo<GridVisibleWindow>(() => {

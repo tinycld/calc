@@ -6,6 +6,7 @@ import { LOCAL_ORIGIN } from '@tinycld/core/lib/realtime/client'
 import * as Y from 'yjs'
 import type { PivotAggregation } from '../workbook-types'
 import { PIVOTS_MAP } from '../y-doc-bootstrap'
+import { CACHE_FIELDS_KEY } from './keys'
 
 type SlotKey = 'rows' | 'cols' | 'values' | 'filters'
 
@@ -165,9 +166,15 @@ export function setBoolean(
     }, LOCAL_ORIGIN)
 }
 
+// The cache field names were read from the old source; on a new
+// source they would name the wrong columns, so they go with the range.
 export function setSourceRange(doc: Y.Doc, id: string, sourceRange: string): void {
     doc.transact(() => {
-        withEntry(doc, id, entry => entry.set('sourceRange', sourceRange))
+        withEntry(doc, id, entry => {
+            if (entry.get('sourceRange') === sourceRange) return
+            entry.set('sourceRange', sourceRange)
+            entry.delete(CACHE_FIELDS_KEY)
+        })
     }, LOCAL_ORIGIN)
 }
 

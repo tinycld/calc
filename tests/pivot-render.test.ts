@@ -60,21 +60,28 @@ describe('renderPivot — minimal layout', () => {
         })
         const tree = aggregate(t, def)
         const out = renderPivot(tree, def)
-        // Layout for this case:
-        //   row 1: [ "", 2024, 2025, "Grand Total" ]
-        //   row 2: [ "East", 10, 20, 30 ]
-        //   row 3: [ "West", 5, "", 5 ]
-        //   row 4: [ "Grand Total", 15, 20, 35 ]
-        expect(out.rows).toBe(4)
+        // Layout for this case (Google Sheets / Excel tabular form):
+        //   row 1: [ "Sum of Sales", "Year", "", "" ]
+        //   row 2: [ "Region", 2024, 2025, "Grand Total" ]
+        //   row 3: [ "East", 10, 20, 30 ]
+        //   row 4: [ "West", 5, "", 5 ]
+        //   row 5: [ "Grand Total", 15, 20, 35 ]
+        expect(out.rows).toBe(5)
         expect(out.cols).toBe(4)
-        expect(out.headerRowCount).toBe(1)
+        expect(out.headerRowCount).toBe(2)
         expect(out.headerColCount).toBe(1)
-        expect(pick(out.cells, 1, 2)!.display).toBe('2024')
-        expect(pick(out.cells, 2, 1)!.display).toBe('East')
-        expect(pick(out.cells, 2, 2)!.raw).toBe(10)
-        expect(pick(out.cells, 2, 4)!.raw).toBe(30)
-        expect(pick(out.cells, 4, 1)!.display).toBe('Grand Total')
-        expect(pick(out.cells, 4, 4)!.raw).toBe(35)
+        expect(pick(out.cells, 1, 1)!.display).toBe('Sum of Sales')
+        expect(pick(out.cells, 1, 2)!.display).toBe('Year')
+        expect(pick(out.cells, 2, 1)!.display).toBe('Region')
+        expect(pick(out.cells, 2, 2)!.display).toBe('2024')
+        expect(pick(out.cells, 2, 4)!.display).toBe('Grand Total')
+        expect(pick(out.cells, 3, 1)!.display).toBe('East')
+        expect(pick(out.cells, 3, 2)!.raw).toBe(10)
+        expect(pick(out.cells, 3, 4)!.raw).toBe(30)
+        expect(pick(out.cells, 4, 3)!.display).toBe('')
+        expect(pick(out.cells, 5, 1)!.display).toBe('Grand Total')
+        expect(pick(out.cells, 5, 4)!.raw).toBe(35)
+        expect(out.grandTotalRow).toBe(5)
     })
 
     it('omits grand-total row/col when disabled', () => {
@@ -112,12 +119,16 @@ describe('renderPivot — minimal layout', () => {
         })
         const tree = aggregate(t, def)
         const out = renderPivot(tree, def)
-        // Two header rows: row 1 = col-field values; row 2 = per-cell
-        // value-field labels.
-        expect(out.headerRowCount).toBe(2)
-        expect(pick(out.cells, 1, 2)!.display).toBe('2024')
-        expect(pick(out.cells, 2, 2)!.display).toBe('Sum of Sales')
-        expect(pick(out.cells, 2, 3)!.display).toBe('Sum of Cost')
+        // Three header rows: row 1 = col-field captions; row 2 = col
+        // items; row 3 = row-field captions + per-cell value labels.
+        expect(out.headerRowCount).toBe(3)
+        expect(pick(out.cells, 1, 2)!.display).toBe('Year')
+        expect(pick(out.cells, 2, 2)!.display).toBe('2024')
+        expect(pick(out.cells, 2, 4)!.display).toBe('2025')
+        expect(pick(out.cells, 3, 1)!.display).toBe('Region')
+        expect(pick(out.cells, 3, 2)!.display).toBe('Sum of Sales')
+        expect(pick(out.cells, 3, 3)!.display).toBe('Sum of Cost')
+        expect(pick(out.cells, 4, 2)!.raw).toBe(10)
     })
 
     it('applies per-value numFmt to data cells', () => {
@@ -176,5 +187,126 @@ describe('renderPivot — minimal layout', () => {
         }
         expect(labels).toContain('East Total')
         expect(labels).toContain('West Total')
+    })
+})
+
+function displayRow(out: ReturnType<typeof renderPivot>, r: number): string[] {
+    const row: string[] = []
+    for (let c = 1; c <= out.cols; c++) row.push(pick(out.cells, r, c)?.display ?? '')
+    return row
+}
+
+describe('renderPivot — Google Sheets import parity', () => {
+    // Shaped after workers-comp.xlsx: a text code column, a text name
+    // column and a currency total.
+    const source = table(
+        ['Code', 'Employee', 'Total'],
+        [
+            [str('Sales'), str('Ann'), num(100)],
+            [str('Clerical'), str('Bob'), num(50.5)],
+            [str('Sales'), str('Bob'), num(0)],
+            [str('Clerical'), str('Ann'), num(25)],
+            [str('Asbestos'), str('Cy'), num(10)],
+        ]
+    )
+    const money = '"$"#,##0.00'
+
+    it('uses a value displayName verbatim as its caption', () => {
+        const def = baseDef({
+            rows: [{ sourceColumn: 'Code' }],
+            values: [{ sourceColumn: 'Total', aggregation: 'sum', displayName: 'SUM of Total' }],
+        })
+        const out = renderPivot(aggregate(source, def), def)
+        expect(displayRow(out, 1)).toEqual(['Code', 'SUM of Total'])
+    })
+
+    it('gives one column per value and no grand-total column when there are no column fields', () => {
+        const def = baseDef({
+            rows: [{ sourceColumn: 'Code' }],
+            values: [
+                { sourceColumn: 'Code', aggregation: 'sum', displayName: 'SUM of Code' },
+                { sourceColumn: 'Employee', aggregation: 'sum', displayName: 'SUM of Employee' },
+                {
+                    sourceColumn: 'Total',
+                    aggregation: 'sum',
+                    displayName: 'SUM of Total',
+                    numFmt: money,
+                },
+            ],
+        })
+        const out = renderPivot(aggregate(source, def), def)
+        expect(out.cols).toBe(4)
+        expect(out.headerRowCount).toBe(1)
+        expect(displayRow(out, 1)).toEqual([
+            'Code',
+            'SUM of Code',
+            'SUM of Employee',
+            'SUM of Total',
+        ])
+        expect(displayRow(out, 2)).toEqual(['Asbestos', '0', '0', '$10.00'])
+        expect(displayRow(out, 3)).toEqual(['Clerical', '0', '0', '$75.50'])
+        expect(displayRow(out, 4)).toEqual(['Sales', '0', '0', '$100.00'])
+        expect(displayRow(out, 5)).toEqual(['Grand Total', '0', '0', '$185.50'])
+        expect(out.rows).toBe(5)
+        expect(out.grandTotalRow).toBe(5)
+    })
+
+    it('lays out row x column fields with captions, blanks for empty combos and 0 for zero sums', () => {
+        const def = baseDef({
+            rows: [{ sourceColumn: 'Employee' }],
+            cols: [{ sourceColumn: 'Code' }],
+            values: [
+                {
+                    sourceColumn: 'Total',
+                    aggregation: 'sum',
+                    displayName: 'SUM of Total',
+                    numFmt: money,
+                },
+            ],
+        })
+        const out = renderPivot(aggregate(source, def), def)
+        expect(out.headerRowCount).toBe(2)
+        expect(displayRow(out, 1)).toEqual(['SUM of Total', 'Code', '', '', ''])
+        expect(displayRow(out, 2)).toEqual([
+            'Employee',
+            'Asbestos',
+            'Clerical',
+            'Sales',
+            'Grand Total',
+        ])
+        expect(displayRow(out, 3)).toEqual(['Ann', '', '$25.00', '$100.00', '$125.00'])
+        expect(displayRow(out, 4)).toEqual(['Bob', '', '$50.50', '$0.00', '$50.50'])
+        expect(displayRow(out, 5)).toEqual(['Cy', '$10.00', '', '', '$10.00'])
+        expect(displayRow(out, 6)).toEqual([
+            'Grand Total',
+            '$10.00',
+            '$75.50',
+            '$100.00',
+            '$185.50',
+        ])
+    })
+
+    it('marks the field captions and the grand-total row for styling', () => {
+        const def = baseDef({
+            rows: [{ sourceColumn: 'Employee' }],
+            cols: [{ sourceColumn: 'Code' }],
+            values: [{ sourceColumn: 'Total', aggregation: 'sum' }],
+        })
+        const out = renderPivot(aggregate(source, def), def)
+        expect(Array.from(out.fieldLabelCells).sort()).toEqual(['1:2', '2:1'])
+        expect(out.grandTotalRow).toBe(6)
+    })
+
+    it('omits the grand-total row when there are no row fields', () => {
+        const def = baseDef({
+            cols: [{ sourceColumn: 'Code' }],
+            values: [{ sourceColumn: 'Total', aggregation: 'sum' }],
+        })
+        const out = renderPivot(aggregate(source, def), def)
+        // Header rows (caption + items) and the single data row.
+        expect(out.rows).toBe(3)
+        expect(out.grandTotalRow).toBeNull()
+        expect(displayRow(out, 2)).toEqual(['Asbestos', 'Clerical', 'Sales', 'Grand Total'])
+        expect(displayRow(out, 3)).toEqual(['10', '75.5', '100', '185.5'])
     })
 })

@@ -3,23 +3,39 @@ import type { CellRaw } from '../workbook-types'
 import type { YCellValue } from '../y-doc-bootstrap'
 
 // hfInputForCell converts a Y.Doc cell snapshot into the value
-// HyperFormula expects via setCellContents:
+// HyperFormula expects via setCellContents. HyperFormula parses any
+// string it receives the way it parses typed input, so each kind is
+// handed over in a form that cannot be re-read as something else:
 //
-//   - formula cells -> the formula text ('=SUM(A1:A2)') so HF parses
-//     and tracks dependencies
-//   - number/string/boolean -> the raw scalar
-//   - date -> the ISO string (HF parses it as text; date semantics
-//     can be wired later via HF's date config)
-//
-// Cells with no kind / unknown kind fall back to the raw value or
-// null, leaving HF to treat them as empty.
+//   - formula cells -> the formula text ('=SUM(A1:A2)')
+//   - string cells -> the text behind a leading apostrophe, which HF
+//     strips; without it, text such as "12/6/24", "TRUE" or "=x" would
+//     become a date, a boolean or a formula inside the engine
+//   - date cells -> "YYYY-MM-DD[ hh:mm:ss]", a date format the engine
+//     is configured to read (HYPERFORMULA_CONFIG), so date math works
+//     and results carry a date type
+//   - number/boolean -> the raw scalar
 export function hfInputForCell(cell: YCellValue | null): RawCellContent {
     if (cell == null) return null
     if (cell.kind === 'formula') {
         return cell.formula ?? null
     }
     if (cell.raw == null) return null
+    if (cell.kind === 'string' && typeof cell.raw === 'string') {
+        return cell.raw === '' ? null : `'${cell.raw}`
+    }
+    if (cell.kind === 'date' && typeof cell.raw === 'string') {
+        return isoToEngineDate(cell.raw)
+    }
     return cell.raw
+}
+
+// isoToEngineDate drops the "T" separator and any zone suffix: doc
+// date-times are wall-clock values (see number-format/format.ts).
+function isoToEngineDate(iso: string): string {
+    const match = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}(?::\d{2})?))?/.exec(iso)
+    if (match == null) return `'${iso}`
+    return match[2] == null ? match[1] : `${match[1]} ${match[2]}`
 }
 
 // normalizeHfValue converts a HyperFormula cell value (the type of

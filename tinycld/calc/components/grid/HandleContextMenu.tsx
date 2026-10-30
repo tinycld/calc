@@ -1,14 +1,13 @@
 import { Menu } from '@tinycld/core/ui/menu'
 import { useCallback, useMemo } from 'react'
 import { useGridStore, useGridStoreApi } from '../../hooks/use-grid-store'
-import { DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT } from '../../lib/dimensions'
 
 interface HandleContextMenuProps {
     onAutosizeCol: (col: number) => void
     // onResetCol/onResetRow are wired to the same setYColWidth/setYRowHeight
     // setters so writing the default deletes the entry — see lib/dimensions.ts.
-    onResetCol: (col: number, width: number) => void
-    onResetRow: (row: number, height: number) => void
+    onResetCol: (col: number, width: null) => void
+    onResetRow: (row: number, height: null) => void
     // Current sheet dimensions are needed for clamp logic on delete and
     // to disable delete when only one row/column remains.
     rowCount: number
@@ -60,9 +59,9 @@ export function HandleContextMenu({
     const onResetItem = useCallback(() => {
         if (target == null) return
         if (target.axis === 'col') {
-            onResetCol(target.index, DEFAULT_COL_WIDTH)
+            onResetCol(target.index, null)
         } else {
-            onResetRow(target.index, DEFAULT_ROW_HEIGHT)
+            onResetRow(target.index, null)
         }
         onClose()
     }, [target, onResetCol, onResetRow, onClose])

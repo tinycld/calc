@@ -376,3 +376,30 @@ func stripPriorityAttr(s string) string {
 }
 
 func strPtr(s string) *string { return &s }
+
+// TestBootstrapKeepsConditionalFormatRuleOrder: rules apply in priority
+// order (first match wins), so the bootstrapped Y.Array must hold them,
+// and each rule's ranges, in model order.
+func TestBootstrapKeepsConditionalFormatRuleOrder(t *testing.T) {
+	gt := "10"
+	model := WorkbookModel{Sheets: []WorksheetModel{{
+		Name: "Sheet1", RowCount: 1, ColCount: 1, Cells: map[string]CellValueDTO{},
+		ConditionalFormats: []ConditionalFormatRule{
+			{ID: "first", Ranges: []string{"A1:A5", "C1:C5"}, Condition: ConditionalCondition{Type: "numberGreater", Value1: &gt}},
+			{ID: "second", Ranges: []string{"B1:B5"}, Condition: ConditionalCondition{Type: "numberGreater", Value1: &gt}},
+			{ID: "third", Ranges: []string{"D1:D5"}, Condition: ConditionalCondition{Type: "numberGreater", Value1: &gt}},
+		},
+	}}}
+	_, snap := bootstrapAndSnapshot(t, model)
+	rules := snap.Sheets[0].ConditionalFormats
+	var ids []string
+	for _, r := range rules {
+		ids = append(ids, r.ID)
+	}
+	if strings.Join(ids, ",") != "first,second,third" {
+		t.Errorf("rule order = %v, want first,second,third", ids)
+	}
+	if len(rules) > 0 && strings.Join(rules[0].Ranges, ",") != "A1:A5,C1:C5" {
+		t.Errorf("first rule ranges = %v, want A1:A5,C1:C5", rules[0].Ranges)
+	}
+}

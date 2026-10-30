@@ -1,68 +1,77 @@
-// Lay a GroupedTree out as a 2D cell grid.
-// Header layout:
-//   - Top-left empty block: headerRowCount x headerColCount
-//   - Above the data block: one header row per col field, plus one
-//     extra "value labels" row when len(values) > 1.
-//   - Left of the data block: one column per row field.
+// Lay a GroupedTree out as a 2D cell grid, in the tabular form Google
+// Sheets and Excel give an imported pivot.
+// Header band (headerRowCount rows):
+//   - With col fields: a caption row (the single value's caption in
+//     the corner, then the col-field captions), one item row per col
+//     field, and a value-caption row when there is more than one value.
+//   - Without col fields: one row of row-field and value captions.
+//   - The last header row carries the row-field captions.
+// Left of the data block: one column per row field.
 // Subtotal rows (rowSubtotals=true) appear inside the row band, grouped
 // by the prefix tuple of the row keys. Grand totals are at the bottom /
-// right; the corner cell is the row-grand total of all values.
+// right. A grand-total column needs col fields and a grand-total row
+// needs row fields: without them it would only repeat the one data
+// column or row.
 
 import { applyNumFmt } from '../number-format/format'
-import type { CellValue, PivotDefinition } from '../workbook-types'
+import type { CellValue, PivotDefinition, PivotField } from '../workbook-types'
 import type { GroupedTree, RenderedPivot } from './types'
 
+// With col fields, row 1 holds the captions and the item rows start below.
+const FIRST_ITEM_ROW = 2
+
+interface Layout {
+    valueCount: number
+    headerRowCount: number
+    headerColCount: number
+    showGrandTotalCol: boolean
+    showGrandTotalRow: boolean
+}
+
+function planLayout(def: PivotDefinition): Layout {
+    const hasCols = def.cols.length > 0
+    const captionRows = hasCols ? 1 + def.cols.length : 0
+    const valueRow = def.values.length > 1 ? 1 : 0
+    return {
+        valueCount: Math.max(1, def.values.length),
+        headerRowCount: Math.max(1, captionRows + valueRow),
+        headerColCount: def.rows.length,
+        showGrandTotalCol: def.rowGrandTotals && hasCols,
+        showGrandTotalRow: def.colGrandTotals && def.rows.length > 0,
+    }
+}
+
 export function renderPivot(tree: GroupedTree, def: PivotDefinition): RenderedPivot {
-    const valueCount = Math.max(1, def.values.length)
-    const headerRowCount = def.cols.length + (def.values.length > 1 ? 1 : 0) || 1
-    const headerColCount = def.rows.length
+    const layout = planLayout(def)
+    const { valueCount, headerRowCount, headerColCount } = layout
 
     // Row band: each row key produces a render-row; if rowSubtotals,
     // group by the first row field and emit a subtotal after each group.
     const renderRows = buildRenderRows(tree, def)
-    const renderCols = buildRenderCols(tree, def)
+    const renderCols = buildRenderCols(tree)
 
-    const totalRows = headerRowCount + renderRows.length + (def.colGrandTotals ? 1 : 0)
-    const totalCols =
-        headerColCount + renderCols.length * valueCount + (def.rowGrandTotals ? valueCount : 0)
+    const grandTotalRow = layout.showGrandTotalRow ? headerRowCount + renderRows.length + 1 : null
+    const totalRows = grandTotalRow ?? headerRowCount + renderRows.length
+    const dataCols = headerColCount + renderCols.length * valueCount
+    const totalCols = Math.max(
+        dataCols + (layout.showGrandTotalCol ? valueCount : 0),
+        headerColCount + def.cols.length
+    )
 
     const cells = new Map<string, CellValue>()
+    const fieldLabelCells = new Set<string>()
 
-    // ----- header band -----
-    writeColHeaders(cells, def, renderCols, headerRowCount, headerColCount)
-    if (def.rowGrandTotals) {
-        const startCol = headerColCount + renderCols.length * valueCount
-        for (let v = 0; v < valueCount; v++) {
-            cells.set(`1:${startCol + v + 1}`, stringCell(valueCount > 1 ? '' : 'Grand Total'))
-            if (valueCount > 1) {
-                cells.set(`${headerRowCount}:${startCol + v + 1}`, stringCell(valueLabel(def, v)))
-            }
-        }
-        if (valueCount === 1 && headerRowCount > 1) {
-            cells.set(`${headerRowCount}:${startCol + 1}`, stringCell('Grand Total'))
-        }
-    }
+    writeHeaderBand(cells, fieldLabelCells, def, layout, renderCols)
 
-    // ----- row band + data -----
     for (let i = 0; i < renderRows.length; i++) {
         const r = renderRows[i]
         const renderRowIdx = headerRowCount + i + 1
-        writeRowHeaders(cells, def, r, renderRowIdx, headerColCount)
-        writeDataCells(cells, def, tree, r, renderRowIdx, renderCols, headerColCount, valueCount)
+        writeRowHeaders(cells, def, r, renderRowIdx)
+        writeDataCells(cells, def, layout, tree, r, renderRowIdx, renderCols)
     }
 
-    // ----- grand-total row -----
-    if (def.colGrandTotals) {
-        writeGrandTotalRow(
-            cells,
-            def,
-            tree,
-            renderCols,
-            headerRowCount,
-            renderRows.length,
-            headerColCount,
-            valueCount
-        )
+    if (grandTotalRow != null) {
+        writeGrandTotalRow(cells, def, layout, tree, renderCols, grandTotalRow)
     }
 
     return {
@@ -71,6 +80,8 @@ export function renderPivot(tree: GroupedTree, def: PivotDefinition): RenderedPi
         cells,
         headerRowCount,
         headerColCount,
+        fieldLabelCells,
+        grandTotalRow,
     }
 }
 
@@ -79,6 +90,8 @@ export function renderPivot(tree: GroupedTree, def: PivotDefinition): RenderedPi
 type RenderRow =
     | { kind: 'data'; tuple: string[]; key: string }
     | { kind: 'subtotal'; prefix: string[]; prefixKey: string }
+
+type RenderCol = { tuple: string[]; key: string }
 
 function buildRenderRows(tree: GroupedTree, def: PivotDefinition): RenderRow[] {
     if (tree.rowKeys.length === 0) {
@@ -117,10 +130,7 @@ function buildRenderRows(tree: GroupedTree, def: PivotDefinition): RenderRow[] {
     return out
 }
 
-function buildRenderCols(
-    tree: GroupedTree,
-    _def: PivotDefinition
-): Array<{ tuple: string[]; key: string }> {
+function buildRenderCols(tree: GroupedTree): RenderCol[] {
     if (tree.colKeys.length === 0) {
         return [{ tuple: [], key: JSON.stringify([]) }]
     }
@@ -129,37 +139,56 @@ function buildRenderCols(
 
 // ---------- header writers ----------
 
-function writeColHeaders(
+function writeHeaderBand(
     cells: Map<string, CellValue>,
+    fieldLabelCells: Set<string>,
     def: PivotDefinition,
-    renderCols: Array<{ tuple: string[] }>,
-    headerRowCount: number,
-    headerColCount: number
+    layout: Layout,
+    renderCols: RenderCol[]
 ): void {
-    const valueCount = Math.max(1, def.values.length)
-    // Each col-field row prints the per-tuple component, spanning
-    // valueCount cells.
+    const { valueCount, headerRowCount, headerColCount } = layout
+    const setLabel = (key: string, text: string) => {
+        cells.set(key, stringCell(text))
+        fieldLabelCells.add(key)
+    }
+    const colBase = (j: number) => headerColCount + j * valueCount + 1
+    const grandCol = colBase(renderCols.length)
+
+    for (let i = 0; i < def.rows.length; i++) {
+        setLabel(`${headerRowCount}:${i + 1}`, fieldCaption(def.rows[i]))
+    }
+
+    if (def.cols.length === 0) {
+        for (let v = 0; v < def.values.length; v++) {
+            cells.set(`1:${headerColCount + v + 1}`, stringCell(valueLabel(def, v)))
+        }
+        return
+    }
+
+    // The corner holds the value caption only when one value names the
+    // whole data block and a row-header column exists to hold it.
+    if (def.values.length === 1 && headerColCount > 0) {
+        cells.set('1:1', stringCell(valueLabel(def, 0)))
+    }
+    for (let i = 0; i < def.cols.length; i++) {
+        setLabel(`1:${headerColCount + i + 1}`, fieldCaption(def.cols[i]))
+    }
     for (let level = 0; level < def.cols.length; level++) {
         for (let j = 0; j < renderCols.length; j++) {
-            const tuple = renderCols[j].tuple
-            const text = tuple[level] ?? ''
-            const colBase = headerColCount + j * valueCount + 1
-            cells.set(`${level + 1}:${colBase}`, stringCell(text))
+            const text = renderCols[j].tuple[level] ?? ''
+            cells.set(`${FIRST_ITEM_ROW + level}:${colBase(j)}`, stringCell(text))
         }
     }
+    if (layout.showGrandTotalCol) {
+        cells.set(`${FIRST_ITEM_ROW}:${grandCol}`, stringCell('Grand Total'))
+    }
     if (def.values.length > 1) {
-        // Last header row prints "Sum of <field>" per value.
-        const lastRow = headerRowCount
-        for (let j = 0; j < renderCols.length; j++) {
-            const colBase = headerColCount + j * valueCount + 1
+        const blocks = renderCols.length + (layout.showGrandTotalCol ? 1 : 0)
+        for (let j = 0; j < blocks; j++) {
             for (let v = 0; v < def.values.length; v++) {
-                cells.set(`${lastRow}:${colBase + v}`, stringCell(valueLabel(def, v)))
+                cells.set(`${headerRowCount}:${colBase(j) + v}`, stringCell(valueLabel(def, v)))
             }
         }
-    } else if (def.cols.length === 0 && def.values.length === 1) {
-        // No col fields, single value — emit the value label as the
-        // single column heading.
-        cells.set(`1:${headerColCount + 1}`, stringCell(valueLabel(def, 0)))
     }
 }
 
@@ -167,54 +196,45 @@ function writeRowHeaders(
     cells: Map<string, CellValue>,
     def: PivotDefinition,
     r: RenderRow,
-    rowIdx: number,
-    _headerColCount: number
+    rowIdx: number
 ): void {
     if (r.kind === 'data') {
         for (let level = 0; level < def.rows.length; level++) {
             cells.set(`${rowIdx}:${level + 1}`, stringCell(r.tuple[level] ?? ''))
         }
-        // Pure no-rows pivot — no row-label column to write.
-    } else {
-        cells.set(`${rowIdx}:1`, stringCell(`${r.prefix[0]} Total`))
-        // Subsequent row-header columns are left blank.
-        for (let level = 1; level < def.rows.length; level++) {
-            cells.set(`${rowIdx}:${level + 1}`, stringCell(''))
-        }
+        return
+    }
+    cells.set(`${rowIdx}:1`, stringCell(`${r.prefix[0]} Total`))
+    for (let level = 1; level < def.rows.length; level++) {
+        cells.set(`${rowIdx}:${level + 1}`, stringCell(''))
     }
 }
 
 function writeDataCells(
     cells: Map<string, CellValue>,
     def: PivotDefinition,
+    layout: Layout,
     tree: GroupedTree,
     r: RenderRow,
     renderRowIdx: number,
-    renderCols: Array<{ tuple: string[]; key: string }>,
-    headerColCount: number,
-    valueCount: number
+    renderCols: RenderCol[]
 ): void {
+    const { valueCount, headerColCount } = layout
     for (let j = 0; j < renderCols.length; j++) {
         const c = renderCols[j]
         const colBase = headerColCount + j * valueCount + 1
         const folded =
             r.kind === 'data'
                 ? tree.cells.get(r.key)?.get(c.key)
-                : r.kind === 'subtotal'
-                  ? subtotalCellValues(tree, def, r.prefixKey, c.key)
-                  : undefined
+                : subtotalCellValues(tree, def, r.prefixKey, c.key)
         for (let v = 0; v < valueCount; v++) {
             cells.set(`${renderRowIdx}:${colBase + v}`, numericCell(folded?.[v], def, v))
         }
     }
-    if (def.rowGrandTotals) {
+    if (layout.showGrandTotalCol) {
         const colBase = headerColCount + renderCols.length * valueCount + 1
         const totals =
-            r.kind === 'data'
-                ? tree.rowTotals.get(r.key)
-                : r.kind === 'subtotal'
-                  ? rowSubtotalGrand(tree, def, r.prefixKey)
-                  : undefined
+            r.kind === 'data' ? tree.rowTotals.get(r.key) : rowSubtotalGrand(tree, def, r.prefixKey)
         for (let v = 0; v < valueCount; v++) {
             cells.set(`${renderRowIdx}:${colBase + v}`, numericCell(totals?.[v], def, v))
         }
@@ -224,14 +244,12 @@ function writeDataCells(
 function writeGrandTotalRow(
     cells: Map<string, CellValue>,
     def: PivotDefinition,
+    layout: Layout,
     tree: GroupedTree,
-    renderCols: Array<{ tuple: string[]; key: string }>,
-    headerRowCount: number,
-    renderRowCount: number,
-    headerColCount: number,
-    valueCount: number
+    renderCols: RenderCol[],
+    grandRow: number
 ): void {
-    const grandRow = headerRowCount + renderRowCount + 1
+    const { valueCount, headerColCount } = layout
     cells.set(`${grandRow}:1`, stringCell('Grand Total'))
     for (let j = 0; j < renderCols.length; j++) {
         const c = renderCols[j]
@@ -241,7 +259,7 @@ function writeGrandTotalRow(
             cells.set(`${grandRow}:${colBase + v}`, numericCell(totals?.[v], def, v))
         }
     }
-    if (def.rowGrandTotals) {
+    if (layout.showGrandTotalCol) {
         const colBase = headerColCount + renderCols.length * valueCount + 1
         for (let v = 0; v < valueCount; v++) {
             cells.set(`${grandRow}:${colBase + v}`, numericCell(tree.grandTotals[v], def, v))
@@ -322,12 +340,16 @@ function numericCell(n: number | undefined, def: PivotDefinition, valueIdx: numb
     }
 }
 
+// An imported displayName is already the whole caption ("SUM of Total"),
+// so the aggregation prefix applies only to the default caption.
 function valueLabel(def: PivotDefinition, valueIdx: number): string {
     const v = def.values[valueIdx]
     if (v == null) return ''
-    const verb = aggregationVerb(v.aggregation)
-    const label = v.displayName ?? v.sourceColumn
-    return `${verb} of ${label}`
+    return v.displayName ?? `${aggregationVerb(v.aggregation)} of ${v.sourceColumn}`
+}
+
+function fieldCaption(f: PivotField): string {
+    return f.displayName ?? f.sourceColumn
 }
 
 function aggregationVerb(agg: PivotDefinition['values'][number]['aggregation']): string {

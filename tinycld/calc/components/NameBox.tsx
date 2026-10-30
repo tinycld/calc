@@ -277,7 +277,7 @@ function selectionToExpression(selection: Selection, activeSheetName: string): s
 // Sheet-qualified addresses targeting a different sheet stage the
 // selection in the pending store and call onActivateSheet — the new
 // sheet's grid effect consumes it on mount.
-function tryJumpToAddress(
+export function tryJumpToAddress(
     store: ReturnType<typeof useGridStoreApi>,
     sheets: ReturnType<typeof useYSheets>,
     currentSheetId: string,
@@ -305,14 +305,13 @@ function tryJumpToAddress(
     if (colon < 0) {
         const cell = parseCellLabel(raw)
         if (cell == null) return false
-        store.getState().selectCell(cell)
+        selectAndReveal(store, cell, null)
         return true
     }
     const startCell = parseCellLabel(raw.slice(0, colon))
     const endCell = parseCellLabel(raw.slice(colon + 1))
     if (startCell == null || endCell == null) return false
-    store.getState().selectCell(startCell)
-    store.getState().extendActiveRangeTo(endCell)
+    selectAndReveal(store, startCell, endCell)
     return true
 }
 
@@ -367,14 +366,29 @@ function jumpToExpression(
     if (colon < 0) {
         const cell = parseCellLabel(trimmed)
         if (cell == null) return
-        store.getState().selectCell(cell)
+        selectAndReveal(store, cell, null)
         return
     }
     const start = parseCellLabel(trimmed.slice(0, colon))
     const end = parseCellLabel(trimmed.slice(colon + 1))
     if (start == null || end == null) return
-    store.getState().selectCell(start)
-    store.getState().extendActiveRangeTo(end)
+    selectAndReveal(store, start, end)
+}
+
+// selectAndReveal selects a cell (or a range from it) on the current
+// sheet, scrolls the grid to it — a jump far off-screen would otherwise
+// move the selection where the user cannot see it — and hands keyboard
+// focus back to the grid so typing goes into the cell, as in Sheets.
+function selectAndReveal(
+    store: ReturnType<typeof useGridStoreApi>,
+    start: { row: number; col: number },
+    end: { row: number; col: number } | null
+): void {
+    const api = store.getState()
+    api.selectCell(start)
+    if (end != null) api.extendActiveRangeTo(end)
+    api.revealCell(start.row, start.col)
+    api.focusGrid()
 }
 
 interface ApplyJumpArgs {
@@ -389,8 +403,8 @@ interface ApplyJumpArgs {
 // applyJump applies a parsed cell/range jump. When the target sheet
 // differs from the current one it stages the selection in the pending
 // store and calls onActivateSheet — the new sheet's grid effect picks
-// the selection up on mount. Same-sheet jumps call selectCell /
-// extendActiveRangeTo directly.
+// the selection up on mount. Same-sheet jumps go through
+// selectAndReveal.
 function applyJump({
     store,
     currentSheetId,
@@ -408,10 +422,7 @@ function applyJump({
         onActivateSheet(targetSheetId)
         return
     }
-    store.getState().selectCell(cell)
-    if (range != null) {
-        store.getState().extendActiveRangeTo({ row: range.endRow, col: range.endCol })
-    }
+    selectAndReveal(store, cell, range == null ? null : { row: range.endRow, col: range.endCol })
 }
 
 function rangeOrNull(result: {

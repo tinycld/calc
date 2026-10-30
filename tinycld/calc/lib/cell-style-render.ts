@@ -1,5 +1,7 @@
 import { normalizeColor } from '@tinycld/core/ui/color-picker/normalize-color'
-import type { TextStyle, ViewStyle } from 'react-native'
+import { Platform, type TextStyle, type ViewStyle } from 'react-native'
+import { resolveFontFamily } from './font-family'
+import type { WorkbookFont } from './workbook-default-font'
 import type {
     CellAlignment,
     CellBorderEdge,
@@ -7,8 +9,25 @@ import type {
     CellBorders,
     CellFill,
     CellFont,
+    CellKind,
+    CellRaw,
     CellStyle,
 } from './workbook-types'
+
+// Font sizes in the doc are points, as in xlsx; the screen draws
+// pixels (96 per inch, 72 points per inch).
+export const DEFAULT_FONT_SIZE_PT = 10
+
+export function pointsToPixels(pt: number): number {
+    return (pt * 4) / 3
+}
+
+// CellContent is what a cell holds, which decides its default
+// ("General") horizontal alignment.
+export interface CellContent {
+    kind: CellKind
+    raw: CellRaw | Date
+}
 
 // CellRenderStyle is the bundle of RN style values produced from a
 // partial CellStyle. A single helper produces all three layers
@@ -35,33 +54,59 @@ export interface CellRenderStyle {
 }
 
 // cellStyleToRenderProps converts a partial CellStyle into the RN
-// style props the cell render path needs. Only attributes present on
-// the input map to output values — absence at any level means "leave
-// the defaults alone".
+// style props the cell render path needs. Attributes the style leaves
+// unset get the spreadsheet defaults: the workbook's default font
+// (`baseFont`, else 10pt in the platform font), bottom alignment, and
+// the "General" horizontal alignment of the cell's content (text
+// left, numbers and dates right, booleans and errors centered).
 //
-// The inverse mapping (excelize -> CellStyle) lives server-side in
-// bootstrap.go's readWorkbookCellStyle. The forward mapping (CellStyle
-// -> excelize) lives in style_reflect.go's overlayStyle. This file is
-// the third edge of the triangle: CellStyle -> RN render props.
-export function cellStyleToRenderProps(style: CellStyle | undefined): CellRenderStyle {
-    if (style == null) {
-        return { viewStyle: {}, textStyle: {}, numberOfLines: 1 }
-    }
-
-    const horizontal = horizontalAlignmentStyles(style.alignment?.horizontal)
+// The inverse mapping (xlsx -> CellStyle) lives server-side in
+// style_map.go; the forward mapping (CellStyle -> xlsx) in persist.go.
+// This file is the third edge of the triangle: CellStyle -> RN render
+// props.
+export function cellStyleToRenderProps(
+    style: CellStyle | undefined,
+    content?: CellContent,
+    baseFont?: WorkbookFont
+): CellRenderStyle {
+    const horizontal = horizontalAlignmentStyles(
+        style?.alignment?.horizontal ?? generalAlignment(content)
+    )
+    const fontSize =
+        validSize(style?.font?.size) ?? validSize(baseFont?.size) ?? DEFAULT_FONT_SIZE_PT
     const textStyle: TextStyle = {
-        ...fontTextStyle(style.font),
+        fontSize: pointsToPixels(fontSize),
+        ...fontFamilyStyle(fontName(style?.font, baseFont)),
         ...horizontal.text,
+        ...fontTextStyle(style?.font),
     }
     const viewStyle: ViewStyle = {
-        ...fillViewStyle(style.fill),
-        ...bordersViewStyle(style.borders),
         ...horizontal.view,
-        ...verticalAlignmentStyle(style.alignment?.vertical),
+        ...fillViewStyle(style?.fill),
+        ...bordersViewStyle(style?.borders),
+        justifyContent: verticalJustify(style?.alignment?.vertical),
     }
-    const numberOfLines = style.alignment?.wrapText ? undefined : 1
+    const numberOfLines = style?.alignment?.wrapText ? undefined : 1
 
     return { viewStyle, textStyle, numberOfLines }
+}
+
+function validSize(size: number | undefined): number | undefined {
+    return typeof size === 'number' && size > 0 ? size : undefined
+}
+
+// A cell's own font name replaces the workbook default even when the
+// platform has no family for it: the cell then draws in the system
+// font, not the default font's family.
+function fontName(font: CellFont | undefined, baseFont: WorkbookFont | undefined) {
+    if (typeof font?.name === 'string' && font.name !== '') return font.name
+    return baseFont?.name
+}
+
+function fontFamilyStyle(name: string | undefined): TextStyle {
+    if (typeof name !== 'string' || name === '') return {}
+    const family = resolveFontFamily(name, Platform.OS)
+    return family != null ? { fontFamily: family } : {}
 }
 
 function fontTextStyle(font: CellFont | undefined): TextStyle {
@@ -71,8 +116,6 @@ function fontTextStyle(font: CellFont | undefined): TextStyle {
         ...(font.bold ? { fontWeight: 'bold' } : {}),
         ...(font.italic ? { fontStyle: 'italic' } : {}),
         ...(decoration != null ? { textDecorationLine: decoration } : {}),
-        ...(typeof font.size === 'number' ? { fontSize: font.size } : {}),
-        ...(typeof font.name === 'string' && font.name !== '' ? { fontFamily: font.name } : {}),
         ...(typeof font.color === 'string' && font.color !== ''
             ? { color: normalizeColor(font.color) }
             : {}),
@@ -161,18 +204,45 @@ function horizontalAlignmentStyles(horizontal: CellAlignment['horizontal']): {
     }
 }
 
-function verticalAlignmentStyle(vertical: CellAlignment['vertical']): ViewStyle {
+// Cells with no vertical alignment sit at the bottom, as in Sheets.
+function verticalJustify(vertical: CellAlignment['vertical']): ViewStyle['justifyContent'] {
     switch (vertical) {
         case 'top':
-            return { justifyContent: 'flex-start' }
+            return 'flex-start'
         case 'middle':
-            return { justifyContent: 'center' }
-        case 'bottom':
-            return { justifyContent: 'flex-end' }
+            return 'center'
         default:
-            return {}
+            return 'flex-end'
     }
 }
+
+// generalAlignment is the "General" horizontal alignment of a cell
+// with no explicit one.
+function generalAlignment(content: CellContent | undefined): CellAlignment['horizontal'] {
+    if (content == null) return 'left'
+    const value = content.kind === 'formula' ? content.raw : content.kind
+    if (content.kind === 'number' || content.kind === 'date' || typeof value === 'number') {
+        return 'right'
+    }
+    if (content.kind === 'boolean' || typeof value === 'boolean') return 'center'
+    if (typeof value === 'string' && FORMULA_ERRORS.has(value)) {
+        return 'center'
+    }
+    return 'left'
+}
+
+const FORMULA_ERRORS = new Set([
+    '#DIV/0!',
+    '#N/A',
+    '#NAME?',
+    '#NULL!',
+    '#NUM!',
+    '#REF!',
+    '#VALUE!',
+    '#ERROR!',
+    '#CYCLE!',
+    '#SPILL!',
+])
 
 function widthForStyle(style: CellBorderLineStyle | undefined): number {
     switch (style) {

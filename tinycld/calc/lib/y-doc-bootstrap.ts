@@ -77,6 +77,10 @@ export interface YSheetMeta {
     // Sparse per-row height overrides. Absent = render at
     // DEFAULT_ROW_HEIGHT. Read via `readRowHeight` in lib/dimensions.ts.
     rowHeights?: Record<number, number>
+    // The size a column/row with no stored size takes (CSS px): the
+    // imported sheet's own default when it has one, else the app's.
+    defaultColWidth?: number
+    defaultRowHeight?: number
     // Sparse per-row style overrides. Absent = no row-level style,
     // cells render with their own + col/sheet layers only. Read via
     // `readRowStylesFromMeta` in lib/sheet-styles.ts.
@@ -103,10 +107,14 @@ export interface YSheetMeta {
     // Number of columns frozen at the left of the sheet. Mirrors
     // xlsx <pane> xSplit. Independent of frozenRows.
     frozenCols?: number
+    // True when the sheet draws no gridlines between cells. Absent =
+    // gridlines show. Mirrors the xlsx <sheetView showGridLines="0">.
+    hideGridLines?: boolean
 }
 
 export const SHEET_COLOR_KEY = 'color'
 export const SHEET_HIDDEN_KEY = 'hidden'
+export const HIDE_GRID_LINES_KEY = 'hideGridLines'
 
 // FROZEN_ROWS_KEY / FROZEN_COLS_KEY are the nested keys under each
 // sheet's metadata Y.Map holding the frozen row/column counts. Absent
@@ -128,7 +136,12 @@ export interface YCellValue {
     display: string
     formula?: string
     style?: CellStyle
+    // link is the URL the cell's text links to (LINK_KEY).
+    link?: string
 }
+
+// LINK_KEY holds a cell's hyperlink URL, beside its value and style.
+export const LINK_KEY = 'link'
 
 // bootstrapYDocFromWorkbook seeds an empty Y.Doc from a parsed
 // WorkbookModel. Call this exactly once when a tab is the first joiner
@@ -327,6 +340,7 @@ export function readYCell(cell: Y.Map<unknown>): YCellValue {
     const kindRaw = cell.get('kind')
     const display = cell.get('display')
     const formula = cell.get('formula')
+    const link = cell.get(LINK_KEY)
     const style = readStyleFromYMap(cell)
 
     const kind: CellKind =
@@ -367,6 +381,7 @@ export function readYCell(cell: Y.Map<unknown>): YCellValue {
         display: typeof display === 'string' ? display : display == null ? '' : String(display),
         formula: typeof formula === 'string' ? formula : undefined,
         style,
+        link: typeof link === 'string' && link !== '' ? link : undefined,
     }
 }
 

@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { setYCellTyped } from '../tinycld/calc/hooks/use-y-cell'
 import { FormulaBridge } from '../tinycld/calc/lib/formula/bridge'
-import { HYPERFORMULA_LICENSE_KEY } from '../tinycld/calc/lib/formula/hyperformula-license'
+import { HYPERFORMULA_CONFIG } from '../tinycld/calc/lib/formula/hyperformula-config'
 import { FORMULA_ORIGIN } from '../tinycld/calc/lib/formula/origins'
 import type { WorkbookModel } from '../tinycld/calc/lib/workbook-types'
 import { yCellKey } from '../tinycld/calc/lib/y-cell-key'
 import { bootstrapYDocFromWorkbook, CELLS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
 
 function startBridge(doc: Y.Doc): FormulaBridge {
-    const hf = HyperFormula.buildEmpty({ licenseKey: HYPERFORMULA_LICENSE_KEY })
+    const hf = HyperFormula.buildEmpty(HYPERFORMULA_CONFIG)
     const bridge = new FormulaBridge(doc, hf)
     bridge.start()
     return bridge
@@ -63,7 +63,7 @@ describe('FormulaBridge origin tagging', () => {
             sheets: [{ name: 'Sheet1', rowCount: 5, colCount: 5, cells: {} }],
         } satisfies WorkbookModel)
 
-        const hf = HyperFormula.buildEmpty({ licenseKey: HYPERFORMULA_LICENSE_KEY })
+        const hf = HyperFormula.buildEmpty(HYPERFORMULA_CONFIG)
         let valuesUpdatedCount = 0
         hf.on('valuesUpdated', () => {
             valuesUpdatedCount++

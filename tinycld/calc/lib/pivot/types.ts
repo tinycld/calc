@@ -33,13 +33,17 @@ export interface GroupedTree {
 // WorksheetModel.cells uses.
 //
 // headerRowCount / headerColCount are passed through to Grid.tsx so
-// the pivot sheet auto-freezes its header bands.
+// the pivot sheet auto-freezes its header bands. fieldLabelCells and
+// grandTotalRow tell the grid which cells take the field-caption and
+// grand-total styling, which a cell's value alone cannot say.
 export interface RenderedPivot {
     rows: number
     cols: number
     cells: Map<string, CellValue>
     headerRowCount: number
     headerColCount: number
+    fieldLabelCells: ReadonlySet<string>
+    grandTotalRow: number | null
 }
 
 // PivotError is the discriminated-union failure result returned by
@@ -48,7 +52,7 @@ export interface RenderedPivot {
 export type PivotErrorCode =
     | 'missing-source-sheet'
     | 'malformed-range'
-    | 'duplicate-headers'
+    | 'missing-field'
     | 'zero-data-rows'
     | 'no-values'
 

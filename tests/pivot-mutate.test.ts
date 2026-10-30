@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+import { propagateSheetRename } from '../tinycld/calc/lib/pivot/lifecycle'
 import {
     addColumn,
     addFilter,
@@ -9,6 +10,7 @@ import {
     removeField,
     setBoolean,
     setFilterSelection,
+    setSourceRange,
     setValueAggregation,
     setValueNumFmt,
 } from '../tinycld/calc/lib/pivot/mutate'
@@ -102,5 +104,53 @@ describe('add* / remove / move', () => {
         const { doc } = seed()
         setBoolean(doc, 'p1', 'rowSubtotals', true)
         expect(readPivot(doc, 'p1')!.rowSubtotals).toBe(true)
+    })
+})
+
+// cacheFields are the imported xlsx pivot cache's field names. They
+// describe one source only, so they must not outlive a source change.
+describe('cacheFields', () => {
+    const cacheFields = ['Region', 'Sales']
+
+    it('round-trips through writePivot / readPivot', () => {
+        const { doc } = seed({ cacheFields })
+        expect(readPivot(doc, 'p1')?.cacheFields).toEqual(cacheFields)
+    })
+
+    it('reads as undefined when the entry has none', () => {
+        const { doc } = seed()
+        expect(readPivot(doc, 'p1')?.cacheFields).toBeUndefined()
+    })
+
+    it('survives edits that keep the source', () => {
+        const { doc } = seed({ cacheFields })
+        addRow(doc, 'p1', 'Region')
+        addValue(doc, 'p1', 'Sales', 'sum')
+        setBoolean(doc, 'p1', 'rowSubtotals', true)
+        expect(readPivot(doc, 'p1')?.cacheFields).toEqual(cacheFields)
+    })
+
+    it('setSourceRange to a new range deletes them', () => {
+        const { doc } = seed({ cacheFields })
+        setSourceRange(doc, 'p1', 'Sheet1!A1:F20')
+        const def = readPivot(doc, 'p1')
+        expect(def?.sourceRange).toBe('Sheet1!A1:F20')
+        expect(def?.cacheFields).toBeUndefined()
+    })
+
+    it('setSourceRange to the same range keeps them', () => {
+        const { doc } = seed({ cacheFields })
+        setSourceRange(doc, 'p1', 'Sheet1!A1:E10')
+        expect(readPivot(doc, 'p1')?.cacheFields).toEqual(cacheFields)
+    })
+
+    // A rename rewrites the range text, but the range still reads the
+    // same cells, so the names still describe them.
+    it('a source sheet rename keeps them', () => {
+        const { doc } = seed({ cacheFields })
+        propagateSheetRename(doc, 'Sheet1', 'Data')
+        const def = readPivot(doc, 'p1')
+        expect(def?.sourceRange).toBe('Data!A1:E10')
+        expect(def?.cacheFields).toEqual(cacheFields)
     })
 })

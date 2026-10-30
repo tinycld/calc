@@ -1,6 +1,6 @@
 import type * as Y from 'yjs'
 import { runAutosize } from '../../hooks/use-column-resize'
-import { DEFAULT_ROW_HEIGHT, setYColWidth, setYRowHeight } from '../../lib/dimensions'
+import { setYColWidth, setYRowHeight } from '../../lib/dimensions'
 
 // Resize commit/reset/autosize handlers as plain functions. The
 // useColumnResize and useRowResize hooks call these via callbacks
@@ -12,7 +12,7 @@ export function commitColWidth(
     doc: Y.Doc | null,
     sheetId: string,
     col: number,
-    width: number
+    width: number | null
 ): void {
     setYColWidth(doc, sheetId, col, width)
 }
@@ -21,7 +21,7 @@ export function commitRowHeight(
     doc: Y.Doc | null,
     sheetId: string,
     row: number,
-    height: number
+    height: number | null
 ): void {
     setYRowHeight(doc, sheetId, row, height)
 }
@@ -31,5 +31,5 @@ export function autosizeCol(doc: Y.Doc | null, sheetId: string, col: number): vo
 }
 
 export function resetRowToDefault(doc: Y.Doc | null, sheetId: string, row: number): void {
-    setYRowHeight(doc, sheetId, row, DEFAULT_ROW_HEIGHT)
+    setYRowHeight(doc, sheetId, row, null)
 }

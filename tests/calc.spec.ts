@@ -126,8 +126,9 @@ test.describe('Calc', () => {
         // Verify columns are correctly aligned by reading the DOM
         // through the stable Cell-A1/B1/C1 aria-labels (not text content,
         // which also matches the recent-view "Sort by Name" header
-        // outside the grid). A1 and B1 should be at viewport-x
-        // positions exactly CELL_WIDTH (96px) apart.
+        // outside the grid). Each column starts where the one before it
+        // ends: the file declares no widths, so all three take the sheet's
+        // standard width (Excel's 8.43 characters, 69px).
         const positions = await page.evaluate(() => {
             const find = (label: string) => {
                 const el = document.querySelector(`[aria-label="${label}"]`) as HTMLElement | null
@@ -141,8 +142,9 @@ test.describe('Calc', () => {
         expect(positions.role).not.toBeNull()
         expect(positions.score).not.toBeNull()
         if (positions.name && positions.role && positions.score) {
-            expect(positions.role.left - positions.name.left).toBeCloseTo(96, 0)
-            expect(positions.score.left - positions.role.left).toBeCloseTo(96, 0)
+            expect(positions.role.left - positions.name.left).toBeCloseTo(positions.name.width, 0)
+            expect(positions.score.left - positions.role.left).toBeCloseTo(positions.role.width, 0)
+            expect(positions.name.width).toBeCloseTo(69, 0)
         }
     })
 

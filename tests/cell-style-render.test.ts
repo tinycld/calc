@@ -8,18 +8,55 @@ import { cellStyleToRenderProps } from '../tinycld/calc/lib/cell-style-render'
 // without overriding them.
 
 describe('cellStyleToRenderProps — defaults', () => {
-    it('undefined style produces empty viewStyle/textStyle and numberOfLines: 1', () => {
+    // An unstyled cell renders the way Sheets and Excel render one:
+    // 10pt text, bottom-aligned, left-aligned text and right-aligned
+    // numbers.
+    it('undefined style is 10pt, bottom-aligned, one line', () => {
         const out = cellStyleToRenderProps(undefined)
-        expect(out.viewStyle).toEqual({})
-        expect(out.textStyle).toEqual({})
+        expect(out.textStyle.fontSize).toBeCloseTo(13.333, 2)
+        expect(out.viewStyle.justifyContent).toBe('flex-end')
         expect(out.numberOfLines).toBe(1)
     })
 
-    it('empty style object produces the same defaults', () => {
-        const out = cellStyleToRenderProps({})
-        expect(out.viewStyle).toEqual({})
-        expect(out.textStyle).toEqual({})
-        expect(out.numberOfLines).toBe(1)
+    it('text aligns left by default', () => {
+        const out = cellStyleToRenderProps({}, { kind: 'string', raw: 'a' })
+        expect(out.textStyle.textAlign).toBe('left')
+        expect(out.viewStyle.alignItems).toBe('flex-start')
+    })
+
+    it('numbers, dates and numeric formula results align right by default', () => {
+        for (const content of [
+            { kind: 'number' as const, raw: 1 },
+            { kind: 'date' as const, raw: '2024-12-06' },
+            { kind: 'formula' as const, raw: 5 },
+        ]) {
+            const out = cellStyleToRenderProps({ alignment: { vertical: 'bottom' } }, content)
+            expect(out.textStyle.textAlign).toBe('right')
+            expect(out.viewStyle.alignItems).toBe('flex-end')
+        }
+    })
+
+    it('booleans and error results center by default', () => {
+        expect(cellStyleToRenderProps({}, { kind: 'boolean', raw: true }).textStyle.textAlign).toBe(
+            'center'
+        )
+        expect(
+            cellStyleToRenderProps({}, { kind: 'formula', raw: '#DIV/0!' }).textStyle.textAlign
+        ).toBe('center')
+    })
+
+    it('a text formula result aligns left', () => {
+        expect(
+            cellStyleToRenderProps({}, { kind: 'formula', raw: 'abc' }).textStyle.textAlign
+        ).toBe('left')
+    })
+
+    it('an explicit horizontal alignment wins over the default', () => {
+        const out = cellStyleToRenderProps(
+            { alignment: { horizontal: 'left' } },
+            { kind: 'number', raw: 1 }
+        )
+        expect(out.textStyle.textAlign).toBe('left')
     })
 })
 
@@ -49,14 +86,14 @@ describe('cellStyleToRenderProps — font', () => {
         expect(out.textStyle.textDecorationLine).toBe('underline line-through')
     })
 
-    it('size maps to fontSize', () => {
-        const out = cellStyleToRenderProps({ font: { size: 16 } })
+    it('size is in points and renders in pixels', () => {
+        const out = cellStyleToRenderProps({ font: { size: 12 } })
         expect(out.textStyle.fontSize).toBe(16)
     })
 
-    it('font name maps to fontFamily', () => {
-        const out = cellStyleToRenderProps({ font: { name: 'Inter' } })
-        expect(out.textStyle.fontFamily).toBe('Inter')
+    it('font name maps to a fontFamily stack with a fallback', () => {
+        const out = cellStyleToRenderProps({ font: { name: 'Calibri' } })
+        expect(out.textStyle.fontFamily).toBe('Calibri, Carlito, sans-serif')
     })
 
     it('color in #RRGGBB form passes through', () => {
@@ -78,6 +115,55 @@ describe('cellStyleToRenderProps — font', () => {
         const out = cellStyleToRenderProps({ font: { bold: false, italic: false } })
         expect(out.textStyle.fontWeight).toBeUndefined()
         expect(out.textStyle.fontStyle).toBeUndefined()
+    })
+})
+
+// The workbook default font (the xlsx "Normal" style font) is the base
+// every cell draws in unless its own style names a font or size.
+describe('cellStyleToRenderProps — workbook default font', () => {
+    const arial10 = { name: 'Arial', size: 10 }
+
+    it('an unstyled cell takes the default font name and size', () => {
+        const out = cellStyleToRenderProps(undefined, undefined, { name: 'Calibri', size: 11 })
+        expect(out.textStyle.fontSize).toBeCloseTo(14.667, 2)
+        expect(out.textStyle.fontFamily).toBe('Calibri, Carlito, sans-serif')
+    })
+
+    it("a cell's own size and name win over the default", () => {
+        const out = cellStyleToRenderProps(
+            { font: { name: 'Georgia', size: 18 } },
+            undefined,
+            arial10
+        )
+        expect(out.textStyle.fontSize).toBe(24)
+        expect(out.textStyle.fontFamily).toBe('Georgia, serif')
+    })
+
+    it('a cell with only its own size keeps the default family', () => {
+        const out = cellStyleToRenderProps({ font: { size: 12 } }, undefined, arial10)
+        expect(out.textStyle.fontSize).toBe(16)
+        expect(out.textStyle.fontFamily).toBe('Arial, "Liberation Sans", Helvetica, sans-serif')
+    })
+
+    it('a cell with only its own name keeps the default size', () => {
+        const out = cellStyleToRenderProps({ font: { name: 'Verdana', bold: true } }, undefined, {
+            name: 'Arial',
+            size: 9,
+        })
+        expect(out.textStyle.fontSize).toBe(12)
+        expect(out.textStyle.fontFamily).toBe('Verdana, sans-serif')
+        expect(out.textStyle.fontWeight).toBe('bold')
+    })
+
+    it('an empty default font falls back to 10pt in the platform font', () => {
+        const out = cellStyleToRenderProps(undefined, undefined, {})
+        expect(out.textStyle.fontSize).toBeCloseTo(13.333, 2)
+        expect(out.textStyle.fontFamily).toBeUndefined()
+    })
+
+    it('a non-positive default size is ignored', () => {
+        const out = cellStyleToRenderProps(undefined, undefined, { size: 0 })
+        expect(out.textStyle.fontSize).toBeCloseTo(13.333, 2)
     })
 })
 

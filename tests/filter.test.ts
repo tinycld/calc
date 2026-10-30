@@ -1,24 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { setYCell } from '../tinycld/calc/hooks/use-y-cell'
+import { setYCell, setYCellStyle } from '../tinycld/calc/hooks/use-y-cell'
 import { setYRowHeight } from '../tinycld/calc/lib/dimensions'
 import {
     applyFilter,
     applyValuesFilterFromSelection,
     clearFilter,
     distinctValuesForColumn,
+    FILTER_VIEW_KEY,
     readFilterView,
     removeColumnCriterion,
     upsertColumnCriterion,
 } from '../tinycld/calc/lib/filter'
 import { SHEETS_MAP } from '../tinycld/calc/lib/y-doc-bootstrap'
 
-// seedSheet sets frozenRows: 2 by default so tests that put a header
-// label in row 1 (range.startRow = 1) keep the same "header always
-// visible" behavior they relied on before the implicit header
-// carve-out was dropped. (frozenRows is a count, so 2 protects rows
-// 0 and 1.) Tests that want a different freeze line can pass their own.
-function seedSheet(doc: Y.Doc, sheetId: string, frozenRows = 2): void {
+// seedSheet seeds an unfrozen sheet. A filter never hides its range's
+// first row (the header), so tests that put a label in row 1 with
+// range.startRow = 1 need no freeze to keep it visible. Tests that want
+// a freeze line pass their own.
+function seedSheet(doc: Y.Doc, sheetId: string, frozenRows = 0): void {
     const sheetsMap = doc.getMap<Y.Map<unknown>>(SHEETS_MAP)
     const meta = new Y.Map<unknown>()
     meta.set('name', sheetId)
@@ -55,15 +55,49 @@ describe('applyFilter', () => {
                 criteria: { 1: { type: 'values', allowedValues: ['Apple', 'Cherry'] } },
                 mode: 'range',
             },
-            2
+            0
         )
 
-        // Header at row 1 stays visible (frozenRows: 2 protects rows 0–1).
+        // Header at row 1 (the range's first row) stays visible.
         expect(readRowHeight(doc, 'sheet1', 1)).toBeUndefined()
         expect(readRowHeight(doc, 'sheet1', 2)).toBeUndefined()
         // Banana hidden.
         expect(readRowHeight(doc, 'sheet1', 3)).toBe(0)
         expect(readRowHeight(doc, 'sheet1', 4)).toBeUndefined()
+    })
+
+    it('matches a values criterion against the formatted text the cell shows', () => {
+        // An imported xlsx value filter lists "$1,234.00", not 1234.
+        const doc = new Y.Doc()
+        seedSheet(doc, 'sheet1')
+        setYCell(doc, 'sheet1', 1, 1, 'Pay')
+        setYCell(doc, 'sheet1', 2, 1, '1234')
+        setYCell(doc, 'sheet1', 3, 1, '50')
+        for (const row of [2, 3]) {
+            setYCellStyle(doc, 'sheet1', row, 1, { numFmt: '"$"#,##0.00' })
+        }
+
+        applyFilter(
+            doc,
+            'sheet1',
+            {
+                range: { startRow: 1, endRow: 3, startCol: 1, endCol: 1 },
+                criteria: { 1: { type: 'values', allowedValues: ['$1,234.00'] } },
+                mode: 'header',
+            },
+            0
+        )
+
+        expect(readRowHeight(doc, 'sheet1', 2)).toBeUndefined()
+        expect(readRowHeight(doc, 'sheet1', 3)).toBe(0)
+        expect(
+            distinctValuesForColumn(
+                doc,
+                'sheet1',
+                { startRow: 1, endRow: 3, startCol: 1, endCol: 1 },
+                1
+            )
+        ).toContain('$1,234.00')
     })
 
     it('hides rows that fail a "gt" condition', () => {
@@ -82,7 +116,7 @@ describe('applyFilter', () => {
                 criteria: { 1: { type: 'condition', condition: { op: 'gt', values: ['40'] } } },
                 mode: 'range',
             },
-            2
+            0
         )
 
         expect(readRowHeight(doc, 'sheet1', 2)).toBeUndefined()
@@ -108,7 +142,7 @@ describe('applyFilter', () => {
                 },
                 mode: 'range',
             },
-            2
+            0
         )
         expect(readRowHeight(doc, 'sheet1', 2)).toBeUndefined()
         expect(readRowHeight(doc, 'sheet1', 3)).toBeUndefined()
@@ -125,7 +159,7 @@ describe('applyFilter', () => {
                 criteria: { 1: { type: 'condition', condition: { op: 'isEmpty' } } },
                 mode: 'range',
             },
-            2
+            0
         )
         expect(readRowHeight(doc, 'sheet1', 2)).toBe(0)
         expect(readRowHeight(doc, 'sheet1', 3)).toBe(0)
@@ -155,7 +189,7 @@ describe('applyFilter', () => {
                 },
                 mode: 'range',
             },
-            2
+            0
         )
 
         // Only row 2 passes both (Alice with score 90).
@@ -183,7 +217,7 @@ describe('applyFilter', () => {
                 criteria: { 1: { type: 'values', allowedValues: ['Apple'] } },
                 mode: 'range',
             },
-            2
+            0
         )
         expect(readRowHeight(doc, 'sheet1', 3)).toBe(0)
 
@@ -688,35 +722,105 @@ describe('wire-format back-compat', () => {
 })
 
 describe('frozen-row protection', () => {
-    it('does not hide any row r < frozenRows even when criterion would exclude it', () => {
+    // Rows are 1-based, so frozenRows: 2 freezes rows 1 and 2.
+    it('does not hide frozen rows 1..frozenRows even when the criterion excludes them', () => {
         const doc = new Y.Doc()
         seedSheet(doc, 'sheet1', 2)
-        setYCell(doc, 'sheet1', 0, 1, 'TitleRow')
-        setYCell(doc, 'sheet1', 1, 1, 'Subheader')
-        setYCell(doc, 'sheet1', 2, 1, 'Apple')
-        setYCell(doc, 'sheet1', 3, 1, 'Banana')
-        setYCell(doc, 'sheet1', 4, 1, 'Cherry')
+        setYCell(doc, 'sheet1', 1, 1, 'TitleRow')
+        setYCell(doc, 'sheet1', 2, 1, 'Subheader')
+        setYCell(doc, 'sheet1', 3, 1, 'Apple')
+        setYCell(doc, 'sheet1', 4, 1, 'Banana')
+        setYCell(doc, 'sheet1', 5, 1, 'Cherry')
 
         // Criterion excludes 'TitleRow' and 'Subheader' (and Banana).
         applyFilter(
             doc,
             'sheet1',
             {
-                range: { startRow: 0, endRow: 4, startCol: 1, endCol: 1 },
+                range: { startRow: 0, endRow: 5, startCol: 1, endCol: 1 },
                 criteria: { 1: { type: 'values', allowedValues: ['Apple', 'Cherry'] } },
                 mode: 'range',
             },
             2
         )
 
-        // Frozen rows 0 and 1: protected, never hidden.
-        expect(readRowHeight(doc, 'sheet1', 0)).toBeUndefined()
         expect(readRowHeight(doc, 'sheet1', 1)).toBeUndefined()
-        // Row 2: Apple → visible.
         expect(readRowHeight(doc, 'sheet1', 2)).toBeUndefined()
-        // Row 3: Banana → hidden.
-        expect(readRowHeight(doc, 'sheet1', 3)).toBe(0)
-        // Row 4: Cherry → visible.
-        expect(readRowHeight(doc, 'sheet1', 4)).toBeUndefined()
+        expect(readRowHeight(doc, 'sheet1', 3)).toBeUndefined()
+        expect(readRowHeight(doc, 'sheet1', 4)).toBe(0)
+        expect(readRowHeight(doc, 'sheet1', 5)).toBeUndefined()
+    })
+})
+
+// The server imports an xlsx autoFilter as a header-mode filterView:
+// the range's first row is the autoFilter's label row, rows the file's
+// filter hid arrive as rowHeights 0, and there is no savedHeights map.
+describe('imported autoFilter', () => {
+    function seedImported(doc: Y.Doc): void {
+        seedSheet(doc, 'sheet1')
+        setYCell(doc, 'sheet1', 1, 1, 'Fruit')
+        setYCell(doc, 'sheet1', 2, 1, 'Apple')
+        setYCell(doc, 'sheet1', 3, 1, 'Banana')
+        setYCell(doc, 'sheet1', 4, 1, 'Cherry')
+        const meta = doc.getMap<Y.Map<unknown>>(SHEETS_MAP).get('sheet1')
+        if (meta == null) throw new Error('seedSheet did not create sheet1')
+        doc.transact(() => {
+            const heights = new Y.Map<number>()
+            heights.set('3', 0)
+            heights.set('4', 30)
+            meta.set('rowHeights', heights)
+            const range = new Y.Map<unknown>()
+            range.set('startRow', 1)
+            range.set('endRow', 4)
+            range.set('startCol', 1)
+            range.set('endCol', 1)
+            const view = new Y.Map<unknown>()
+            view.set('mode', 'header')
+            view.set('range', range)
+            meta.set(FILTER_VIEW_KEY, view)
+        })
+    }
+
+    it('reads as an active header-mode view with no criteria', () => {
+        const doc = new Y.Doc()
+        seedImported(doc)
+        const view = readFilterView(doc, 'sheet1')
+        expect(view?.mode).toBe('header')
+        expect(view?.range).toEqual({ startRow: 1, endRow: 4, startCol: 1, endCol: 1 })
+        expect(view?.criteria).toEqual({})
+        expect(view?.savedHeights).toEqual({})
+    })
+
+    it('clearFilter shows the rows the file hid and keeps other heights', () => {
+        const doc = new Y.Doc()
+        seedImported(doc)
+        clearFilter(doc, 'sheet1')
+        expect(readRowHeight(doc, 'sheet1', 3)).toBeUndefined()
+        expect(readRowHeight(doc, 'sheet1', 4)).toBe(30)
+        expect(readFilterView(doc, 'sheet1')).toBeNull()
+    })
+
+    it('a header criterion never hides the label row of an unfrozen sheet', () => {
+        const doc = new Y.Doc()
+        seedImported(doc)
+        upsertColumnCriterion(
+            doc,
+            'sheet1',
+            1,
+            { type: 'values', allowedValues: ['Banana'] },
+            100,
+            10,
+            0
+        )
+        expect(readRowHeight(doc, 'sheet1', 1)).toBeUndefined()
+        expect(readRowHeight(doc, 'sheet1', 2)).toBe(0)
+        // The file hid Banana; the new criterion shows it again.
+        expect(readRowHeight(doc, 'sheet1', 3)).toBeUndefined()
+        expect(readRowHeight(doc, 'sheet1', 4)).toBe(0)
+        expect(readFilterView(doc, 'sheet1')?.savedHeights).toEqual({ 4: 30 })
+
+        clearFilter(doc, 'sheet1')
+        expect(readRowHeight(doc, 'sheet1', 2)).toBeUndefined()
+        expect(readRowHeight(doc, 'sheet1', 4)).toBe(30)
     })
 })
