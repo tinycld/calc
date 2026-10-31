@@ -17,12 +17,11 @@ import (
 // The share-grant / share-denied paths are covered by core/driveshare's
 // unit tests plus the end-to-end Playwright spec.
 func TestRegisterRealtimeRegisters(t *testing.T) {
-	t.Cleanup(realtime.ResetRegistryForTest)
 
 	app := pocketbase.New()
 	registerRealtime(app)
 
-	authorize := realtime.LookupForTest("calc")
+	authorize := realtime.LookupForTest(app, "calc")
 	if authorize == nil {
 		t.Fatal("registerRealtime did not register the 'calc' room kind")
 	}
@@ -32,21 +31,30 @@ func TestRegisterRealtimeRegisters(t *testing.T) {
 	}
 }
 
-// TestRegisterRealtimeDuplicatePanics confirms calling registerRealtime
-// twice surfaces as a panic from realtime.RegisterRoomKind. This
+// TestRegisterRealtimeDuplicatePanics confirms calling registerRealtime twice
+// on one app surfaces as a panic from realtime.RegisterRoomKindWith. This
 // guards against accidental double-init at startup.
 func TestRegisterRealtimeDuplicatePanics(t *testing.T) {
-	t.Cleanup(realtime.ResetRegistryForTest)
-
 	app := pocketbase.New()
 	registerRealtime(app)
 
 	defer func() {
 		if r := recover(); r == nil {
-			t.Fatal("expected panic on duplicate RegisterRoomKind")
+			t.Fatal("expected panic on duplicate RegisterRoomKindWith")
 		}
 	}()
 	registerRealtime(app)
+}
+
+// Two apps in one process each register the calc kind on their own broker.
+func TestRegisterRealtimeOnTwoApps(t *testing.T) {
+	a, b := pocketbase.New(), pocketbase.New()
+	registerRealtime(a)
+	registerRealtime(b)
+
+	if realtime.LookupForTest(a, "calc") == nil || realtime.LookupForTest(b, "calc") == nil {
+		t.Fatal("each app must hold its own calc room kind")
+	}
 }
 
 // The share-authorization predicates these tests used to cover

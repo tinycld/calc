@@ -122,7 +122,7 @@ func SaveRoom(ctx context.Context, app core.App, handle realtime.DocHandle, driv
 	indexHash := textpreview.Hash(allCellsPlaintext)
 	item.Set("thumb_region_hash", regionHash)
 	item.Set("index_hash", indexHash)
-	previewqueue.Stash(driveItemID, previewqueue.Payload{
+	previewqueue.Stash(app, driveItemID, previewqueue.Payload{
 		Plaintext:  allCellsPlaintext,
 		RegionHash: regionHash,
 		IndexHash:  indexHash,

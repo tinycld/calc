@@ -41,10 +41,10 @@ func registerRealtime(app core.App) {
 	runtime.SetBootstrap(makeXLSXBootstrap(app))
 
 	checkpoints := realtime.NewPocketBaseCheckpointStore(app)
-	coordinator := realtime.NewSaveCoordinator(MakeProductionFlush(app))
+	coordinator := realtime.NewSaveCoordinator(app, MakeProductionFlush(app))
 	coordinator.SetKind(roomKindCalc)
 
-	realtime.RegisterRoomKindWith(roomKindCalc, realtime.RoomKindOptions{
+	realtime.RegisterRoomKindWith(app, roomKindCalc, realtime.RoomKindOptions{
 		Authorize: func(auth *core.Record, roomID string) error {
 			if auth == nil || auth.Id == "" {
 				return driveshare.ErrNoAccess
@@ -87,7 +87,7 @@ func registerRealtime(app core.App) {
 	// A deleted workbook leaves nothing behind: its parked Y.Doc is closed
 	// and its checkpoint row removed.
 	app.OnRecordAfterDeleteSuccess("drive_items").BindFunc(func(e *core.RecordEvent) error {
-		if err := realtime.DropRoom(roomKindCalc, e.Record.Id); err != nil {
+		if err := realtime.DropRoom(app, roomKindCalc, e.Record.Id); err != nil {
 			app.Logger().Warn("calc: checkpoint cleanup on drive_items delete failed",
 				"itemID", e.Record.Id, "err", err)
 		}
