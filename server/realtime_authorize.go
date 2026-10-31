@@ -60,6 +60,9 @@ func registerRealtime(app core.App) {
 		AuthorizeShare: func(claims realtime.ShareClaims, roomID string) error {
 			return authorizeAnonShare(app, claims, roomID)
 		},
+		// Automatic versions (opt-in, drive decides): drive listens on
+		// core/editcheckpoint.
+		EditCheckpoints: true,
 		RuntimeProvider: runtime,
 		Checkpoints:     checkpoints,
 		Fingerprint:     driveItemFingerprint(app),

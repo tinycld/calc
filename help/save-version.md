@@ -36,6 +36,12 @@ See [Drive versions](help://drive:versions) for more on managing version history
 - Before importing a CSV that overwrites existing data.
 - Before applying conditional formatting or formulas you're unsure about.
 
+## Automatic versions
+
+Automatic versions are off unless your organization turns them on. To turn them on or off for this spreadsheet, choose **File → Automatically version while editing**. A check mark shows they are on. Drive then saves a version after 10 minutes without edits and when the last person closes the spreadsheet.
+
+To see the versions, choose **File → Details**, then **Versions → Open version history**. See [Version history](help://drive:versions).
+
 ## See also
 
 - [Managing workbooks](help://calc:file-actions)
