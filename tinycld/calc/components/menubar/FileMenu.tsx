@@ -5,6 +5,7 @@ import { Menu, MenuBarMenu } from '@tinycld/core/ui/menubar'
 import { PromptDialog } from '@tinycld/core/ui/PromptDialog'
 import { TemplatePickerDialog } from '@tinycld/drive/components/TemplatePickerDialog'
 import { useHasTemplates } from '@tinycld/drive/hooks/use-template-items'
+import { useAutoVersions } from '@tinycld/drive/hooks/useAutoVersions'
 import { useCopyDriveItem } from '@tinycld/drive/lib/copy-drive-item'
 import { exportItem } from '@tinycld/drive/lib/export-pdf'
 import {
@@ -114,6 +115,7 @@ export function FileMenu(props: MenuBarProps) {
                     onSelect={() => setShareOpen(true)}
                 />
                 <Menu.Item label="Save version" onSelect={() => setSaveVersionOpen(true)} />
+                <AutoVersionsItem workbookId={props.workbookId} />
                 <Menu.Separator />
                 <Menu.Sub label="Download">
                     <DownloadXlsxItem onSelect={props.onDownloadXlsx} />
@@ -211,4 +213,17 @@ function ShareItem({ isVisible, onSelect }: OptionalItemProps) {
 function DownloadXlsxItem({ onSelect }: { onSelect: (() => void) | undefined }) {
     if (onSelect == null) return null
     return <Menu.Item label="Download as XLSX" onSelect={onSelect} />
+}
+
+// Automatic versions for this spreadsheet; shown to users who can edit it.
+function AutoVersionsItem({ workbookId }: { workbookId: string }) {
+    const autoVersions = useAutoVersions(workbookId)
+    if (!autoVersions.canChange) return null
+    return (
+        <Menu.CheckboxItem
+            label="Automatically version while editing"
+            isChecked={autoVersions.isOn}
+            onToggle={autoVersions.toggle}
+        />
+    )
 }

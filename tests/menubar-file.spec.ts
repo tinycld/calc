@@ -50,4 +50,21 @@ test.describe('Calc File menu', () => {
         // only renders while the dialog is mounted.
         await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
     })
+
+    // Automatic versions are opt-in per spreadsheet; the item toggles a check
+    // mark and stays in the open menu.
+    test('Automatically version while editing toggles for this spreadsheet', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        await page.getByRole('button', { name: 'File', exact: true }).click()
+        const item = page.getByRole('menuitemcheckbox', {
+            name: 'Automatically version while editing',
+        })
+        await expect(item).not.toBeChecked()
+        await item.click()
+        await expect(item).toBeChecked()
+        await item.click()
+        await expect(item).not.toBeChecked()
+    })
 })
