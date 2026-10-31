@@ -61,10 +61,11 @@ test.describe('Calc File menu', () => {
         const item = page.getByRole('menuitemcheckbox', {
             name: 'Automatically version while editing',
         })
-        await expect(item).not.toBeChecked()
+        // The start state follows the shared org setting; a click flips it.
+        const startsOn = (await item.getAttribute('aria-checked')) === 'true'
         await item.click()
-        await expect(item).toBeChecked()
+        await expect(item).toHaveAttribute('aria-checked', String(!startsOn))
         await item.click()
-        await expect(item).not.toBeChecked()
+        await expect(item).toHaveAttribute('aria-checked', String(startsOn))
     })
 })
