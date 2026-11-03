@@ -7,6 +7,32 @@ import { useFindStore } from '../hooks/find/use-find-store-context'
 
 interface FindReplaceDialogProps {
     actions: FindActions
+    readOnly: boolean
+}
+
+// What a key press in a dialog field carries. On web, react-native-web
+// hands over the DOM event, so the modifier flags are there; native has
+// only the key.
+interface FieldKeyEvent {
+    nativeEvent: { key: string; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean }
+    preventDefault?: () => void
+}
+
+// The find shortcuts a dialog field answers itself. react-native-web stops
+// every key typed into a text field from reaching the window listener that
+// runs the shortcut registry, so without this ⌘G, ⌘⇧G and ⌘⇧H did nothing
+// while the find box had focus. ⌘⇧H stays off for a read-only viewer, as
+// its registry gate is.
+function fieldShortcut(
+    event: FieldKeyEvent['nativeEvent'],
+    actions: FindActions,
+    readOnly: boolean
+): (() => void) | null {
+    if (!(event.metaKey || event.ctrlKey)) return null
+    const key = event.key.toLowerCase()
+    if (key === 'g') return event.shiftKey ? actions.prevMatch : actions.nextMatch
+    if (key === 'h' && event.shiftKey && !readOnly) return actions.openReplace
+    return null
 }
 
 // Floating panel pinned to the top-right of the grid viewport. Only
@@ -14,7 +40,7 @@ interface FindReplaceDialogProps {
 // FindReplaceDialogGate at the bottom of this file. All state —
 // query, replacement, options, mode — is read directly from the find
 // store via useFindStore selectors.
-export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
+export function FindReplaceDialog({ actions, readOnly }: FindReplaceDialogProps) {
     const fg = useThemeColor('foreground')
     const muted = useThemeColor('muted-foreground')
     const danger = useThemeColor('danger')
@@ -44,8 +70,20 @@ export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
         return `${currentIndex + 1} of ${matchesLength}`
     }, [matchesLength, currentIndex, query])
 
+    const onShortcutKey = useCallback(
+        (e: FieldKeyEvent) => {
+            const run = fieldShortcut(e.nativeEvent, actions, readOnly)
+            if (run == null) return false
+            e.preventDefault?.()
+            run()
+            return true
+        },
+        [actions, readOnly]
+    )
+
     const onQueryKey = useCallback(
-        (e: { nativeEvent: { key: string } }) => {
+        (e: FieldKeyEvent) => {
+            if (onShortcutKey(e)) return
             const key = e.nativeEvent.key
             if (key === 'Enter') {
                 if (mode === 'replace') {
@@ -57,7 +95,7 @@ export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
                 actions.close()
             }
         },
-        [actions, mode]
+        [actions, mode, onShortcutKey]
     )
 
     const toggleMode = useCallback(
@@ -145,6 +183,7 @@ export function FindReplaceDialog({ actions }: FindReplaceDialogProps) {
                         placeholder="Replace with"
                         value={replacement}
                         onChangeText={setReplacement}
+                        onKeyPress={onShortcutKey}
                         className="rounded border border-border bg-surface-secondary px-2"
                         style={{ height: 24, color: fg, fontSize: 12 }}
                         placeholderTextColor={muted}
@@ -263,14 +302,15 @@ function OptionToggle({ label, value, onChange }: OptionToggleProps) {
 
 interface FindReplaceDialogGateProps {
     actions: FindActions
+    readOnly: boolean
 }
 
 // Mounts FindReplaceDialog only while the find store's isOpen flips
 // true. Subscribing here (rather than in Grid) keeps the open/close
 // re-render scoped to this gate so the rest of GridInner doesn't
 // re-run on every keystroke into the dialog.
-export function FindReplaceDialogGate({ actions }: FindReplaceDialogGateProps) {
+export function FindReplaceDialogGate({ actions, readOnly }: FindReplaceDialogGateProps) {
     const isOpen = useFindStore(s => s.isOpen)
     if (!isOpen) return null
-    return <FindReplaceDialog actions={actions} />
+    return <FindReplaceDialog actions={actions} readOnly={readOnly} />
 }

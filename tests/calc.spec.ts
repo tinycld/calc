@@ -1438,6 +1438,38 @@ test.describe('Find & Replace', () => {
         await expect(page.getByLabel('Cell A1', { exact: true })).toHaveText('apple')
         await expect(page.getByLabel('Cell A3', { exact: true })).toHaveText('apple pie')
     })
+
+    // The find box is a text field, and react-native-web stops every key
+    // typed into one from reaching the window shortcut listener. The
+    // dialog's own fields must answer its shortcuts while they have focus.
+    test('find shortcuts work while the find box has focus', async ({ page }) => {
+        await navigateToPackage(page, 'calc')
+        await openNewSpreadsheet(page)
+
+        const formulaBar = page.getByRole('textbox', { name: 'Formula bar' })
+        await typeIntoCell(page, formulaBar, 'A1', 'apple')
+        await typeIntoCell(page, formulaBar, 'A2', 'apple pie')
+        await page.getByLabel('Cell B1', { exact: true }).click()
+
+        const isMac = process.platform === 'darwin'
+        const mod = isMac ? 'Meta' : 'Control'
+        await page.keyboard.press(`${mod}+f`)
+        const queryInput = page.getByLabel('Find query')
+        await queryInput.fill('apple')
+        const counter = page.getByLabel('Find match counter')
+        await expect(counter).toHaveText('1 of 2')
+
+        await queryInput.press(`${mod}+g`)
+        await expect(counter).toHaveText('2 of 2')
+        await queryInput.press(`${mod}+Shift+g`)
+        await expect(counter).toHaveText('1 of 2')
+
+        await queryInput.press(`${mod}+Shift+H`)
+        const replaceInput = page.getByLabel('Replace value')
+        await expect(replaceInput).toBeVisible()
+        await replaceInput.press(`${mod}+g`)
+        await expect(counter).toHaveText('2 of 2')
+    })
 })
 
 test.describe('Sheet management', () => {

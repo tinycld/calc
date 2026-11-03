@@ -814,7 +814,7 @@ function GridInner({
                 onSelect={suggestions.onSelect}
                 onHover={suggestions.onHover}
             />
-            <FindReplaceDialogGate actions={findActions} />
+            <FindReplaceDialogGate actions={findActions} readOnly={readOnly} />
             <ConditionalFormatPanel doc={doc} sheetId={sheetId} readOnly={readOnly} />
             <NamedRangesDialog doc={doc} />
         </View>
