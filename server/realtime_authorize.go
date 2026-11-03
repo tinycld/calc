@@ -6,6 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"tinycld.org/core/appstate"
 	"tinycld.org/core/driveshare"
 	"tinycld.org/core/realtime"
 	"tinycld.org/core/sharelink"
@@ -15,6 +16,10 @@ import (
 // Each connection at /api/realtime/calc/<drive_item_id> is gated by
 // the authorize handler registered below.
 const roomKindCalc = "calc"
+
+// runtimeKey holds app's calc Runtime, so a server write (a rule's
+// append-row) can find an open workbook's live doc.
+var runtimeKey = appstate.NewKey[*Runtime]("calc.runtime")
 
 // registerRealtime is called once at startup from Register(). It plugs
 // the calc authorize handler, the y-crdt Runtime, and the
@@ -39,6 +44,7 @@ const roomKindCalc = "calc"
 func registerRealtime(app core.App) {
 	runtime := NewRuntime()
 	runtime.SetBootstrap(makeXLSXBootstrap(app))
+	runtimeKey.Set(app, runtime)
 
 	checkpoints := realtime.NewPocketBaseCheckpointStore(app)
 	coordinator := realtime.NewSaveCoordinator(app, MakeProductionFlush(app))
@@ -67,11 +73,19 @@ func registerRealtime(app core.App) {
 		Checkpoints:     checkpoints,
 		Fingerprint:     driveItemFingerprint(app),
 		FlushDirty:      coordinator.FlushDirty,
-		OnRoomCreate:    coordinator.OnRoomCreate,
-		OnDocUpdate:     coordinator.OnDocUpdate,
-		OnEmpty:         coordinator.OnRoomEmpty,
-		ForceFlush:      coordinator.FlushNow,
-		OnConnect:       makeOnConnect(app),
+		OnRoomCreate: func(roomID string, handle realtime.DocHandle, room *realtime.Room) {
+			runtime.noteRoom(roomID, handle, room)
+			coordinator.OnRoomCreate(roomID, handle, room)
+		},
+		OnDocUpdate: coordinator.OnDocUpdate,
+		// Forgotten first: forgetRoom waits for a write in progress, so the
+		// final save below includes it.
+		OnEmpty: func(roomID string) {
+			runtime.forgetRoom(roomID)
+			coordinator.OnRoomEmpty(roomID)
+		},
+		ForceFlush: coordinator.FlushNow,
+		OnConnect:  makeOnConnect(app),
 		// Server-side write gate: drop mutations from read-only
 		// connections (viewer members; anon viewers once admitted). This
 		// is what makes calc's read-only mode real rather than client-only.

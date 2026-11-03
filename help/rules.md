@@ -1,12 +1,12 @@
 ---
 title: Spreadsheet rules
-summary: React automatically when someone comments on a spreadsheet
+summary: React when someone comments on a spreadsheet, and add rows to a spreadsheet from a rule
 tags: [rules, automation, comments, workflow]
 order: 100
 ---
 
 Spreadsheets take part in [automation rules](help://core:rules) through
-comments.
+comments, and through an action that adds a row to a spreadsheet.
 
 ## When a comment is added
 
@@ -34,12 +34,22 @@ To hear only when someone addresses *you*, use drive's **I'm mentioned in a
 comment** trigger — it covers @-mentions in spreadsheets, documents and files
 alike. This trigger is broader: every comment on every workbook you can reach.
 
-## Spreadsheets have no rule actions
+## Add a row to a spreadsheet
 
-Nothing a rule could write would show up in a workbook. Cell values are stored
-as collaborative edit operations rather than as fields a rule can set, so calc
-contributes triggers only. A rule that starts from a comment can still *do*
-anything the other installed packages offer.
+The action **Add a row to a spreadsheet** writes one row for each time the
+rule runs. Pick the spreadsheet, or type a name and select **New
+spreadsheet** to make one. **Sheet** names the sheet; leave it empty for the
+first sheet.
+
+Each value goes under the header in row 1 with the same text. Case and
+spaces at the ends do not matter. A value with no matching header gets a new
+column at the end, so an empty sheet gets a header row on the first run. You
+can move the columns around later; the next row still finds them by their
+header.
+
+The rule's owner must be able to edit the spreadsheet. When it is open, the
+people editing see the row arrive. Answers that start with `=` are written as
+text, not as formulas.
 
 ## What rules can't do yet
 

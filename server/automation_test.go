@@ -5,6 +5,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/filesystem"
+	"tinycld.org/core/automation"
 	"tinycld.org/core/rlstest"
 )
 
@@ -181,5 +183,63 @@ func TestCommentOwnerResolver_ExcludesSuspendedParticipants(t *testing.T) {
 	}
 	if len(owners) == 0 {
 		t.Fatal("the active creator should still be an owner")
+	}
+}
+
+func xlsxItem(t *testing.T, env *resolverEnv, owner *core.Record, name, mime string, folder bool) *core.Record {
+	t.Helper()
+	col, _ := env.app.FindCollectionByNameOrId("drive_items")
+	rec := core.NewRecord(col)
+	rec.Set("name", name)
+	rec.Set("mime_type", mime)
+	rec.Set("is_folder", folder)
+	rec.Set("created_by", owner.Id)
+	if !folder {
+		f, _ := filesystem.NewFileFromBytes(blankXLSX, name)
+		rec.Set("file", f)
+	}
+	if err := env.app.Save(rec); err != nil {
+		t.Fatal(err)
+	}
+	return rec
+}
+
+func TestWorkbookAuthorizer(t *testing.T) {
+	env := setupResolverApp(t)
+	book := xlsxItem(t, env, env.author, "ledger.xlsx", xlsxMimeType, false)
+	pdf := xlsxItem(t, env, env.author, "doc.pdf", "application/pdf", false)
+	folder := xlsxItem(t, env, env.author, "dir", "", true)
+	as := func(u *core.Record) automation.ActionRequest { return automation.ActionRequest{OwnerID: u.Id} }
+
+	if err := workbookAuthorizer(env.app, as(env.author), book.Id); err != nil {
+		t.Fatalf("the owner may write their workbook: %v", err)
+	}
+	if err := workbookAuthorizer(env.app, as(env.outsider), book.Id); err == nil {
+		t.Fatal("someone without write access is refused")
+	}
+	if err := workbookAuthorizer(env.app, as(env.author), pdf.Id); err == nil {
+		t.Fatal("a file that is not a spreadsheet is refused")
+	}
+	if err := workbookAuthorizer(env.app, as(env.author), folder.Id); err == nil {
+		t.Fatal("a folder is refused")
+	}
+}
+
+func TestAppendRowActionWritesTheTriggerRow(t *testing.T) {
+	env := setupResolverApp(t)
+	addCheckpointCollection(t, env.app)
+	registerRealtime(env.app)
+	book := xlsxItem(t, env, env.author, "leads.xlsx", xlsxMimeType, false)
+	req := automation.ActionRequest{
+		OwnerID: env.author.Id,
+		Params:  map[string]string{"workbook": book.Id, "sheet": ""},
+		Fields:  []automation.DynamicField{{Key: "name", Label: "Name", Type: "text", Value: "Ada"}},
+	}
+	if err := appendRow(env.app, req); err != nil {
+		t.Fatal(err)
+	}
+	s := storedSheet(t, env.app, book.Id)
+	if s.Cells["1:1"].Display != "Name" || s.Cells["2:1"].Display != "Ada" {
+		t.Fatalf("stored cells: %+v", s.Cells)
 	}
 }
