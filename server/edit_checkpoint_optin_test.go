@@ -11,10 +11,10 @@ import (
 // Drive makes automatic versions (opt-in, drive decides) from editcheckpoint,
 // which only rooms of a kind with EditCheckpoints fire.
 func TestRealtime_CalcRoomsFireEditCheckpoints(t *testing.T) {
-	t.Cleanup(realtime.ResetRegistryForTest)
-	registerRealtime(pocketbase.New())
+	app := pocketbase.New()
+	registerRealtime(app)
 
-	opts, ok := realtime.LookupOptionsForTest("calc")
+	opts, ok := realtime.LookupOptionsForTest(app, "calc")
 	if !ok {
 		t.Fatal("registerRealtime did not register the 'calc' room kind")
 	}
