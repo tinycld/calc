@@ -33,12 +33,52 @@ type Runtime struct {
 
 	mu   sync.Mutex
 	docs map[string]*ycrdt.Doc
+
+	// rooms are the open rooms' handles, for a server write into a live doc
+	// (a rule's append-row). roomsMu is held for the whole of such a write,
+	// and forgetRoom takes it before the room's final save, so the save
+	// always includes the write.
+	roomsMu sync.Mutex
+	rooms   map[string]openRoom
+}
+
+type openRoom struct {
+	handle *sheetsDocHandle
+	room   *realtime.Room
 }
 
 // NewRuntime returns an empty Runtime. Cheap; no doc state is allocated
 // until NewDoc is called.
 func NewRuntime() *Runtime {
-	return &Runtime{docs: map[string]*ycrdt.Doc{}}
+	return &Runtime{docs: map[string]*ycrdt.Doc{}, rooms: map[string]openRoom{}}
+}
+
+func (r *Runtime) noteRoom(id string, h realtime.DocHandle, room *realtime.Room) {
+	sh, ok := h.(*sheetsDocHandle)
+	if !ok || room == nil {
+		return
+	}
+	r.roomsMu.Lock()
+	defer r.roomsMu.Unlock()
+	r.rooms[id] = openRoom{handle: sh, room: room}
+}
+
+func (r *Runtime) forgetRoom(id string) {
+	r.roomsMu.Lock()
+	defer r.roomsMu.Unlock()
+	delete(r.rooms, id)
+}
+
+// withOpenRoom runs fn on the open room for id and reports whether there
+// was one. The room cannot finish closing while fn runs.
+func (r *Runtime) withOpenRoom(id string, fn func(h *sheetsDocHandle, room *realtime.Room) error) (bool, error) {
+	r.roomsMu.Lock()
+	defer r.roomsMu.Unlock()
+	open, ok := r.rooms[id]
+	if !ok {
+		return false, nil
+	}
+	return true, fn(open.handle, open.room)
 }
 
 // SetBootstrap registers a per-room bootstrap hook. Seed invokes the
@@ -120,6 +160,17 @@ type sheetsDocHandle struct {
 	// (an upload, a version restore) is a miss, so an external write is
 	// never patched from stale bytes. Guarded by mu.
 	source sourceBlob
+}
+
+// withDoc runs fn on the room's doc under the handle's lock, the lock every
+// broker read and write of the doc takes.
+func (h *sheetsDocHandle) withDoc(fn func(doc *ycrdt.Doc) error) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed || h.doc == nil {
+		return fmt.Errorf("calc: write to a closed room %s", h.id)
+	}
+	return fn(h.doc)
 }
 
 // sourceBlob is a stored file's bytes together with the blob name they were
