@@ -123,3 +123,56 @@ func TestAppendRowToAnOpenWorkbookReachesTheLiveDocAndTheFile(t *testing.T) {
 		t.Fatalf("the saved file has the row: %+v", s.Cells)
 	}
 }
+
+// A run whose context has ended (the engine timed it out) writes nothing:
+// the engine records it as failed, and a retry must not add a second row.
+func TestAppendRowWithAnEndedContextWritesNothing(t *testing.T) {
+	app := appendRowApp(t)
+	itemID := seedDriveItem(t, app, "late.xlsx", blankXLSX)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := AppendRow(ctx, app, itemID, "", rowOf("Name", "Late")); err == nil {
+		t.Fatal("an ended context fails the append")
+	}
+	if s := storedSheet(t, app, itemID); len(s.Cells) != 0 {
+		t.Fatalf("nothing is written: %+v", s.Cells)
+	}
+
+	leave := realtime.JoinItemForTest(app, roomKindCalc, itemID)
+	defer leave()
+	if err := AppendRow(ctx, app, itemID, "", rowOf("Name", "Late")); err == nil {
+		t.Fatal("an ended context fails the append to an open workbook")
+	}
+	var live string
+	if _, err := runtimeKey.Get(app).withOpenRoom(itemID, func(h *sheetsDocHandle, _ *realtime.Room) error {
+		snap, err := h.Snapshot()
+		c, _ := findSnapshotCell(snap, "sheet1", 1, 1)
+		live = c.Display
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if live != "" {
+		t.Fatalf("the live doc is unchanged, got %q", live)
+	}
+}
+
+// A run that waits for another append to the same workbook gives up when
+// its context ends, rather than writing after the engine stopped waiting.
+func TestAppendRowWaitingForTheLockGivesUpWithItsContext(t *testing.T) {
+	app := appendRowApp(t)
+	itemID := seedDriveItem(t, app, "busy.xlsx", blankXLSX)
+	release, err := acquireAppendLock(context.Background(), app, itemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- AppendRow(ctx, app, itemID, "", rowOf("Name", "Waiting")) }()
+	cancel()
+	if err := <-done; err == nil {
+		t.Fatal("the waiting append fails when its context ends")
+	}
+}

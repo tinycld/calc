@@ -13,27 +13,44 @@ import (
 	"tinycld.org/core/realtime"
 )
 
-// appendLocksKey holds one mutex per workbook, so two rows for one workbook
-// never read the same last row.
+// appendLocksKey holds one lock per workbook, so two rows for one workbook
+// never read the same last row. A lock is a one-slot channel rather than a
+// mutex, so a run can stop waiting for it when its context ends.
 var appendLocksKey = appstate.NewKey[*sync.Map]("calc.appendLocks")
 
-func appendLock(app core.App, itemID string) *sync.Mutex {
+// acquireAppendLock takes itemID's append lock, or fails when ctx ends
+// first. The caller runs the returned release when its write is done.
+func acquireAppendLock(ctx context.Context, app core.App, itemID string) (func(), error) {
 	locks := appendLocksKey.GetOrInit(app, func() *sync.Map { return &sync.Map{} })
-	m, _ := locks.LoadOrStore(itemID, &sync.Mutex{})
-	return m.(*sync.Mutex)
+	slot, _ := locks.LoadOrStore(itemID, make(chan struct{}, 1))
+	lock := slot.(chan struct{})
+	select {
+	case lock <- struct{}{}:
+		return func() { <-lock }, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("calc: wait to add a row to %s: %w", itemID, ctx.Err())
+	}
 }
 
 // AppendRow adds one row to a workbook. An open workbook gets it in its live
 // doc, so editors see it arrive, and the room's save schedule writes it. A
 // closed one is changed in its stored file, inside realtime.WriteItem so no
 // editor can join half way.
+//
+// Nothing is written once ctx has ended: the engine has then recorded the
+// run as failed, and a retry of it must not add a second row.
 func AppendRow(ctx context.Context, app core.App, itemID, sheetName string, values []automation.RowValue) error {
-	lock := appendLock(app, itemID)
-	lock.Lock()
-	defer lock.Unlock()
+	release, err := acquireAppendLock(ctx, app, itemID)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	if rt := runtimeKey.Get(app); rt != nil {
 		open, err := rt.withOpenRoom(itemID, func(h *sheetsDocHandle, room *realtime.Room) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			return appendToLiveDoc(h, room, sheetName, values)
 		})
 		if open {
@@ -41,6 +58,9 @@ func AppendRow(ctx context.Context, app core.App, itemID, sheetName string, valu
 		}
 	}
 	return realtime.WriteItem(app, itemID, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		return appendToStoredFile(ctx, app, itemID, sheetName, values)
 	})
 }
@@ -89,5 +109,8 @@ func appendToStoredFile(ctx context.Context, app core.App, itemID, sheetName str
 	}
 	// A handle the runtime never registered: SaveRoom only reads it.
 	h := &sheetsDocHandle{id: itemID, doc: doc}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return SaveRoom(ctx, app, h, itemID, MakeProductionLoadComments(app))
 }
