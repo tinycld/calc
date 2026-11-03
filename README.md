@@ -113,8 +113,8 @@ truth that survives across sessions.
 
 ## Automation rules
 
-Calc contributes one trigger to the ecosystem-wide automation-rule
-engine, and no actions:
+Calc contributes one trigger and one action to the ecosystem-wide
+automation-rule engine:
 
 - **`calc:comment-added`** — "A comment is added to a spreadsheet",
   fired on `calc_comments` create. Exposed fields: `body`,
@@ -132,13 +132,36 @@ resolver that delegates to core's `driveshare.ParticipantIDs`, so the
 rule fires for every participant on the spreadsheet rather than only
 for the commenter.
 
-**No actions**, for the same reason as text: cell values are
-collaborative Yjs operations, not record fields a rule could set.
+- **`calc:append-row`** — "Add a row to a spreadsheet", a native action.
+  Params: `workbook` (relation to `drive_items`, limited to spreadsheets
+  by `relationMatch`; the picker can make a new `.xlsx` owned by the
+  rule's owner) and `sheet` (text; empty means the first visible,
+  non-pivot sheet).
+
+The action writes the trigger's row (`automation.TriggerRow`: its
+exposed fields, then a web form's answers) below the last row that holds
+a value. Each value goes under the row-1 header with the same text
+(trimmed, case-blind); a label with no header gets a new header column
+after the last one, so an empty sheet gets a header row on the first
+run. Repeated labels get a ` (2)`, ` (3)` … suffix. Values are never
+formulas: a leading `=` is written as text. A per-workbook lock keeps
+two runs from picking the same row. When the workbook's room is open,
+the row goes into the live Y.Doc and only that update is published to
+the editors; the room's save schedule writes it to the xlsx. When it is
+closed, the row is written to the stored file inside
+`realtime.WriteItem` through the same `SaveRoom` a room uses.
+
+`server/automation.go` registers a relation authorizer on the
+`workbook` param: the item must be a spreadsheet (not a folder,
+xlsx MIME type) and the rule's owner must pass
+`driveshare.CheckWrite`. This also covers an owner who lost write
+access after the rule was saved.
 
 The catalog is declared with `automation: { definitions: 'automation' }`
 in `manifest.ts` plus a `"./automation"` entry in the `package.json`
-exports map; the definitions live in `tinycld/calc/automation.ts` and
-the Go-side registration in `server/automation.go`. The in-app help
+exports map; the definitions live in `tinycld/calc/automation.ts`, the
+Go-side registration in `server/automation.go`, and the row writer in
+`server/append_row.go` / `server/append_row_write.go`. The in-app help
 topic is `help/rules.md`.
 
 Docs: [Automation rules](https://tinycld.org/docs/automation-rules)
@@ -272,10 +295,12 @@ are menu-only.
 ### Y.Doc as the shared format
 
 The wire format and the in-memory format are the same: a Yjs document with
-three top-level `Y.Map`s, mirrored byte-for-byte on the client (yjs) and
-the server (`github.com/skyterra/y-crdt`). A fourth map, `namedRanges`
-(`NAMED_RANGES_MAP` in `lib/y-doc-bootstrap.ts`), is written only by the
-client; the server bootstrap does not create it.
+three top-level `Y.Map`s — `sheets`, `cells` and `pivots` — mirrored
+byte-for-byte on the client (yjs) and the server
+(`github.com/skyterra/y-crdt`). A fourth map, `workbook`, is written only
+by the server bootstrap; a fifth, `namedRanges` (`NAMED_RANGES_MAP` in
+`lib/y-doc-bootstrap.ts`), is written only by the client, and the server
+bootstrap does not create it.
 
 **`sheets`** — keyed by stable sheet id (`sheet1`, `sheet2`, …). Each value
 is a `Y.Map` with:
@@ -320,10 +345,23 @@ definition, the cells are the cached evaluation. Server-side
 `pkg/xlsx`'s pivot-table parts; client-side keys live in `lib/pivot/keys.ts`
 (`PIVOTS_MAP`, `PIVOT_SHEET_KEY`).
 
+**`workbook`** — workbook-wide facts that belong to no one sheet
+(`WORKBOOK_MAP` in `lib/workbook-default-font.ts`, `workbookMapName` in
+`server/bootstrap.go`). The server bootstrap writes:
+
+- `defaultFont?: Y.Map { name, size }` — the xlsx "Normal" style font,
+  size in points; every cell without its own font name or size draws in
+  it (`readWorkbookDefaultFont`, `hooks/use-workbook-default-font.ts`)
+- `sheetFactsSeeded: boolean` — marks a doc whose bootstrap seeded the
+  sheet facts (gridlines, filter views, hyperlinks, hidden rows and
+  columns) from the file; only such a doc is authoritative for them on
+  save
+
 Both sides share a canonical bootstrap: `bootstrapYDocFromWorkbook` in
 `tinycld/calc/lib/y-doc-bootstrap.ts` and `BootstrapYDocFromWorkbook` in
-`server/bootstrap.go` produce identical doc shapes from the same parsed
-`WorkbookModel`. The client never parses xlsx — when a room opens, the
+`server/bootstrap.go` produce identical `sheets`, `cells` and `pivots`
+shapes from the same parsed `WorkbookModel`; only the server writes the
+`workbook` map. The client never parses xlsx — when a room opens, the
 server has already stamped the doc and the first `SyncReply` carries
 populated state.
 
@@ -373,8 +411,9 @@ via `useRealtimeRoom({ roomKind: 'calc', roomID: driveItemID, … })`:
    at terminate; the next open from that row is the same document.
 
 `SaveRoom` reads the current xlsx bytes off `drive_items`, snapshots the
-server-side `Y.Doc` (`Snapshot()` walks the `sheets` and `cells` maps
-into Go structs), and applies the snapshot on top of the original
+server-side `Y.Doc` (`Snapshot()` walks the `sheets`, `cells` and
+`pivots` maps into Go structs and reads `sheetFactsSeeded` from the
+`workbook` map), and applies the snapshot on top of the original
 workbook via omnidoc `pkg/xlsx` — a preservation-first overlay
 editor that patches only what the doc tracks (renaming or appending
 sheets, growing dimensions, applying row/column sizes and styles,
@@ -451,8 +490,13 @@ server/
     register.go               Register(app) — wires realtime + API
     oauth_scopes.go           oauth.RegisterPackage: calc:read / calc:write
                               scopes governing the calc_comments collection
-    automation.go             calc:comment-added trigger registration + the
-                              participant owner resolver (see Automation rules)
+    automation.go             calc:comment-added participant owner resolver;
+                              calc:append-row action + its workbook
+                              authorizer (see Automation rules)
+    append_row.go             appendRowToDoc — header matching, new header
+                              columns, typed cells for one appended row
+    append_row_write.go       AppendRow — per-workbook lock; live-room doc
+                              update or stored-file write via SaveRoom
     realtime_authorize.go     RoomKind "calc"; drive_shares-based access;
                               SaveCoordinator + checkpoint wiring; cascade drop
     runtime.go                per-room ycrdt.Doc registry; Snapshot()
@@ -713,10 +757,11 @@ this package — exactly what a developer does locally.
 - `pb-migrations/` — PocketBase migrations (symlinked into the app shell's
   server on `packages:generate`)
 - `server/` — Go server module, registered by the generator; includes
-  `server/automation.go` (trigger registration + the participant owner
-  resolver)
+  `server/automation.go` (the participant owner resolver, plus the
+  append-row action and its workbook authorizer)
 - `cli/` — Go source for this package's `tinycld calc` command group
 - `tests/` — vitest unit tests (sibling tests run from the app shell) and
   Playwright e2e specs (`*.spec.ts`)
 - `tinycld/calc/` — TypeScript source (screens, components, hooks, lib),
-  including `tinycld/calc/automation.ts` — the automation trigger catalog
+  including `tinycld/calc/automation.ts` — the automation trigger and
+  action catalog
