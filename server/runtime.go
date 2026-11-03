@@ -35,14 +35,17 @@ type Runtime struct {
 	docs map[string]*ycrdt.Doc
 
 	// rooms are the open rooms' handles, for a server write into a live doc
-	// (a rule's append-row). roomsMu is held for the whole of such a write,
-	// and forgetRoom takes it before the room's final save, so the save
+	// (a rule's append-row). roomsMu guards the map only and is never held
+	// during a write: a room opens under the broker's lock, which must not
+	// wait for one. Each room's own lock is held for the whole of a write,
+	// and forgetRoom waits for it before the room's final save, so the save
 	// always includes the write.
 	roomsMu sync.Mutex
-	rooms   map[string]openRoom
+	rooms   map[string]*openRoom
 }
 
 type openRoom struct {
+	mu     sync.Mutex
 	handle *sheetsDocHandle
 	room   *realtime.Room
 }
@@ -50,7 +53,7 @@ type openRoom struct {
 // NewRuntime returns an empty Runtime. Cheap; no doc state is allocated
 // until NewDoc is called.
 func NewRuntime() *Runtime {
-	return &Runtime{docs: map[string]*ycrdt.Doc{}, rooms: map[string]openRoom{}}
+	return &Runtime{docs: map[string]*ycrdt.Doc{}, rooms: map[string]*openRoom{}}
 }
 
 func (r *Runtime) noteRoom(id string, h realtime.DocHandle, room *realtime.Room) {
@@ -60,24 +63,38 @@ func (r *Runtime) noteRoom(id string, h realtime.DocHandle, room *realtime.Room)
 	}
 	r.roomsMu.Lock()
 	defer r.roomsMu.Unlock()
-	r.rooms[id] = openRoom{handle: sh, room: room}
+	r.rooms[id] = &openRoom{handle: sh, room: room}
 }
 
+// forgetRoom drops the room, then waits out a write in progress on it.
 func (r *Runtime) forgetRoom(id string) {
 	r.roomsMu.Lock()
-	defer r.roomsMu.Unlock()
+	open := r.rooms[id]
 	delete(r.rooms, id)
+	r.roomsMu.Unlock()
+	if open != nil {
+		// Taken only to wait: once a write in progress lets go, the room
+		// is out of the map and no new write can start on it.
+		open.mu.Lock()
+		open.mu.Unlock()
+	}
 }
 
 // withOpenRoom runs fn on the open room for id and reports whether there
-// was one. The room cannot finish closing while fn runs.
+// was one. The room cannot finish closing while fn runs; other rooms can
+// open and close.
 func (r *Runtime) withOpenRoom(id string, fn func(h *sheetsDocHandle, room *realtime.Room) error) (bool, error) {
 	r.roomsMu.Lock()
-	defer r.roomsMu.Unlock()
 	open, ok := r.rooms[id]
 	if !ok {
+		r.roomsMu.Unlock()
 		return false, nil
 	}
+	// The room's lock is taken before the map's is let go, so forgetRoom,
+	// which deletes under the map's lock, then waits for this write.
+	open.mu.Lock()
+	r.roomsMu.Unlock()
+	defer open.mu.Unlock()
 	return true, fn(open.handle, open.room)
 }
 
