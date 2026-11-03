@@ -1,15 +1,19 @@
 package calc
 
 import (
+	"fmt"
+
 	"github.com/pocketbase/pocketbase/core"
 	"tinycld.org/core/automation"
 	"tinycld.org/core/driveshare"
 )
 
-// registerAutomation installs calc's owner resolver. Called from
-// registerShared before hooks load.
+// registerAutomation installs calc's owner resolver and its append-row
+// action. Called from registerShared before hooks load.
 func registerAutomation() {
 	automation.RegisterOwnerResolver("calc:comment-added", commentOwnerResolver)
+	automation.RegisterAction("calc:append-row", appendRow)
+	automation.RegisterRelationAuthorizer("calc:append-row", "workbook", workbookAuthorizer)
 }
 
 // commentOwnerResolver maps a new calc_comments row to the users a comment on
@@ -38,4 +42,36 @@ func commentOwnerResolver(app core.App, record *core.Record) []string {
 		return nil
 	}
 	return driveshare.ParticipantIDs(app, itemID)
+}
+
+// workbookAuthorizer: the rule's owner may write the workbook, and it is a
+// spreadsheet. The picker lists only spreadsheets, and the engine checks
+// relationMatch too; this check also covers an owner who lost write access
+// after the rule was saved.
+func workbookAuthorizer(app core.App, req automation.ActionRequest, itemID string) error {
+	item, err := app.FindRecordById(driveItemsCollection, itemID)
+	if err != nil {
+		return fmt.Errorf("workbook %s: %w", itemID, err)
+	}
+	if item.GetBool("is_folder") || item.GetString("mime_type") != xlsxMimeType {
+		return fmt.Errorf("%q is not a spreadsheet", item.GetString("name"))
+	}
+	if err := driveshare.CheckWrite(app, req.OwnerID, itemID); err != nil {
+		return fmt.Errorf("the rule's owner may not edit %q", item.GetString("name"))
+	}
+	return nil
+}
+
+// appendRow adds the trigger's row (its exposed fields, then a web form's
+// answers) to the workbook. The authorizer has already run.
+func appendRow(app core.App, req automation.ActionRequest) error {
+	itemID := req.Params["workbook"]
+	if itemID == "" {
+		return fmt.Errorf("calc:append-row: no workbook")
+	}
+	values := automation.TriggerRow(app, req)
+	if len(values) == 0 {
+		return fmt.Errorf("calc:append-row: the trigger has no fields to write")
+	}
+	return AppendRow(req.Context(), app, itemID, req.Params["sheet"], values)
 }
