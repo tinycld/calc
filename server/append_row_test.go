@@ -142,3 +142,15 @@ func TestAppendRowSheetChoice(t *testing.T) {
 		t.Fatalf("a sheet name matches trimmed and case-blind: %v", err)
 	}
 }
+
+// With the same header in many columns, a value always goes under the
+// leftmost one, so every row lands in the same column.
+func TestAppendRowUsesTheFirstOfRepeatedHeaders(t *testing.T) {
+	h, _ := bootstrapAndSnapshot(t, headerModel("Email", "Email", "Email", "Email", "Email", "Email", "Email", "Email"))
+	if _, err := appendRowToDoc(h.doc, "", []automation.RowValue{{Label: "Email", Type: "text", Value: "a@b.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	if display(t, h, 2, 1) != "a@b.example" {
+		t.Fatal("the value goes under the leftmost Email header")
+	}
+}

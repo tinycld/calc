@@ -49,8 +49,10 @@ func appendRowToDoc(doc *ycrdt.Doc, sheetName string, values []automation.RowVal
 			continue
 		}
 		if c.Row == 1 {
+			// The cells come in no set order; the leftmost of repeated
+			// headers wins, so every row picks the same column.
 			key := headerKey(c.Display)
-			if _, seen := headers[key]; !seen {
+			if col, seen := headers[key]; !seen || c.Col < col {
 				headers[key] = c.Col
 			}
 			lastHeaderCol = max(lastHeaderCol, c.Col)
