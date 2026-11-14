@@ -1,4 +1,4 @@
-import { formatKeys } from '@tinycld/core/lib/shortcuts/keys'
+import { formatKeys, isApplePlatform } from '@tinycld/core/lib/shortcuts/keys'
 
 // displayKeys renders a `$mod+Shift+x`-style binding string for the
 // Keyboard shortcuts help dialog. Modifiers join with `+` regardless
@@ -6,9 +6,10 @@ import { formatKeys } from '@tinycld/core/lib/shortcuts/keys'
 // "Ctrl+Shift+X"), and chord sequences (whitespace-separated combos
 // like `t i`) join with a space. The function is the only renderer
 // that touches `formatKeys`, so any future change to its output shape
-// is contained here.
-export function displayKeys(keys: string): string {
-    return formatKeys(keys)
+// is contained here. `isApple` is a parameter so a test does not
+// depend on the platform of the machine that runs it.
+export function displayKeys(keys: string, isApple = isApplePlatform): string {
+    return formatKeys(keys, isApple)
         .map(parts => parts.join('+'))
         .join(' ')
 }
