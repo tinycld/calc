@@ -488,7 +488,7 @@ overwritten).
 ```
 server/
     register.go               Register(app) — wires realtime + API
-    oauth_scopes.go           oauth.RegisterPackage: calc:read / calc:write
+    oauth_scopes.go           oauth.RegisterPackage input: calc:read / calc:write
                               scopes governing the calc_comments collection
     automation.go             calc:comment-added participant owner resolver;
                               calc:append-row action + its workbook
@@ -687,8 +687,9 @@ exactly its installed package set; users download it from **Settings →
 About**. This package's group is sourced from `cli/` and
 declared by a `cli` manifest block naming the Go module. The OAuth
 scopes above are not on the manifest: `server/oauth_scopes.go`
-registers them (and the `calc_comments` collection they govern) with
-core via `oauth.RegisterPackage`. The in-app help topic is
+defines them (and the `calc_comments` collection they govern), and
+`registerShared` in `server/register.go` registers them with core via
+`oauth.RegisterPackage`. The in-app help topic is
 `help/command-line.md`.
 
 Docs: [Command line tool](https://tinycld.org/docs/command-line-tool) ·
